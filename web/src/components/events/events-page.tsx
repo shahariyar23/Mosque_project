@@ -52,4 +52,5 @@ export function EventsPage() {
 
     <section className="mx-auto max-w-7xl px-5 py-20 text-center lg:px-8"><p className="text-xs font-bold tracking-[.2em] text-[#c79a45]">{bengali ? "আমাদের সঙ্গে যোগ দিন" : "JOIN OUR COMMUNITY"}</p><h2 className="mx-auto mt-4 max-w-2xl text-4xl font-semibold">{bengali ? "নূরের সঙ্গে আপনার জায়গা আছে।" : "There is a place for you at Noor."}</h2><Link href="/contact" className="mt-7 inline-block bg-[#0d4d3b] px-6 py-3 font-semibold text-white">{bengali ? "যোগাযোগ করুন" : "Get in touch"} ↗</Link></section>
   </div>;
+  
 }
