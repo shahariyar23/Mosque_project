@@ -1,2 +1,34 @@
-const entries = ["Daily Prayer", "Jumu'ah Prayer", "Quran Classes", "Islamic Education", "Nikah Services", "Janazah Services", "Zakat & Sadaqah", "Community Support"];
-export function InformationGrid({ label }: { label: string }) { return <div className="grid gap-5 md:grid-cols-2 lg:grid-cols-3">{entries.map((entry, i) => <article className="border border-[#dfdfd5] bg-white p-6" key={entry}><span className="text-xs font-bold tracking-[.18em] text-[#c79a45]">{String(i + 1).padStart(2, "0")} · {label}</span><h2 className="mt-8 text-xl font-semibold">{entry}</h2><p className="mt-3 text-sm leading-6 text-[#69726d]">Thoughtful programmes and practical support shaped around our diverse community.</p><a className="mt-6 inline-block text-sm font-semibold text-[#0d4d3b]" href="#contact">Learn more →</a></article>)}</div>; }
+const entries = [
+  "Daily Prayer",
+  "Jumu'ah Prayer",
+  "Quran Classes",
+  "Islamic Education",
+  "Nikah Services",
+  "Janazah Services",
+  "Zakat & Sadaqah",
+  "Community Support",
+];
+export function InformationGrid({ label }: { label: string }) {
+  return (
+    <div className="grid gap-5 md:grid-cols-2 lg:grid-cols-3">
+      {entries.map((entry, i) => (
+        <article className="border border-[#dfdfd5] bg-white p-6" key={entry}>
+          <span className="text-xs font-bold tracking-[.18em] text-[#c79a45]">
+            {String(i + 1).padStart(2, "0")} · {label}
+          </span>
+          <h2 className="mt-8 text-xl font-semibold">{entry}</h2>
+          <p className="mt-3 text-sm leading-6 text-[#69726d]">
+            Thoughtful programmes and practical support shaped around our
+            diverse community.
+          </p>
+          <a
+            className="mt-6 inline-block text-sm font-semibold text-[#0d4d3b]"
+            href="#contact"
+          >
+            Learn more →
+          </a>
+        </article>
+      ))}
+    </div>
+  );
+}

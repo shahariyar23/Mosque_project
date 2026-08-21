@@ -30,5 +30,11 @@ export function IslamicTexture({
     transformOrigin: position,
   };
 
-  return <div aria-hidden="true" className={`islamic-texture islamic-texture--${variant} islamic-texture--${position} ${className}`} style={style} />;
+  return (
+    <div
+      aria-hidden="true"
+      className={`islamic-texture islamic-texture--${variant} islamic-texture--${position} ${className}`}
+      style={style}
+    />
+  );
 }
