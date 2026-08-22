@@ -272,6 +272,11 @@ export const NAVIGATION: NavGroup[] = [
         href: "/dashboard/finance/receipts",
         icon: "receipt",
         permission: "receipt.view",
+        // Same own-scoped variant as Salaries. A member or the imam holds `receipt.viewOwn`, so the
+        // row stays visible for them and the page resolves which query to run via `scopeFor()`.
+        ownPermission: "receipt.viewOwn",
+        ownLabel: "My Receipts",
+        ownLabelBn: "আমার রসিদ",
       },
       {
         label: "Financial Reports",
