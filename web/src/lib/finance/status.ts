@@ -70,10 +70,11 @@ export const transactionTypeTone: Record<TransactionType, Tone> = {
 };
 
 export const donationStatusTone: Record<DonationStatus, Tone> = {
-  Pending: "pending",
-  Completed: "success",
-  Refunded: "neutral",
-  Cancelled: "neutral",
+  Recorded: "pending",
+  Verified: "success",
+  // Danger rather than neutral: a voided row still shows an amount, and it must be obvious at a
+  // glance that the amount no longer counts.
+  Voided: "danger",
 };
 
 export const contributionStatusTone: Record<ContributionStatus, Tone> = {
@@ -131,3 +132,10 @@ export const receiptStatusTone: Record<ReceiptStatus, Tone> = {
 /** Approval pipelines rendered by <WorkflowSteps />. */
 export const expenseWorkflow: ExpenseStatus[] = ["Draft", "Pending Approval", "Approved", "Paid"];
 export const salaryWorkflow: SalaryStatus[] = ["Pending", "Approved", "Paid"];
+
+/**
+ * Donations have their own two-step pipeline (spec 0005), not the expense one. `Voided` is not a
+ * step — it is the terminal state a donation can drop to from either step, so it is passed to
+ * <WorkflowSteps /> as `terminal` rather than living in this array.
+ */
+export const donationWorkflow: DonationStatus[] = ["Recorded", "Verified"];

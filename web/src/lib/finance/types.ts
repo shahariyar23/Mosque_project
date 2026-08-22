@@ -67,11 +67,27 @@ export type Transaction = {
 
 /* -------------------------------- donations ------------------------------- */
 
-export type DonationStatus = "Pending" | "Completed" | "Refunded" | "Cancelled";
+/**
+ * Donations do not use the content state machine, and they are not "Pending / Completed" either.
+ * Spec 0005 gives money its own three states:
+ *
+ *   Recorded — someone took the money. Nothing is confirmed and no receipt exists yet.
+ *   Verified — a second person confirmed it against the cash count or the bank line. The receipt is
+ *              issued *here*, never at recording, because a receipt is a claim the mosque stands
+ *              behind and one pair of hands is not enough for that.
+ *   Voided   — the record is withdrawn, with a reason. It stays in the ledger.
+ *
+ * There is no "edit" and no "delete" (AC-13): a correction is a void plus a fresh record, so the
+ * history of what was claimed remains readable afterwards.
+ */
+export type DonationStatus = "Recorded" | "Verified" | "Voided";
 export type DonationKind = "General" | "Zakat" | "Sadaqah" | "Fitrah" | "Qurbani" | "Sponsorship";
 
-export const donationStatuses: DonationStatus[] = ["Pending", "Completed", "Refunded", "Cancelled"];
+export const donationStatuses: DonationStatus[] = ["Recorded", "Verified", "Voided"];
 export const donationKinds: DonationKind[] = ["General", "Zakat", "Sadaqah", "Fitrah", "Qurbani", "Sponsorship"];
+
+/** Spec 0005 AC-14. A void without a real reason is how an audit trail becomes decoration. */
+export const VOID_REASON_MIN_LENGTH = 10;
 
 export type Donation = {
   id: string;
@@ -85,10 +101,18 @@ export type Donation = {
   fundName: string;
   paymentMethod: PaymentMethod;
   date: string;
+  /** Only ever set once the donation is verified. A recorded donation has no receipt. */
   receiptNo?: string;
   status: DonationStatus;
   transactionId?: string;
   recordedBy: string;
+  recordedAt: string;
+  /** AC-12: never the same person as `recordedBy`. */
+  verifiedBy?: string;
+  verifiedAt?: string;
+  voidedBy?: string;
+  voidedAt?: string;
+  voidReason?: string;
   notes?: string;
 };
 
