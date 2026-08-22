@@ -2,46 +2,27 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useRef, useState } from "react";
-import { useFinanceSession } from "@/components/dashboard/session-provider";
-import { Icon, type IconName } from "@/components/finance/ui/icon";
+import { useMemo, useRef } from "react";
+import { useDashboardSession } from "@/components/dashboard/session-provider";
+import { useLanguage } from "@/components/language-provider";
+import { Icon } from "@/components/finance/ui/icon";
 import { useDialogFocus } from "@/components/finance/ui/use-dialog-focus";
-import { dashboardNav, type NavItem } from "@/lib/finance/nav";
-import type { Permission } from "@/lib/finance/permissions";
-
-type Check = (permissions: Permission[]) => boolean;
-
-/** An item is visible when the role holds at least one of its permissions. */
-function visibleFor(item: NavItem, canAny: Check): boolean {
-  if (!item.anyOf || item.anyOf.length === 0) return true;
-  return canAny(item.anyOf);
-}
-
-/** People who only see their own records get "My Salary" instead of "Salaries". */
-function labelFor(item: NavItem, canAny: Check): string {
-  if (!item.selfLabel || !item.selfOnly) return item.label;
-  const broad = (item.anyOf ?? []).filter((permission) => !item.selfOnly?.includes(permission));
-  if (canAny(item.selfOnly) && !canAny(broad)) return item.selfLabel;
-  return item.label;
-}
+import { filterNavigation } from "@/lib/navigation";
 
 /**
  * The panel contents, shared by the desktop rail and the mobile drawer. `onNavigate` is only
  * supplied by the drawer — the desktop rail has nothing to close.
+ *
+ * Every role's menu comes out of one `filterNavigation()` call over `lib/navigation.ts`. There is no
+ * per-role menu anywhere, which is what stops a new module appearing for the wrong people: a row is
+ * visible exactly when the viewer holds the permission it names (spec 0003).
  */
 function SidebarBody({ onNavigate }: { onNavigate?: () => void }) {
   const pathname = usePathname();
-  const { canAny, user } = useFinanceSession();
-  const [financeOpen, setFinanceOpen] = useState(true);
-  const [lastPath, setLastPath] = useState(pathname);
+  const { permissions, user } = useDashboardSession();
+  const { language } = useLanguage();
 
-  // Re-expand Finance when the user lands on a finance route, even if they collapsed it earlier.
-  if (lastPath !== pathname) {
-    setLastPath(pathname);
-    if (!financeOpen && pathname.startsWith("/dashboard/finance")) setFinanceOpen(true);
-  }
-
-  const items = dashboardNav.filter((item) => visibleFor(item, canAny));
+  const groups = useMemo(() => filterNavigation(permissions), [permissions]);
 
   return (
     <>
@@ -67,111 +48,62 @@ function SidebarBody({ onNavigate }: { onNavigate?: () => void }) {
         ) : null}
       </div>
 
-      <nav className="finance-scroll min-h-0 flex-1 overflow-y-auto px-3 py-4">
-        <ul className="space-y-0.5">
-          {items.map((item) => {
-            const children = (item.children ?? []).filter((child) => visibleFor(child, canAny));
-            const hasChildren = children.length > 0;
-            const sectionActive = hasChildren ? pathname.startsWith(item.href) : pathname === item.href;
-            const subnavId = `subnav-${item.href.replace(/\W+/g, "-")}`;
+      <nav aria-label="Dashboard sections" className="finance-scroll min-h-0 flex-1 overflow-y-auto px-3 py-4">
+        {groups.length === 0 ? (
+          <p className="px-2 py-3 text-[12px] leading-5 text-white/55">
+            This account has no dashboard sections assigned.
+          </p>
+        ) : null}
 
-            if (hasChildren) {
-              return (
-                <li key={item.href}>
-                  <button
-                    type="button"
-                    onClick={() => setFinanceOpen((value) => !value)}
-                    aria-expanded={financeOpen}
-                    aria-controls={subnavId}
-                    className={`flex w-full items-center gap-3 rounded-md px-3 py-2.5 text-[13px] font-semibold transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#e0be79] ${
-                      sectionActive ? "bg-white/10 text-white" : "text-white/75 hover:bg-white/[.07] hover:text-white"
-                    }`}
-                  >
-                    <Icon name={item.icon as IconName} size={17} className={sectionActive ? "text-[#e0be79]" : ""} />
-                    <span className="flex-1 text-left">{item.label}</span>
-                    <Icon
-                      name="chevron-down"
-                      size={15}
-                      className={`transition-transform motion-reduce:transition-none ${financeOpen ? "" : "-rotate-90"}`}
-                    />
-                  </button>
-
-                  {financeOpen ? (
-                    <ul id={subnavId} className="ml-4 mt-1 space-y-0.5 border-l border-white/15 pl-3">
-                      {children.map((child) => {
-                        const active = pathname === child.href;
-                        return (
-                          <li key={child.href}>
-                            <Link
-                              href={child.href}
-                              onClick={onNavigate}
-                              aria-current={active ? "page" : undefined}
-                              className={`flex items-center gap-2.5 rounded-md px-3 py-2 text-[13px] transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#e0be79] ${
-                                active
-                                  ? "bg-[#0d4d3b] font-semibold text-white shadow-[inset_2px_0_0_#c79a45]"
-                                  : "text-white/70 hover:bg-white/[.07] hover:text-white"
-                              }`}
-                            >
-                              <Icon
-                                name={child.icon as IconName}
-                                size={15}
-                                className={active ? "text-[#e0be79]" : "opacity-70"}
-                              />
-                              {labelFor(child, canAny)}
-                            </Link>
-                          </li>
-                        );
-                      })}
-                    </ul>
-                  ) : null}
-                </li>
-              );
-            }
-
-            return (
-              <li key={item.href}>
-                {item.comingSoon ? (
-                  <span
-                    aria-disabled="true"
-                    className="flex cursor-not-allowed items-center gap-3 rounded-md px-3 py-2.5 text-[13px] font-medium text-white/35"
-                  >
-                    <Icon name={item.icon as IconName} size={17} />
-                    <span className="flex-1">{item.label}</span>
-                    <span className="rounded-full border border-white/15 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-[.1em]">
-                      Soon
-                    </span>
-                  </span>
-                ) : (
-                  <Link
-                    href={item.href}
-                    onClick={onNavigate}
-                    aria-current={sectionActive ? "page" : undefined}
-                    className={`flex items-center gap-3 rounded-md px-3 py-2.5 text-[13px] font-semibold transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#e0be79] ${
-                      sectionActive ? "bg-white/10 text-white" : "text-white/75 hover:bg-white/[.07] hover:text-white"
-                    }`}
-                  >
-                    <Icon name={item.icon as IconName} size={17} className={sectionActive ? "text-[#e0be79]" : ""} />
-                    {item.label}
-                  </Link>
-                )}
-              </li>
-            );
-          })}
-        </ul>
+        {groups.map((group) => (
+          // A group with no visible items never reaches here — `filterNavigation` drops it, heading
+          // and all, so nobody sees an empty "Finance" label (spec 0003 AC-2).
+          <section key={group.heading} className="mb-4 last:mb-0">
+            <h2 className="px-3 pb-1.5 text-[9.5px] font-bold uppercase tracking-[.18em] text-white/40">
+              {language === "bn" ? group.headingBn : group.heading}
+            </h2>
+            <ul className="space-y-0.5">
+              {group.items.map((item) => {
+                const active = pathname === item.href;
+                return (
+                  <li key={item.href}>
+                    <Link
+                      href={item.href}
+                      onClick={onNavigate}
+                      aria-current={active ? "page" : undefined}
+                      className={`flex items-center gap-3 rounded-md px-3 py-2.5 text-[13px] transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#e0be79] ${
+                        active
+                          ? "bg-[#0d4d3b] font-semibold text-white shadow-[inset_2px_0_0_#c79a45]"
+                          : "font-medium text-white/75 hover:bg-white/[.07] hover:text-white"
+                      }`}
+                    >
+                      <Icon name={item.icon} size={17} className={active ? "text-[#e0be79]" : "opacity-75"} />
+                      <span className="min-w-0 truncate">
+                        {language === "bn" ? item.labelBn : item.label}
+                      </span>
+                    </Link>
+                  </li>
+                );
+              })}
+            </ul>
+          </section>
+        ))}
       </nav>
 
-      <div className="border-t border-white/10 px-5 py-4">
-        <p className="text-[10px] font-bold uppercase tracking-[.18em] text-[#e0be79]">Signed in</p>
-        <p className="mt-1.5 truncate text-[13px] font-semibold">{user.name}</p>
-        <p className="truncate text-[11px] text-white/55">{user.mosqueName}</p>
-        <Link
-          href="/"
-          className="mt-3 inline-flex items-center gap-1.5 rounded text-[12px] text-white/70 transition-colors hover:text-[#e0be79] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#e0be79]"
-        >
-          <Icon name="arrow-right" size={14} />
-          View public website
-        </Link>
-      </div>
+      {user ? (
+        <div className="border-t border-white/10 px-5 py-4">
+          <p className="text-[10px] font-bold uppercase tracking-[.18em] text-[#e0be79]">Signed in</p>
+          <p className="mt-1.5 truncate text-[13px] font-semibold">{user.name}</p>
+          <p className="truncate text-[11px] text-white/55">{user.mosqueName}</p>
+          <Link
+            href="/"
+            className="mt-3 inline-flex items-center gap-1.5 rounded text-[12px] text-white/70 transition-colors hover:text-[#e0be79] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#e0be79]"
+          >
+            <Icon name="arrow-right" size={14} />
+            View public website
+          </Link>
+        </div>
+      ) : null}
     </>
   );
 }
@@ -190,10 +122,7 @@ export function DashboardSidebar({ open, onClose }: Props) {
 
   return (
     <>
-      <aside
-        aria-label="Dashboard sections"
-        className="hidden w-[272px] shrink-0 flex-col bg-[#073a2d] text-white lg:sticky lg:top-0 lg:flex lg:h-dvh"
-      >
+      <aside className="hidden w-[272px] shrink-0 flex-col bg-[#073a2d] text-white lg:sticky lg:top-0 lg:flex lg:h-dvh">
         <SidebarBody />
       </aside>
 

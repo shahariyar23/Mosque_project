@@ -1,132 +1,76 @@
 "use client";
 
-import { createContext, useCallback, useContext, useMemo, useSyncExternalStore } from "react";
+import { createContext, useContext, useMemo, type ReactNode } from "react";
 import {
-  demoUsers,
-  permissionsForRole,
   scopeFor,
   type DataScope,
-  type FinanceUser,
   type Permission,
-  type Role,
-} from "@/lib/finance/permissions";
+  type Position,
+  type SessionUser,
+} from "@/lib/permissions";
+import type { Session } from "@/lib/session";
 
-const STORAGE_KEY = "noor-dashboard-role";
-const DEFAULT_ROLE: Role = "treasurer";
-
+/**
+ * Carries the already-resolved session down to the interactive parts of the shell.
+ *
+ * Spec 0003 AC-7: the permission list is resolved once per request on the server, in the dashboard
+ * layout, and handed here as props. Nothing in this file reads a cookie, decodes a token, or touches
+ * `localStorage` — a client that can edit its own permission list is not a permission check.
+ *
+ * The value survives the arrival of real authentication unchanged. Only the layout's `getSession()`
+ * call changes.
+ */
 type SessionValue = {
-  user: FinanceUser;
-  role: Role;
+  /** `null` only when a component renders outside the provider, which is a wiring bug. */
+  user: SessionUser | null;
   permissions: Permission[];
-  setRole: (role: Role) => void;
+  positions: Position[];
   can: (permission: Permission) => boolean;
   canAny: (permissions: Permission[]) => boolean;
   canAll: (permissions: Permission[]) => boolean;
-  scope: (all: Permission, self: Permission) => DataScope;
+  /** Resolves a page to "all" / "own" / "none" — see `scopeFor` in the registry. */
+  scope: (all: Permission, own: Permission) => DataScope;
 };
 
-/* ------------------------------------------------------------------------- *
- * The selected role lives in localStorage so a page refresh keeps the review
- * context. It is read through useSyncExternalStore rather than an effect, which
- * keeps the server render and the first client render in agreement.
- * ------------------------------------------------------------------------- */
-
-const listeners = new Set<() => void>();
-let cachedRole: Role | null = null;
-
-function isRole(value: string | null): value is Role {
-  return value !== null && value in demoUsers;
-}
-
-function subscribe(onStoreChange: () => void): () => void {
-  listeners.add(onStoreChange);
-  const onStorage = (event: StorageEvent) => {
-    if (event.key === STORAGE_KEY || event.key === null) {
-      cachedRole = null;
-      onStoreChange();
-    }
-  };
-  window.addEventListener("storage", onStorage);
-  return () => {
-    listeners.delete(onStoreChange);
-    window.removeEventListener("storage", onStorage);
-  };
-}
-
-function getSnapshot(): Role {
-  if (cachedRole) return cachedRole;
-  let saved: string | null = null;
-  try {
-    saved = window.localStorage.getItem(STORAGE_KEY);
-  } catch {
-    // Private browsing or blocked storage — fall back to the default role.
-  }
-  cachedRole = isRole(saved) ? saved : DEFAULT_ROLE;
-  return cachedRole;
-}
-
 /**
- * The server cannot read localStorage, so it renders the default role and the first client paint
- * matches it — a saved non-default role only appears once the store is read. That flicker is
- * acceptable here because the role switcher is demo scaffolding; the real session will arrive from
- * the API on the server, where the correct role is known before the first byte is sent.
- */
-function getServerSnapshot(): Role {
-  return DEFAULT_ROLE;
-}
-
-function writeRole(role: Role) {
-  cachedRole = role;
-  try {
-    window.localStorage.setItem(STORAGE_KEY, role);
-  } catch {
-    // Ignore write failures; the in-memory value still drives this session.
-  }
-  listeners.forEach((listener) => listener());
-}
-
-/**
- * Context default, used only when a component is rendered outside the provider. It grants nothing:
- * a missing provider is a wiring bug, and a wiring bug should hide finance controls rather than
- * quietly hand out the default role's permissions to whatever rendered without a session.
+ * Context default, used only outside the provider. It grants nothing: a missing provider is a
+ * wiring bug, and the safe reading of a wiring bug is "deny", not "fall back to some default role".
  */
 const SessionContext = createContext<SessionValue>({
-  user: demoUsers[DEFAULT_ROLE],
-  role: DEFAULT_ROLE,
+  user: null,
   permissions: [],
-  setRole: () => {},
+  positions: [],
   can: () => false,
   canAny: () => false,
   canAll: () => false,
   scope: () => "none",
 });
 
-/**
- * Stands in for real authentication. The role switcher in the header lets the team review the
- * permission-driven UI for every role; swapping this provider for the real session payload is
- * the only change needed once auth is connected.
- */
-export function DashboardSessionProvider({ children }: { children: React.ReactNode }) {
-  const role = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
-  const setRole = useCallback((next: Role) => writeRole(next), []);
+export function DashboardSessionProvider({
+  session,
+  children,
+}: {
+  session: Session;
+  children: ReactNode;
+}) {
+  const { user, permissions } = session;
 
-  const value = useMemo<SessionValue>(() => {
-    const permissions = permissionsForRole(role);
-    return {
-      user: demoUsers[role],
-      role,
+  const value = useMemo<SessionValue>(
+    () => ({
+      user,
       permissions,
-      setRole,
+      positions: user.positions,
       can: (permission) => permissions.includes(permission),
       canAny: (list) => list.some((permission) => permissions.includes(permission)),
       canAll: (list) => list.every((permission) => permissions.includes(permission)),
-      scope: (all, self) => scopeFor(permissions, all, self),
-    };
-  }, [role, setRole]);
+      scope: (all, own) => scopeFor(permissions, all, own),
+    }),
+    [user, permissions],
+  );
 
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>;
 }
 
-export function useFinanceSession() {
+export function useDashboardSession() {
   return useContext(SessionContext);
 }

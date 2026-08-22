@@ -1,12 +1,12 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { useFinanceSession } from "@/components/dashboard/session-provider";
+import { useDashboardSession } from "@/components/dashboard/session-provider";
 import { NoAccessState } from "@/components/finance/ui/states";
-import type { Permission } from "@/lib/finance/permissions";
+import type { Permission } from "@/lib/permissions";
 
 /**
- * Renders children only when the signed-in role holds the permission. Use for actions —
+ * Renders children only when the signed-in person holds the permission. Use for actions —
  * buttons, menu items, table columns — so nothing appears that the person cannot do.
  */
 export function Can({
@@ -22,7 +22,7 @@ export function Can({
   fallback?: ReactNode;
   children: ReactNode;
 }) {
-  const { can, canAny, canAll } = useFinanceSession();
+  const { can, canAny, canAll } = useDashboardSession();
 
   // Fail closed. A gate with no criteria — or with `anyOf={[]}` because a filtered list came back
   // empty — is a call-site mistake, and the safe reading of a mistake is "deny", not "show it to
@@ -38,7 +38,7 @@ export function Can({
 }
 
 /**
- * Page-level guard. Renders the no-access panel instead of the page body when the role holds
+ * Page-level guard. Renders the no-access panel instead of the page body when the viewer holds
  * none of the listed permissions. The real check happens on the API — this is for UX.
  */
 export function RequirePermission({
@@ -52,7 +52,7 @@ export function RequirePermission({
   description?: string;
   children: ReactNode;
 }) {
-  const { canAny } = useFinanceSession();
+  const { canAny } = useDashboardSession();
   if (!canAny(anyOf)) return <NoAccessState area={area} description={description} />;
   return <>{children}</>;
 }
