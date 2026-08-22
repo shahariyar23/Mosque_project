@@ -286,6 +286,99 @@ h4 {
   border-left: 1px solid rgba(13, 77, 59, 0.04);
 }
 
+/* ── Finance dashboard motion. Subtle only; everything here is switched off under
+   prefers-reduced-motion so the module stays usable without animation. ── */
+@keyframes finance-shimmer {
+  0% {
+    background-position: -160% 0;
+  }
+  100% {
+    background-position: 260% 0;
+  }
+}
+@keyframes finance-fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes finance-fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes finance-modal-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.99);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes finance-drawer-in {
+  from {
+    transform: translateY(100%);
+  }
+  to {
+    transform: none;
+  }
+}
+@keyframes finance-drawer-left-in {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: none;
+  }
+}
+
+.finance-shimmer {
+  background-image: linear-gradient(90deg, #efeee6 0%, #f7f6f0 42%, #efeee6 84%);
+  background-size: 220% 100%;
+  animation: finance-shimmer 1.5s ease-in-out infinite;
+}
+.finance-enter {
+  animation: finance-fade-up 0.34s cubic-bezier(0.2, 0.9, 0.3, 1) both;
+}
+.finance-backdrop {
+  animation: finance-fade 0.18s ease-out both;
+}
+.finance-modal {
+  animation: finance-modal-in 0.24s cubic-bezier(0.2, 0.9, 0.3, 1) both;
+}
+.finance-drawer {
+  animation: finance-drawer-in 0.26s cubic-bezier(0.2, 0.9, 0.3, 1) both;
+}
+.finance-drawer-left {
+  animation: finance-drawer-left-in 0.26s cubic-bezier(0.2, 0.9, 0.3, 1) both;
+}
+
+/* Slim scrollbars for the wide finance tables, which scroll sideways on small screens. */
+.finance-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: #cfd4cd transparent;
+}
+.finance-scroll::-webkit-scrollbar {
+  height: 8px;
+  width: 8px;
+}
+.finance-scroll::-webkit-scrollbar-thumb {
+  background: #d7dad3;
+  border-radius: 999px;
+}
+.finance-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
 .rounded {
   border-radius: 8px;
 }
@@ -366,5 +459,20 @@ h4 {
   .auth-check-mark {
     animation: none;
     stroke-dashoffset: 0;
+  }
+  html {
+    scroll-behavior: auto;
+  }
+  .finance-shimmer,
+  .finance-enter,
+  .finance-backdrop,
+  .finance-modal,
+  .finance-drawer,
+  .finance-drawer-left {
+    animation: none;
+  }
+  .finance-shimmer {
+    background-image: none;
+    background-color: #efeee6;
   }
 }
