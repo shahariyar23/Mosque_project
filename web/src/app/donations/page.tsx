@@ -3,5 +3,11 @@ import { SiteHeader } from "@/components/site-header";
 import { DonationPage } from "@/components/donation/donation-page";
 
 export default function Donations() {
-  return <main><SiteHeader /><DonationPage /><SiteFooter /></main>;
+  return (
+    <main>
+      <SiteHeader />
+      <DonationPage />
+      <SiteFooter />
+    </main>
+  );
 }

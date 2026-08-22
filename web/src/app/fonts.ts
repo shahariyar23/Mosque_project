@@ -1,4 +1,9 @@
-import { Hind_Siliguri, Inter, Noto_Serif, Noto_Serif_Bengali } from "next/font/google";
+import {
+  Hind_Siliguri,
+  Inter,
+  Noto_Serif,
+  Noto_Serif_Bengali,
+} from "next/font/google";
 
 export const inter = Inter({
   subsets: ["latin"],

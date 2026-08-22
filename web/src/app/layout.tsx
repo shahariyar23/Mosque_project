@@ -8,8 +8,18 @@ export const metadata: Metadata = {
   description: "A welcoming place for worship, learning and community.",
 };
 
-export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
-  const fontVariables = [inter, hindSiliguri, notoSerif, notoSerifBengali].map((font) => font.variable).join(" ");
+export default function RootLayout({
+  children,
+}: Readonly<{ children: React.ReactNode }>) {
+  const fontVariables = [inter, hindSiliguri, notoSerif, notoSerifBengali]
+    .map((font) => font.variable)
+    .join(" ");
 
-  return <html lang="en"><body className={fontVariables}><LanguageProvider>{children}</LanguageProvider></body></html>;
+  return (
+    <html lang="en">
+      <body className={fontVariables}>
+        <LanguageProvider>{children}</LanguageProvider>
+      </body>
+    </html>
+  );
 }
