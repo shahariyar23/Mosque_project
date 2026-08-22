@@ -61,7 +61,36 @@ export type IconName =
   | "play"
   | "scale"
   | "lock"
-  | "inbox";
+  | "inbox"
+  /* Community, prayer and settings surfaces. Same 1.5px optical weight as everything above. */
+  | "calendar-days"
+  | "clipboard-check"
+  | "hands-heart"
+  | "heart"
+  | "user-plus"
+  | "sunrise"
+  | "sun"
+  | "sunset"
+  | "moon-star"
+  | "bell"
+  | "palette"
+  | "key"
+  | "map-pin"
+  | "map"
+  | "phone"
+  | "mail"
+  | "globe"
+  | "facebook"
+  | "youtube"
+  | "instagram"
+  | "graduation-cap"
+  | "utensils"
+  | "camera"
+  | "monitor"
+  | "sliders"
+  | "star"
+  | "x-circle"
+  | "dots";
 
 const paths: Record<IconName, string> = {
   grid: "M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM14 14h6v6h-6z",
@@ -122,6 +151,39 @@ const paths: Record<IconName, string> = {
   scale: "M12 4v16M7 8H4l3 6h3zM17 8h3l-3 6h-3zM7 8l5-2 5 2M6 20h12",
   lock: "M5 11h14v10H5zM8 11V8a4 4 0 0 1 8 0v3M12 15v2.5",
   inbox: "M3 12h5l1.5 3h5L16 12h5M3 12l3-7h12l3 7v8H3z",
+  "calendar-days":
+    "M4 6h16v14H4zM4 10h16M8 3v4M16 3v4M8 13.5h.01M12 13.5h.01M16 13.5h.01M8 16.5h.01M12 16.5h.01",
+  "clipboard-check":
+    "M9 4h6v3H9zM9 5.5H6.5A1.5 1.5 0 0 0 5 7v12.5A1.5 1.5 0 0 0 6.5 21h11a1.5 1.5 0 0 0 1.5-1.5V7a1.5 1.5 0 0 0-1.5-1.5H15M9.2 13.6l2.2 2.2 4.4-4.4",
+  "hands-heart":
+    "M12 8.6c-1-1.7-3.7-1.4-3.7 1 0 1.7 2.3 3.2 3.7 4.2 1.4-1 3.7-2.5 3.7-4.2 0-2.4-2.7-2.7-3.7-1zM3 20.5v-4.7a2 2 0 0 1 3.5-1.4L9 17M21 20.5v-4.7a2 2 0 0 0-3.5-1.4L15 17",
+  heart: "M12 20s-7-4.3-7-9.2A4.1 4.1 0 0 1 12 8a4.1 4.1 0 0 1 7 2.8C19 15.7 12 20 12 20z",
+  "user-plus": "M11 4a3.6 3.6 0 1 0 0 7.2A3.6 3.6 0 0 0 11 4zM4 20v-1a4 4 0 0 1 4-4h4M18 14.5v6M15 17.5h6",
+  sunrise: "M12 3v4.5M9.5 6 12 3.5 14.5 6M4.2 11.2l1.4 1.4M19.8 11.2l-1.4 1.4M3 18h18M7 18a5 5 0 0 1 10 0M9 21h6",
+  sun: "M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8zM12 3v2M12 19v2M3 12h2M19 12h2M5.6 5.6 7 7M17 17l1.4 1.4M18.4 5.6 17 7M7 17l-1.4 1.4",
+  sunset: "M12 8V3.5M9.5 6 12 8.5 14.5 6M4.2 11.2l1.4 1.4M19.8 11.2l-1.4 1.4M3 18h18M7 18a5 5 0 0 1 10 0M9 21h6",
+  "moon-star": "M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5zM17.6 2.8l.8 2.1 2.1.8-2.1.8-.8 2.1-.8-2.1-2.1-.8 2.1-.8z",
+  bell: "M18 15.5V10a6 6 0 1 0-12 0v5.5L4.4 18.5h15.2zM10 21h4",
+  palette:
+    "M12 3a9 9 0 0 0 0 18c1.4 0 1.9-1 1.4-1.9-.6-1 .1-2.3 1.3-2.3H18a3 3 0 0 0 3-3.2C20.5 7.6 16.8 3 12 3zM7.6 9.6h.01M11 7.4h.01M15.4 8.6h.01M7.1 14.1h.01",
+  key: "M15.5 4a4.5 4.5 0 1 0-3.2 7.7L4 20v1h3v-2h2v-2h1.9l1.4-1.4A4.5 4.5 0 0 0 15.5 4zM16.6 7.4h.01",
+  "map-pin": "M12 21s7-5.6 7-11a7 7 0 1 0-14 0c0 5.4 7 11 7 11zM12 12.5a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5z",
+  map: "M9 4 3 6v14l6-2 6 2 6-2V4l-6 2zM9 4v14M15 6v14",
+  phone:
+    "M6.5 3h3l1.6 4-2.1 1.4a11.5 11.5 0 0 0 6.6 6.6L17 12.9l4 1.6v3A2.5 2.5 0 0 1 18.2 20C10.4 19.2 4.8 13.6 4 5.8A2.5 2.5 0 0 1 6.5 3z",
+  mail: "M3 6h18v12H3zM3 7l9 6 9-6",
+  globe: "M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18zM3.5 9.5h17M3.5 14.5h17M12 3c2.4 2.4 3.5 5.4 3.5 9s-1.1 6.6-3.5 9c-2.4-2.4-3.5-5.4-3.5-9S9.6 5.4 12 3z",
+  facebook: "M15.5 3h-2.7A3.8 3.8 0 0 0 9 6.8V10H6.5v3.5H9V21h3.5v-7.5H15l.5-3.5h-3V7.2a1 1 0 0 1 1-1h2.2z",
+  youtube: "M3 8.5A2.5 2.5 0 0 1 5.5 6h13A2.5 2.5 0 0 1 21 8.5v7a2.5 2.5 0 0 1-2.5 2.5h-13A2.5 2.5 0 0 1 3 15.5zM10.5 9.5 15 12l-4.5 2.5z",
+  instagram: "M7 4h10a3 3 0 0 1 3 3v10a3 3 0 0 1-3 3H7a3 3 0 0 1-3-3V7a3 3 0 0 1 3-3zM12 8.5a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7zM16.9 7.2h.01",
+  "graduation-cap": "M3 9l9-4 9 4-9 4zM7 11.2V16c0 1.2 2.2 2.2 5 2.2s5-1 5-2.2v-4.8M20.4 10.4V15",
+  utensils: "M7 3v6a2 2 0 0 0 4 0V3M9 11v10M16.2 3c1.8.9 2.8 2.8 2.8 5.7 0 2-.8 3.4-1.8 3.9V21",
+  camera: "M4 8h3.2L8.7 6h6.6L16.8 8H20v11H4zM12 10.5a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7z",
+  monitor: "M3 5h18v11H3zM9 20h6M12 16v4",
+  sliders: "M4 8h9M17 8h3M4 16h3M11 16h9M14.5 5.5v5M8.5 13.5v5",
+  star: "M12 4l2.4 5 5.6.8-4 4 1 5.6-5-2.7-5 2.7 1-5.6-4-4 5.6-.8z",
+  "x-circle": "M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18zM9.2 9.2l5.6 5.6M14.8 9.2l-5.6 5.6",
+  dots: "M6 12h.01M12 12h.01M18 12h.01",
 };
 
 type Props = SVGProps<SVGSVGElement> & { name: IconName; size?: number };

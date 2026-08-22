@@ -155,8 +155,14 @@ export const profileLabels: Record<ProfileKey, { name: string; note: string }> =
 
 export const profileKeys = Object.keys(demoProfiles) as ProfileKey[];
 
-/** Who the switcher starts on. The treasurer sees the most of the finance module. */
-export const DEFAULT_PROFILE: ProfileKey = "treasurer";
+/**
+ * Who the switcher starts on.
+ *
+ * The super admin, because every module the navigation lists resolves for them — a first look at the
+ * dashboard that hides half its own menu reads as broken rather than as a permission model. Switch to
+ * Treasurer, Imam or Cashier to see the model actually narrow things down.
+ */
+export const DEFAULT_PROFILE: ProfileKey = "super_admin";
 
 export function isProfileKey(value: string | undefined): value is ProfileKey {
   return value !== undefined && value in demoProfiles;

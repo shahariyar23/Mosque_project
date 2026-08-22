@@ -487,6 +487,87 @@ h4 {
   background: rgba(255, 255, 255, 0.34);
 }
 
+/* Same thing on a light surface — the white thumb above is invisible inside a white panel. */
+.panel-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(13, 77, 59, 0.22) transparent;
+}
+
+.panel-scroll::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.panel-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.panel-scroll::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: rgba(13, 77, 59, 0.2);
+}
+
+.panel-scroll::-webkit-scrollbar-thumb:hover {
+  background: rgba(13, 77, 59, 0.32);
+}
+
+/*
+  Record side sheet (DetailDrawer). A bottom sheet on phones, a right-hand panel from sm up. Written
+  as one class with a media query rather than two Tailwind variants, because a responsive prefix on a
+  custom class name is not something Tailwind can generate.
+*/
+.detail-sheet {
+  animation: finance-drawer-up 0.26s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@media (min-width: 640px) {
+  .detail-sheet {
+    animation: detail-sheet-in 0.26s cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+}
+
+@keyframes detail-sheet-in {
+  from {
+    transform: translateX(100%);
+  }
+  to {
+    transform: none;
+  }
+}
+
+/* Toast card. Rises on phones (stack sits at the bottom), slides in from the right on desktop. */
+.toast-enter {
+  animation: toast-up 0.24s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@keyframes toast-up {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media (min-width: 640px) {
+  .toast-enter {
+    animation: toast-in 0.24s cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+}
+
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateX(16px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
 /* Printing a receipt should give the receipt, not the dashboard around it. */
 @media print {
   .finance-no-print {
@@ -518,12 +599,16 @@ h4 {
   .finance-modal,
   .finance-drawer,
   .finance-drawer-left,
+  .detail-sheet,
+  .toast-enter,
   .finance-shimmer::after {
     animation: none;
   }
   .finance-enter,
   .finance-backdrop,
-  .finance-modal {
+  .finance-modal,
+  .detail-sheet,
+  .toast-enter {
     opacity: 1;
     transform: none;
   }
