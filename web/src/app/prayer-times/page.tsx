@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { InnerPage } from "@/components/inner-page";
+import { SiteFooter } from "@/components/site-footer";
 
 type Prayer = { name: string; time: string; period: string; jamaah?: string };
 
@@ -109,8 +110,9 @@ export default function PrayerTimes() {
   };
 
   return (
-    <InnerPage eyebrow="PRAYER TIMES · DHAKA, BANGLADESH" title="Prayer times.">
-      <div className="space-y-16">
+    <>
+      <InnerPage eyebrow="PRAYER TIMES · DHAKA, BANGLADESH" title="Prayer times.">
+        <div className="space-y-16">
         <section
           aria-labelledby="today-heading"
           className="grid gap-6 lg:grid-cols-[1.2fr_.8fr]"
@@ -495,7 +497,9 @@ export default function PrayerTimes() {
             </Link>
           </div>
         </section>
-      </div>
-    </InnerPage>
+        </div>
+      </InnerPage>
+      <SiteFooter />
+    </>
   );
 }
