@@ -7,13 +7,17 @@ import * as argon2 from 'argon2';
 import { createHash } from 'node:crypto';
 
 import type { AuthenticatedUser } from '../common/types/authenticated-user';
+import type { AppConfig } from '../config/app.config';
 import { PrismaService } from '../prisma/prisma.service';
 import { UserResponseDto } from '../users/dto/user-response.dto';
 import { USER_SELECT, type SelectedUser } from '../users/types/user.types';
 import { UsersService } from '../users/users.service';
 import { AuthService } from './auth.service';
+import { AuthController } from './auth.controller';
+import type { ForgotPasswordDto } from './dto/forgot-password.dto';
 import type { LoginDto } from './dto/login.dto';
 import type { RegisterDto } from './dto/register.dto';
+import type { ResetPasswordDto } from './dto/reset-password.dto';
 
 /**
  * Tests for the auth service.
@@ -54,7 +58,7 @@ const verifyMock = argon2.verify as unknown as jest.Mock;
 type MockedDelegate<K extends string> = Record<K, jest.Mock>;
 
 interface PrismaMock {
-  user: MockedDelegate<'findMany' | 'update'>;
+  user: MockedDelegate<'findMany' | 'findFirst' | 'update' | 'updateMany'>;
   mosque: MockedDelegate<'findUnique' | 'findMany'>;
   refreshToken: MockedDelegate<'findUnique' | 'create' | 'updateMany'>;
   $transaction: jest.Mock;
@@ -114,6 +118,14 @@ function loginDto(over: Partial<LoginDto> = {}): LoginDto {
   return { email: 'karim@noor.example', password: PLAINTEXT, ...over };
 }
 
+function forgotPasswordDto(over: Partial<ForgotPasswordDto> = {}): ForgotPasswordDto {
+  return { email: 'karim@noor.example', ...over };
+}
+
+function resetPasswordDto(over: Partial<ResetPasswordDto> = {}): ResetPasswordDto {
+  return { token: 'a-reset-token-that-is-never-stored-raw', newPassword: PLAINTEXT, ...over };
+}
+
 /** The caller as `JwtStrategy` builds one: resolved from the row, never from a request body. */
 function subject(over: Partial<AuthenticatedUser> = {}): AuthenticatedUser {
   return {
@@ -160,7 +172,9 @@ describe('AuthService', () => {
     prisma = {
       user: {
         findMany: jest.fn().mockResolvedValue([credentialRow()]),
+        findFirst: jest.fn().mockResolvedValue({ id: USER_ID }),
         update: jest.fn().mockResolvedValue(userRow()),
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
       },
       mosque: {
         findUnique: jest.fn().mockResolvedValue({ id: MOSQUE_ID, isActive: true }),
@@ -171,7 +185,12 @@ describe('AuthService', () => {
         create: jest.fn().mockResolvedValue({}),
         updateMany: jest.fn().mockResolvedValue({ count: 1 }),
       },
-      $transaction: jest.fn((operations: Promise<unknown>[]) => Promise.all(operations)),
+      $transaction: jest.fn(
+        (
+          work: ((client: unknown) => Promise<unknown>) | Promise<unknown>[],
+        ): Promise<unknown> | Promise<unknown[]> =>
+          typeof work === 'function' ? work(prisma) : Promise.all(work),
+      ),
     };
 
     users = {
@@ -206,6 +225,7 @@ describe('AuthService', () => {
                 JWT_ACCESS_EXPIRES_IN: '15m',
                 JWT_REFRESH_SECRET: REFRESH_SECRET,
                 JWT_REFRESH_EXPIRES_IN: '7d',
+                CORS_ORIGINS: 'http://localhost:3000',
               })[key],
           },
         },
@@ -345,8 +365,12 @@ describe('AuthService', () => {
     it('signs the refresh token with its own secret, so an access token cannot impersonate one', async () => {
       const { refresh } = await service.login(loginDto(), ORIGIN);
 
-      expect(() => jwt.verify(refresh.token, { secret: REFRESH_SECRET })).not.toThrow();
-      expect(() => jwt.verify(refresh.token, { secret: ACCESS_SECRET })).toThrow();
+      expect(() => {
+        jwt.verify(refresh.token, { secret: REFRESH_SECRET });
+      }).not.toThrow();
+      expect(() => {
+        jwt.verify(refresh.token, { secret: ACCESS_SECRET });
+      }).toThrow();
     });
 
     it('never returns the refresh token in the session body', async () => {
@@ -368,7 +392,10 @@ describe('AuthService', () => {
     it('reads the credential row by email, excluding soft-deleted accounts', async () => {
       await service.login(loginDto(), ORIGIN);
 
-      expect(whereOf(prisma.user.findMany)).toMatchObject({ deletedAt: null, email: loginDto().email });
+      expect(whereOf(prisma.user.findMany)).toMatchObject({
+        deletedAt: null,
+        email: loginDto().email,
+      });
     });
 
     it('accepts a phone number as the identifier', async () => {
@@ -486,6 +513,93 @@ describe('AuthService', () => {
 
       // `jti` is what stops the unique index on `tokenHash` from rejecting the second sign-in.
       expect(second.refresh.token).not.toBe(first.refresh.token);
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // Password recovery
+  // ---------------------------------------------------------------------------
+
+  describe('forgotPassword', () => {
+    it('stores only a short-lived hash for an existing account', async () => {
+      await expect(service.forgotPassword(forgotPasswordDto())).resolves.toBeUndefined();
+
+      expect(whereOf(prisma.user.findMany)).toMatchObject({
+        deletedAt: null,
+        isActive: true,
+        email: 'karim@noor.example',
+      });
+      const data = dataOf(prisma.user.update);
+      expect(data.passwordResetTokenHash).toEqual(expect.any(String));
+      expect(data.passwordResetTokenHash).toHaveLength(64);
+      expect(data.passwordResetExpiresAt).toBeInstanceOf(Date);
+      expect(JSON.stringify(data)).not.toContain('a-reset-token-that-is-never-stored-raw');
+    });
+
+    it('returns the same service result for an unknown account without writing a token', async () => {
+      prisma.user.findMany.mockResolvedValue([]);
+
+      await expect(service.forgotPassword(forgotPasswordDto())).resolves.toBeUndefined();
+      expect(prisma.user.update).not.toHaveBeenCalled();
+    });
+
+    it('does not return a reset token', async () => {
+      const result = await service.forgotPassword(forgotPasswordDto());
+
+      expect(result).toBeUndefined();
+    });
+  });
+
+  describe('resetPassword', () => {
+    it('hashes a replacement password, consumes the token and revokes refresh sessions', async () => {
+      const dto = resetPasswordDto();
+
+      await expect(service.resetPassword(dto)).resolves.toBeUndefined();
+
+      expect(hashMock).toHaveBeenCalledWith(dto.newPassword, { type: argon2.argon2id });
+      expect(whereOf(prisma.user.findFirst)).toMatchObject({
+        passwordResetTokenHash: sha256(dto.token),
+        passwordResetExpiresAt: { gt: expect.any(Date) },
+      });
+      expect(dataOf(prisma.user.updateMany)).toEqual({
+        passwordHash: HASHED,
+        passwordResetTokenHash: null,
+        passwordResetExpiresAt: null,
+      });
+      expect(prisma.refreshToken.updateMany).toHaveBeenCalledWith({
+        where: { userId: USER_ID, revokedAt: null },
+        data: { revokedAt: expect.any(Date) },
+      });
+    });
+
+    it('rejects an invalid token without changing credentials or sessions', async () => {
+      prisma.user.findFirst.mockResolvedValue(null);
+
+      await expect(service.resetPassword(resetPasswordDto())).rejects.toBeInstanceOf(
+        UnauthorizedException,
+      );
+      expect(prisma.user.updateMany).not.toHaveBeenCalled();
+      expect(prisma.refreshToken.updateMany).not.toHaveBeenCalled();
+    });
+
+    it('rejects an expired token with the same generic refusal', async () => {
+      prisma.user.findFirst.mockResolvedValue(null);
+
+      await expect(service.resetPassword(resetPasswordDto())).rejects.toMatchObject({
+        response: { code: 'INVALID_RESET_TOKEN' },
+      });
+      expect(whereOf(prisma.user.findFirst).passwordResetExpiresAt).toEqual({
+        gt: expect.any(Date),
+      });
+    });
+
+    it('rejects a token that was already used', async () => {
+      prisma.user.updateMany.mockResolvedValue({ count: 0 });
+
+      await expect(service.resetPassword(resetPasswordDto())).rejects.toMatchObject({
+        response: { code: 'INVALID_RESET_TOKEN' },
+      });
+      expect(prisma.refreshToken.updateMany).not.toHaveBeenCalled();
     });
   });
 
@@ -765,5 +879,25 @@ describe('AuthService', () => {
       expect(JSON.stringify(profile)).not.toContain(ACCESS_SECRET);
       expect(JSON.stringify(profile)).not.toContain(REFRESH_SECRET);
     });
+  });
+});
+
+describe('AuthController password recovery responses', () => {
+  it('returns the same token-free response for existing and missing accounts', async () => {
+    const auth = {
+      forgotPassword: jest.fn().mockResolvedValue(undefined),
+      resetPassword: jest.fn().mockResolvedValue(undefined),
+    } as unknown as AuthService;
+    const controller = new AuthController(auth, {} as AppConfig);
+
+    const existing = await controller.forgotPassword({ email: 'karim@noor.example' });
+    const missing = await controller.forgotPassword({ email: 'missing@noor.example' });
+
+    expect(existing).toEqual(missing);
+    expect(existing).toEqual({
+      success: true,
+      message: 'If the account exists, a password reset link has been sent.',
+    });
+    expect(existing).not.toHaveProperty('data');
   });
 });

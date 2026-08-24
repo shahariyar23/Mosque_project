@@ -158,6 +158,10 @@ model User {
   /// endpoint — no `select` in this codebase includes this column.
   passwordHash String @db.VarChar(255)
 
+  /// SHA-256 of a short-lived password-reset token. The raw token is never persisted.
+  passwordResetTokenHash String?   @unique @db.VarChar(64)
+  passwordResetExpiresAt DateTime? @db.Timestamptz
+
   role Role @default(member)
 
   /// Committee posts. Display only.
@@ -198,6 +202,7 @@ model User {
   @@index([mosqueId, role])
   @@index([mosqueId, isActive])
   @@index([deletedAt])
+  @@index([passwordResetExpiresAt])
   @@map("users")
 }
 

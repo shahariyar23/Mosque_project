@@ -1,4 +1,4 @@
-import { Controller, Get } from '@nestjs/common';
+import { Controller, Get, VERSION_NEUTRAL } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Public } from '../common/decorators/public.decorator';
 import { PrismaService } from '../prisma/prisma.service';
@@ -12,9 +12,17 @@ import { PrismaService } from '../prisma/prisma.service';
  *
  * Both are public — a probe has no credentials — and both stay deliberately terse: an unauthenticated
  * endpoint should not describe the deployment.
+ *
+ * `VERSION_NEUTRAL` is what keeps these two off the version segment, and it is not optional. Escaping
+ * `/api/v1` takes two independent opt-outs: `exclude` in `setGlobalPrefix` removes the `api` prefix,
+ * and this removes the `v1`. Nest builds the version into the path *before* it considers the exclusion
+ * list, and matches that list against the path with the version stripped back off — so a route can be
+ * excluded from the prefix and still be mounted under `/v1`. Without this decorator these probes live
+ * at `/v1/health`, which is a versioned URL for an endpoint whose whole purpose is to be the one URL
+ * that never moves.
  */
 @ApiTags('Health')
-@Controller('health')
+@Controller({ path: 'health', version: VERSION_NEUTRAL })
 export class HealthController {
   constructor(private readonly prisma: PrismaService) {}
 

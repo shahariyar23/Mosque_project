@@ -10,7 +10,7 @@ import { ConfigService } from '@nestjs/config';
 import { JwtService, type JwtSignOptions } from '@nestjs/jwt';
 import type { Prisma } from '@prisma/client';
 import * as argon2 from 'argon2';
-import { createHash, randomUUID } from 'node:crypto';
+import { createHash, randomBytes, randomUUID } from 'node:crypto';
 
 import { unauthenticated } from '../common/guards/authorization';
 import type { AuthenticatedUser } from '../common/types/authenticated-user';
@@ -20,8 +20,10 @@ import { UserResponseDto } from '../users/dto/user-response.dto';
 import { USER_SELECT } from '../users/types/user.types';
 import { UsersService } from '../users/users.service';
 import { AuthProfileDto, type AuthSessionDto } from './dto/auth-response.dto';
+import type { ForgotPasswordDto } from './dto/forgot-password.dto';
 import type { LoginDto } from './dto/login.dto';
 import type { RegisterDto } from './dto/register.dto';
+import type { ResetPasswordDto } from './dto/reset-password.dto';
 import type { AccessTokenPayload } from './types/access-token-payload';
 import {
   CREDENTIAL_SELECT,
@@ -152,6 +154,67 @@ export class AuthService {
     this.logger.log(`signed in ${credentials.id}`);
 
     return result;
+  }
+
+  /**
+   * Starts password recovery without confirming that an account exists.
+   *
+   * Delivery is deliberately isolated until an email provider is selected. The token therefore only
+   * exists in this method and the generated URL, never in a database row, response or log entry.
+   */
+  async forgotPassword(dto: ForgotPasswordDto): Promise<void> {
+    const user = await this.findRecoverableUser(dto);
+    if (!user) return;
+
+    const token = randomBytes(32).toString('base64url');
+    await this.prisma.user.update({
+      where: { id: user.id },
+      data: {
+        passwordResetTokenHash: hashToken(token),
+        passwordResetExpiresAt: new Date(Date.now() + PASSWORD_RESET_TTL_MS),
+      },
+    });
+
+    this.queuePasswordResetDelivery(this.passwordResetUrl(token));
+  }
+
+  /** Replaces the password, consumes the token and revokes all refresh sessions atomically. */
+  async resetPassword(dto: ResetPasswordDto): Promise<void> {
+    const passwordHash = await argon2.hash(dto.newPassword, { type: argon2.argon2id });
+    const tokenHash = hashToken(dto.token);
+    const now = new Date();
+
+    await this.prisma.$transaction(async (tx) => {
+      const user = await tx.user.findFirst({
+        where: {
+          passwordResetTokenHash: tokenHash,
+          passwordResetExpiresAt: { gt: now },
+          deletedAt: null,
+          isActive: true,
+        },
+        select: { id: true },
+      });
+
+      if (!user) throw invalidResetToken();
+
+      // The condition is repeated in the write so two simultaneous submissions cannot both consume
+      // the same token. Only the one whose update changes a row may revoke sessions and succeed.
+      const consumed = await tx.user.updateMany({
+        where: {
+          id: user.id,
+          passwordResetTokenHash: tokenHash,
+          passwordResetExpiresAt: { gt: now },
+        },
+        data: { passwordHash, passwordResetTokenHash: null, passwordResetExpiresAt: null },
+      });
+
+      if (consumed.count !== 1) throw invalidResetToken();
+
+      await tx.refreshToken.updateMany({
+        where: { userId: user.id, revokedAt: null },
+        data: { revokedAt: now },
+      });
+    });
   }
 
   /**
@@ -426,6 +489,39 @@ export class AuthService {
   }
 
   /**
+   * Looks up a recoverable account without exposing ambiguity, absence or suspension to the caller.
+   * A duplicate email or phone without a mosque slug deliberately receives the same generic success
+   * response as a missing account, because choosing a tenant would otherwise disclose account data.
+   */
+  private async findRecoverableUser(dto: ForgotPasswordDto): Promise<{ id: string } | null> {
+    const matches = await this.prisma.user.findMany({
+      where: {
+        deletedAt: null,
+        isActive: true,
+        ...identifierOf(dto),
+        ...(dto.mosqueSlug === undefined ? {} : { mosque: { slug: dto.mosqueSlug } }),
+      },
+      select: { id: true },
+      take: 2,
+    });
+
+    return matches.length === 1 ? matches[0] : null;
+  }
+
+  /**
+   * The present client origin is the only existing configuration that names where browser routes live.
+   * A future email provider receives this complete URL at this one boundary, not from a controller.
+   */
+  private passwordResetUrl(token: string): string {
+    const url = new URL('/reset-password', env.corsOrigins(this.config)[0]);
+    url.searchParams.set('token', token);
+    return url.toString();
+  }
+
+  /** TODO: hand this URL to the selected email-delivery service. Never log it. */
+  private queuePasswordResetDelivery(_url: string): void {}
+
+  /**
    * Works out which mosque a new account belongs to.
    *
    * The sign-up form does not ask, because a deployment normally serves one mosque and asking would be a
@@ -467,7 +563,7 @@ export class AuthService {
  * A 400 rather than the generic 401: a request that names neither identifier — or both — is malformed,
  * and saying so reveals nothing about whether any particular account exists.
  */
-function identifierOf(dto: LoginDto): Prisma.UserWhereInput {
+function identifierOf(dto: Pick<LoginDto, 'email' | 'phone'>): Prisma.UserWhereInput {
   const { email, phone } = dto;
 
   if (email !== undefined && phone === undefined) return { email };
@@ -529,6 +625,16 @@ function invalidCredentials(): UnauthorizedException {
     message: 'Invalid credentials.',
   });
 }
+
+/** One generic refusal for forged, expired and already-consumed password-reset tokens. */
+function invalidResetToken(): UnauthorizedException {
+  return new UnauthorizedException({
+    code: 'INVALID_RESET_TOKEN',
+    message: 'The password reset token is invalid or expired.',
+  });
+}
+
+const PASSWORD_RESET_TTL_MS = 30 * 60 * 1000;
 
 function mosqueNotFound(): BadRequestException {
   return new BadRequestException({

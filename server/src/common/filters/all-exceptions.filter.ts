@@ -70,7 +70,7 @@ export class AllExceptionsFilter implements ExceptionFilter {
 
     // Server faults carry the underlying error into the log — the one place it is allowed to appear.
     // Client faults are logged at debug only; a wrong password is not an operational event.
-    if (resolved.status >= HttpStatus.INTERNAL_SERVER_ERROR) {
+    if (resolved.status >= 500) {
       this.logger.error(
         `${request.method} ${request.url} → ${resolved.status} ${resolved.code}`,
         exception instanceof Error ? exception.stack : String(exception),
@@ -357,40 +357,40 @@ function messageTextOf(exception: HttpException): string {
   return typeof message === 'string' ? message : '';
 }
 
+/**
+ * Fallback code and wording per status, for exceptions thrown without either.
+ *
+ * Tables rather than `switch` statements. A numeric enum is number-compatible in both directions, so
+ * `case HttpStatus.NOT_FOUND:` against a `number` discriminant is a comparison the linter cannot tell
+ * from an accident — and an assertion to quiet it is itself removed as a no-op. Indexing sidesteps
+ * that argument entirely and reads better as what these are: lookup tables.
+ */
+const DEFAULT_CODES: Readonly<Record<number, string | undefined>> = {
+  [HttpStatus.BAD_REQUEST]: 'BAD_REQUEST',
+  [HttpStatus.UNAUTHORIZED]: 'UNAUTHENTICATED',
+  [HttpStatus.FORBIDDEN]: 'FORBIDDEN',
+  [HttpStatus.NOT_FOUND]: 'NOT_FOUND',
+  [HttpStatus.CONFLICT]: 'CONFLICT',
+  [HttpStatus.UNPROCESSABLE_ENTITY]: 'UNPROCESSABLE',
+  [HttpStatus.TOO_MANY_REQUESTS]: 'RATE_LIMITED',
+};
+
+const DEFAULT_MESSAGES: Readonly<Record<number, string | undefined>> = {
+  [HttpStatus.UNAUTHORIZED]: 'Please sign in to continue.',
+  [HttpStatus.FORBIDDEN]: 'You do not have permission to do that.',
+  [HttpStatus.NOT_FOUND]: 'We could not find what you were looking for.',
+  [HttpStatus.TOO_MANY_REQUESTS]: 'Too many requests. Please wait a moment and try again.',
+};
+
 function defaultCodeFor(status: number): string {
-  switch (status) {
-    case HttpStatus.BAD_REQUEST:
-      return 'BAD_REQUEST';
-    case HttpStatus.UNAUTHORIZED:
-      return 'UNAUTHENTICATED';
-    case HttpStatus.FORBIDDEN:
-      return 'FORBIDDEN';
-    case HttpStatus.NOT_FOUND:
-      return 'NOT_FOUND';
-    case HttpStatus.CONFLICT:
-      return 'CONFLICT';
-    case HttpStatus.UNPROCESSABLE_ENTITY:
-      return 'UNPROCESSABLE';
-    case HttpStatus.TOO_MANY_REQUESTS:
-      return 'RATE_LIMITED';
-    default:
-      return status >= 500 ? 'INTERNAL_ERROR' : 'REQUEST_FAILED';
-  }
+  return DEFAULT_CODES[status] ?? (status >= 500 ? 'INTERNAL_ERROR' : 'REQUEST_FAILED');
 }
 
 function defaultMessageFor(status: number): string {
-  switch (status) {
-    case HttpStatus.UNAUTHORIZED:
-      return 'Please sign in to continue.';
-    case HttpStatus.FORBIDDEN:
-      return 'You do not have permission to do that.';
-    case HttpStatus.NOT_FOUND:
-      return 'We could not find what you were looking for.';
-    case HttpStatus.TOO_MANY_REQUESTS:
-      return 'Too many requests. Please wait a moment and try again.';
-    default:
-      return status >= 500
-        ? 'Something went wrong on our end. Please try again.'
-        : 'The request could not be completed.';
-  }
+  return (
+    DEFAULT_MESSAGES[status] ??
+    (status >= 500
+      ? 'Something went wrong on our end. Please try again.'
+      : 'The request could not be completed.')
+  );
 }

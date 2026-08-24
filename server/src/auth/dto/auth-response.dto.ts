@@ -131,3 +131,12 @@ export class LogoutEnvelopeDto {
   @ApiProperty({ example: 'Signed out successfully' })
   message!: string;
 }
+
+/** Both password-recovery routes intentionally return no account or token data. */
+export class PasswordRecoveryEnvelopeDto {
+  @ApiProperty({ example: true })
+  success!: true;
+
+  @ApiProperty({ example: 'If the account exists, a password reset link has been sent.' })
+  message!: string;
+}

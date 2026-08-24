@@ -37,10 +37,13 @@ import {
   AuthProfileEnvelopeDto,
   AuthSessionEnvelopeDto,
   LogoutEnvelopeDto,
+  PasswordRecoveryEnvelopeDto,
   RegisterEnvelopeDto,
 } from './dto/auth-response.dto';
+import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
+import { ResetPasswordDto } from './dto/reset-password.dto';
 import { RefreshTokenGuard } from './guards/refresh-token.guard';
 import { clearRefreshCookie, refreshTokenFrom, setRefreshCookie } from './refresh-cookie';
 import type { SessionOrigin } from './types/auth.types';
@@ -129,6 +132,53 @@ export class AuthController {
     return { success: true, message: 'Signed in successfully', data: session };
   }
 
+  @Public()
+  @Post('forgot-password')
+  @HttpCode(HttpStatus.OK)
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
+  @ApiOperation({
+    summary: 'Request a password-reset link.',
+    description:
+      'Always returns the same response, whether the account exists or not. A reset token is stored only as a hash and is never returned by this API.',
+  })
+  @ApiBody({ type: ForgotPasswordDto })
+  @ApiOkResponse({
+    description: 'The recovery request was accepted.',
+    type: PasswordRecoveryEnvelopeDto,
+  })
+  @ApiBadRequestResponse({
+    description: 'Send either an email address or a phone number, not both.',
+  })
+  async forgotPassword(@Body() dto: ForgotPasswordDto): Promise<PasswordRecoveryEnvelopeDto> {
+    await this.auth.forgotPassword(dto);
+
+    return {
+      success: true,
+      message: 'If the account exists, a password reset link has been sent.',
+    };
+  }
+
+  @Public()
+  @Post('reset-password')
+  @HttpCode(HttpStatus.OK)
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
+  @ApiOperation({
+    summary: 'Reset a password with a one-time recovery token.',
+    description:
+      'A valid token can be used once. On success, the password is replaced and every active refresh session is revoked.',
+  })
+  @ApiBody({ type: ResetPasswordDto })
+  @ApiOkResponse({ description: 'The password was reset.', type: PasswordRecoveryEnvelopeDto })
+  @ApiBadRequestResponse({
+    description: 'The token or replacement password has an invalid format.',
+  })
+  @ApiUnauthorizedResponse({ description: 'The reset token is invalid, expired or already used.' })
+  async resetPassword(@Body() dto: ResetPasswordDto): Promise<PasswordRecoveryEnvelopeDto> {
+    await this.auth.resetPassword(dto);
+
+    return { success: true, message: 'Password reset successfully' };
+  }
+
   /**
    * Rotation, driven entirely by the cookie.
    *
@@ -151,7 +201,9 @@ export class AuthController {
       'is a 401. Expired, forged, already-spent and belonging-to-a-disabled-account are all the same 401.',
   })
   @ApiOkResponse({ description: 'A new session.', type: AuthSessionEnvelopeDto })
-  @ApiUnauthorizedResponse({ description: 'The refresh token is missing, invalid, expired or spent.' })
+  @ApiUnauthorizedResponse({
+    description: 'The refresh token is missing, invalid, expired or spent.',
+  })
   async refresh(
     @CurrentUser() user: AuthenticatedUser,
     @Req() request: Request,

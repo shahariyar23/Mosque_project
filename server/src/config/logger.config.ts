@@ -45,6 +45,7 @@ const REDACTED_PATHS = [
   // Anything a handler or error happens to attach
   'password',
   'passwordHash',
+  'passwordResetTokenHash',
   'currentPassword',
   'newPassword',
   'token',
@@ -53,6 +54,7 @@ const REDACTED_PATHS = [
   'refreshTokenHash',
   '*.password',
   '*.passwordHash',
+  '*.passwordResetTokenHash',
   '*.accessToken',
   '*.refreshToken',
 

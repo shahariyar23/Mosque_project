@@ -47,8 +47,10 @@ export function configureApp(app: INestApplication, config: AppConfig): void {
   });
 
   // ---- Routing --------------------------------------------------------------
-  // Every route lives under /api/v1/... — the prefix plus URI versioning. The health probes opt out
-  // of the version segment so a load balancer has a stable, unversioned URL.
+  // Every route lives under /api/v1/... — the prefix plus URI versioning. The health probes are the
+  // exception, and getting them out takes both halves: `exclude` here drops the `api` prefix, and
+  // `VERSION_NEUTRAL` on the controller drops the `v1`. Removing either one alone leaves the probes
+  // on a versioned path.
   app.setGlobalPrefix('api', { exclude: ['health', 'health/ready'] });
   app.enableVersioning({ type: VersioningType.URI, defaultVersion: '1', prefix: 'v' });
 

@@ -100,7 +100,10 @@ export class EnvironmentVariables {
 /** `"1" | "true" | "yes" | "on"` → true. Anything else present → false. */
 function toBoolean(value: unknown, fallback: boolean): boolean {
   if (value === undefined || value === '') return fallback;
-  return ['1', 'true', 'yes', 'on'].includes(String(value).trim().toLowerCase());
+  // A class default arrives as a real boolean; everything from the environment arrives as a string.
+  if (typeof value === 'boolean') return value;
+  if (typeof value !== 'string') return false;
+  return ['1', 'true', 'yes', 'on'].includes(value.trim().toLowerCase());
 }
 
 function toInt(value: unknown, fallback: number): number {
