@@ -10,13 +10,15 @@ import { Prisma } from '@prisma/client';
 import * as argon2 from 'argon2';
 
 import type { Permission } from '../common/constants/permissions';
-import { effectivePermissions, hasPermission } from '../common/constants/roles';
+import { effectivePermissions, hasPermission, scopeFor } from '../common/constants/roles';
+import { forbidden } from '../common/guards/authorization';
 import { MAX_PAGE_SIZE } from '../common/pagination/page';
 import type { AuthenticatedUser } from '../common/types/authenticated-user';
 import { PrismaService } from '../prisma/prisma.service';
 import { isPlatformRole } from '../roles/types/role.types';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserPermissionsDto } from './dto/update-user-permissions.dto';
+import { UpdateUserPositionsDto } from './dto/update-user-positions.dto';
 import { UpdateUserRoleDto } from './dto/update-user-role.dto';
 import { UpdateUserStatusDto } from './dto/update-user-status.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
@@ -47,6 +49,8 @@ import {
  * Nobody hands out authority they do not hold. The guards decide whether a caller may touch these
  * endpoints at all; `setRole` and `setPermissions` decide how far a caller who may is allowed to
  * reach, which is a question about the actor and the target together and so cannot live in a guard.
+ * `update` answers the same shape of question for ownership — whether the record being edited is the
+ * caller's own — which a permission cannot express either.
  */
 @Injectable()
 export class UsersService {
@@ -129,7 +133,24 @@ export class UsersService {
     return UserResponseDto.from(user);
   }
 
-  async update(id: string, dto: UpdateUserDto): Promise<UserResponseDto> {
+  /**
+   * Updates profile fields.
+   *
+   * Two kinds of caller reach this method, and the route admits both on purpose: someone holding
+   * `user.manage`, who administers the directory and may edit anyone in it, and someone holding only the
+   * base `profile.manageOwn`, who may edit themselves and nobody else. `scopeFor` says which, and the
+   * ownership comparison happens here rather than in the guard because that is the codebase's rule —
+   * a permission answers "may this kind of person do this at all", never "does this record belong to
+   * them", and the second is settled where the query is built.
+   *
+   * What a self-edit cannot reach is settled by the DTO rather than by a check: `UpdateUserDto` omits
+   * `role`, `status`, `password` and `mosqueId`, and the global pipe runs with `forbidNonWhitelisted`,
+   * so a member who sends `{"role": "super_admin"}` here gets a 400 for an unrecognised field. There is
+   * no branch below that could forget to strip it.
+   */
+  async update(id: string, dto: UpdateUserDto, actor: AuthenticatedUser): Promise<UserResponseDto> {
+    this.assertMayEditProfile(id, actor);
+
     const existing = await this.load(id);
 
     // Only checked when the address actually changes, so re-submitting an unchanged form is not a
@@ -307,6 +328,40 @@ export class UsersService {
   }
 
   /**
+   * Sets the committee posts a person holds.
+   *
+   * The guard has established `position.assign`, and unlike `setRole` and `setPermissions` there is
+   * nothing further to establish. Those two carry extra rules because the columns they write are read by
+   * the permission resolver, so a careless write hands out authority. `positions` is read by nothing that
+   * decides anything — the schema says so at the enum. So there is deliberately no platform-role rule and
+   * no ban on assigning yourself a post here: both would be ceremony over a display column, and
+   * `position.assign` is held only by the roles that already administer the directory.
+   *
+   * It is still an audited action rather than a profile edit, which is why it has its own route and its
+   * own permission: the public leadership list is generated from this column, so writing it is a claim
+   * about who runs the mosque even though it grants nothing.
+   */
+  async setPositions(
+    id: string,
+    dto: UpdateUserPositionsDto,
+    actor: AuthenticatedUser,
+  ): Promise<UserResponseDto> {
+    const target = await this.load(id);
+
+    this.logger.debug(
+      `positions set: ${actor.id} -> ${target.id} (${dto.positions.join(', ') || 'none'})`,
+    );
+
+    const updated = await this.prisma.user.update({
+      where: { id },
+      data: { positions: dto.positions },
+      select: USER_SELECT,
+    });
+
+    return UserResponseDto.from(updated);
+  }
+
+  /**
    * Soft-deletes a user.
    *
    * A hard delete is not offered at all, and not because it would fail — it would succeed. `AuditLog.actorId`
@@ -339,6 +394,29 @@ export class UsersService {
 
   // ---- internals ------------------------------------------------------------
 
+  /**
+   * Refuses a profile edit aimed at someone else by a caller who may only edit themselves.
+   *
+   * `scopeFor` is the existing resolver for a view/viewOwn pair and returns the same three answers here:
+   * `all` for a directory administrator, `own` for everybody else with an active account — because
+   * `profile.manageOwn` is a base permission — and `none` for a suspended one, since
+   * `effectivePermissions` resolves an inactive account to nothing at all, base permissions included.
+   *
+   * The refusal says only that it was refused, like every other refusal in this service. "You may only
+   * edit your own profile" would be harmless here, but a caller learning which of their requests were
+   * refused for *which* reason is how a permission model gets mapped, and the reason is in the log.
+   */
+  private assertMayEditProfile(targetId: string, actor: AuthenticatedUser): void {
+    const scope = scopeFor(effectivePermissions(actor), 'user.manage', 'profile.manageOwn');
+
+    if (scope === 'all') return;
+    if (scope === 'own' && targetId === actor.id) return;
+
+    this.logger.debug(`profile edit refused: ${actor.id} -> ${targetId} (scope: ${scope})`);
+
+    throw forbidden();
+  }
+
   private buildWhere(query: UserQueryDto): Prisma.UserWhereInput {
     const search = query.search?.trim();
 
@@ -346,6 +424,11 @@ export class UsersService {
       // Soft-deleted users are gone as far as every read is concerned.
       deletedAt: null,
       ...(query.status ? { isActive: isActiveFor(query.status) } : {}),
+      // An exact match on an indexed column — `@@index([mosqueId, role])` — not a text comparison.
+      ...(query.role ? { role: query.role } : {}),
+      // `positions` is a scalar list, so the filter asks whether it contains the post rather than
+      // whether it equals it: someone who is both treasurer and cashier must appear under each.
+      ...(query.position ? { positions: { has: query.position } } : {}),
       ...(search
         ? {
             OR: [

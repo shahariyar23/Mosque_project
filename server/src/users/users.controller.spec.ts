@@ -1,6 +1,9 @@
+import { Reflector } from '@nestjs/core';
 import { Test } from '@nestjs/testing';
-import { Role } from '@prisma/client';
+import { Position, Role } from '@prisma/client';
 
+import { ANY_PERMISSION_KEY, PERMISSIONS_KEY } from '../common/decorators/permissions.decorator';
+import { IS_PUBLIC_KEY } from '../common/decorators/public.decorator';
 import type { AuthenticatedUser } from '../common/types/authenticated-user';
 import { UserResponseDto } from './dto/user-response.dto';
 import { UsersController } from './users.controller';
@@ -43,6 +46,7 @@ type ServiceMock = Record<
   | 'update'
   | 'setStatus'
   | 'setRole'
+  | 'setPositions'
   | 'setPermissions'
   | 'remove',
   jest.Mock
@@ -74,6 +78,7 @@ describe('UsersController', () => {
       update: jest.fn().mockResolvedValue(SAMPLE),
       setStatus: jest.fn().mockResolvedValue({ ...SAMPLE, isActive: false, status: 'inactive' }),
       setRole: jest.fn().mockResolvedValue({ ...SAMPLE, role: 'treasurer' }),
+      setPositions: jest.fn().mockResolvedValue({ ...SAMPLE, positions: [Position.president] }),
       setPermissions: jest.fn().mockResolvedValue({ ...SAMPLE, permissions: ['finance.manage'] }),
       remove: jest.fn().mockResolvedValue({ id: SAMPLE.id, deletedAt: '2026-02-01T12:00:00.000Z' }),
     };
@@ -117,10 +122,19 @@ describe('UsersController', () => {
   });
 
   it('passes the query through without interpreting it', async () => {
-    const query = { page: 2, limit: 50, search: 'karim', status: 'active' as const };
+    const query = {
+      page: 2,
+      limit: 50,
+      search: 'karim',
+      status: 'active' as const,
+      role: Role.member,
+      position: Position.president,
+    };
 
     await controller.findAll(query);
 
+    // Including the filters that make this the Members list: the route hands them over verbatim and
+    // the service turns them into a `where`. A filter interpreted in two places drifts in one of them.
     expect(users.findMany).toHaveBeenCalledWith(query);
   });
 
@@ -132,10 +146,13 @@ describe('UsersController', () => {
     expect(response.data).toEqual(SAMPLE);
   });
 
-  it('returns the updated user', async () => {
-    const response = await controller.update(SAMPLE.id, { city: 'Sylhet' });
+  it('hands the profile update the caller as well as the target', async () => {
+    const response = await controller.update(SAMPLE.id, { city: 'Sylhet' }, ACTOR);
 
-    expect(users.update).toHaveBeenCalledWith(SAMPLE.id, { city: 'Sylhet' });
+    // The caller is passed through because who they are decides which records they may edit: with
+    // `user.manage` anyone's, with only `profile.manageOwn` their own. The controller does not make
+    // that judgement — it hands the service the identity from the verified token and lets it decide.
+    expect(users.update).toHaveBeenCalledWith(SAMPLE.id, { city: 'Sylhet' }, ACTOR);
     expect(response.message).toBe('User updated successfully');
   });
 
@@ -156,6 +173,19 @@ describe('UsersController', () => {
     expect(response.message).toBe('User role updated successfully');
     expect(response.data.role).toBe('treasurer');
     expect(Object.keys(response)).toEqual(['success', 'message', 'data']);
+  });
+
+  it('hands the position assignment the caller as well as the target', async () => {
+    const dto = { positions: [Position.president] };
+
+    const response = await controller.setPositions(SAMPLE.id, dto, ACTOR);
+
+    expect(users.setPositions).toHaveBeenCalledWith(SAMPLE.id, dto, ACTOR);
+    expect(response.message).toBe('User positions updated successfully');
+    expect(response.data.positions).toEqual([Position.president]);
+    // The role is untouched by a position change, which is the whole reason the two are separate
+    // columns: the president of the committee is still a `member` as far as any guard is concerned.
+    expect(response.data.role).toBe('member');
   });
 
   it('hands the permission assignment the caller as well as the target', async () => {
@@ -186,5 +216,88 @@ describe('UsersController', () => {
 
     expect(response.data).toBe(SAMPLE);
     expect(Object.keys(response)).toEqual(['success', 'message', 'data']);
+  });
+
+  /**
+   * What each route requires, read off the real decorators with a real `Reflector`.
+   *
+   * These are the cases that would catch a privilege escalation, and they belong here rather than in an
+   * end-to-end test because the mistake they guard against is a declaration mistake: a route that names
+   * the wrong permission, or names none, is wide open however carefully the guard behind it is written.
+   * `PermissionsGuard` is tested against its own decorators elsewhere; what is untested until here is
+   * whether *these* handlers ask for the right thing.
+   */
+  describe('what each route requires', () => {
+    const reflector = new Reflector();
+    const handlers = UsersController.prototype as unknown as Record<string, () => void>;
+
+    const requires = (method: string): string[] | undefined =>
+      reflector.get<string[]>(PERMISSIONS_KEY, handlers[method]);
+
+    const requiresAnyOf = (method: string): string[] | undefined =>
+      reflector.get<string[]>(ANY_PERMISSION_KEY, handlers[method]);
+
+    it.each([
+      ['create', 'user.manage'],
+      ['setStatus', 'user.manage'],
+      ['remove', 'user.manage'],
+    ])('gates %s on %s', (method, permission) => {
+      expect(requires(method)).toEqual([permission]);
+    });
+
+    it.each([['findAll'], ['findOne']])(
+      'gates %s on user.view, so reading the directory is not the same as changing it',
+      (method) => {
+        expect(requires(method)).toEqual(['user.view']);
+      },
+    );
+
+    it('gates the profile update on either managing users or managing your own profile', () => {
+      // Two permissions, because this is the route a person corrects their own phone number through.
+      // `@Permissions` would have meant every field of every profile needs `user.manage`; the service
+      // then narrows an own-scope caller to their own row.
+      expect(requiresAnyOf('update')).toEqual(['user.manage', 'profile.manageOwn']);
+      expect(requires('update')).toBeUndefined();
+    });
+
+    it.each([
+      ['setRole', 'role.assign'],
+      ['setPositions', 'position.assign'],
+      ['setPermissions', 'permission.assign'],
+    ])('gates %s on %s rather than on user.manage', (method, permission) => {
+      // The three columns the permission resolver reads are each behind their own grant, so being able
+      // to edit the directory is not the same as being able to hand out authority within it.
+      expect(requires(method)).toEqual([permission]);
+    });
+
+    it('never lets user.manage stand in for role.assign', () => {
+      // The escalation this file exists to prevent: if the role route accepted `user.manage`, anyone who
+      // could edit a profile could promote themselves. The two grants are deliberately disjoint here.
+      expect(requires('setRole')).not.toContain('user.manage');
+      expect(requiresAnyOf('setRole')).toBeUndefined();
+    });
+
+    it('leaves no route public and none ungated', () => {
+      const routes = [
+        'create',
+        'findAll',
+        'findOne',
+        'update',
+        'setStatus',
+        'setRole',
+        'setPositions',
+        'setPermissions',
+        'remove',
+      ];
+
+      for (const route of routes) {
+        // Authentication is closed by default and `@Public()` is the only way out of it. No route in the
+        // user directory has any business being reachable without a token.
+        expect(reflector.get<boolean>(IS_PUBLIC_KEY, handlers[route])).toBeUndefined();
+        // And every one of them names an authority, so adding a route without a decorator fails here
+        // rather than shipping as an endpoint any signed-in member can call.
+        expect(requires(route) ?? requiresAnyOf(route)).toBeDefined();
+      }
+    });
   });
 });

@@ -1,6 +1,12 @@
-import { BadRequestException, ConflictException, Logger, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  ForbiddenException,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
 import { Test } from '@nestjs/testing';
-import { Prisma, Role } from '@prisma/client';
+import { Position, Prisma, Role } from '@prisma/client';
 import * as argon2 from 'argon2';
 
 import { MAX_PAGE_SIZE } from '../common/pagination/page';
@@ -383,6 +389,58 @@ describe('UsersService', () => {
       expect(whereOf(prisma.user.findMany)).not.toHaveProperty('isActive');
     });
 
+    it('filters by role as an exact match on the indexed column', async () => {
+      prisma.user.count.mockResolvedValue(1);
+      prisma.user.findMany.mockResolvedValue([userRow({ role: Role.treasurer })]);
+
+      await service.findMany({ role: Role.treasurer });
+
+      // Not a `contains`: a role is one of seven known values, and `@@index([mosqueId, role])` is
+      // there to be used.
+      expect(whereOf(prisma.user.findMany).role).toBe(Role.treasurer);
+
+      await service.findMany({});
+      expect(whereOf(prisma.user.findMany)).not.toHaveProperty('role');
+    });
+
+    it('filters by position with `has`, because a person holds several posts', async () => {
+      prisma.user.count.mockResolvedValue(1);
+      prisma.user.findMany.mockResolvedValue([
+        userRow({ positions: [Position.treasurer, Position.cashier] }),
+      ]);
+
+      await service.findMany({ position: Position.cashier });
+
+      // `positions` is a scalar list. An equality filter would only match somebody whose *only* post
+      // is cashier, which would hide every person holding two — and holding two is normal here.
+      expect(whereOf(prisma.user.findMany).positions).toEqual({ has: Position.cashier });
+
+      await service.findMany({});
+      expect(whereOf(prisma.user.findMany)).not.toHaveProperty('positions');
+    });
+
+    it('combines the filters, so a leadership list is one query', async () => {
+      prisma.user.count.mockResolvedValue(0);
+      prisma.user.findMany.mockResolvedValue([]);
+
+      await service.findMany({
+        search: 'rahim',
+        status: 'active',
+        role: Role.member,
+        position: Position.president,
+      });
+
+      // The case §6 describes: Rahim, role `member`, position `president`. Every filter narrows the
+      // same `where` rather than replacing it, and the soft-delete condition survives all of them.
+      expect(whereOf(prisma.user.findMany)).toMatchObject({
+        deletedAt: null,
+        isActive: true,
+        role: Role.member,
+        positions: { has: Position.president },
+      });
+      expect(whereOf(prisma.user.findMany).OR).toHaveLength(3);
+    });
+
     it('orders by a unique tiebreaker, so a row cannot fall between pages', async () => {
       prisma.user.count.mockResolvedValue(0);
       prisma.user.findMany.mockResolvedValue([]);
@@ -394,6 +452,9 @@ describe('UsersService', () => {
   });
 
   describe('update', () => {
+    /** Holds `user.manage` through the role, so every case below is a directory administrator's edit. */
+    const admin = actor();
+
     beforeEach(() => {
       prisma.user.findFirst.mockResolvedValue({
         id: USER_ID,
@@ -405,7 +466,7 @@ describe('UsersService', () => {
     it('writes profile fields and nothing that carries authority', async () => {
       prisma.user.update.mockResolvedValue(userRow({ city: 'Sylhet' }));
 
-      const result = await service.update(USER_ID, { city: 'Sylhet' });
+      const result = await service.update(USER_ID, { city: 'Sylhet' }, admin);
 
       expect(result.city).toBe('Sylhet');
 
@@ -428,7 +489,7 @@ describe('UsersService', () => {
     it('clears the email verification when the address changes', async () => {
       prisma.user.update.mockResolvedValue(userRow({ email: 'new@noor.example' }));
 
-      await service.update(USER_ID, { email: 'new@noor.example' });
+      await service.update(USER_ID, { email: 'new@noor.example' }, admin);
 
       expect(dataOf(prisma.user.update).emailVerifiedAt).toBeNull();
     });
@@ -436,7 +497,7 @@ describe('UsersService', () => {
     it('leaves the verification alone when the address is resubmitted unchanged', async () => {
       prisma.user.update.mockResolvedValue(userRow());
 
-      await service.update(USER_ID, { email: 'karim@noor.example' });
+      await service.update(USER_ID, { email: 'karim@noor.example' }, admin);
 
       // Re-saving a form must not be a conflict with the user's own row, nor undo their verification.
       expect(dataOf(prisma.user.update)).not.toHaveProperty('emailVerifiedAt');
@@ -446,7 +507,9 @@ describe('UsersService', () => {
     it('refuses an email that belongs to somebody else in the mosque', async () => {
       prisma.user.findMany.mockResolvedValue([{ email: 'taken@noor.example', phone: null }]);
 
-      await expect(service.update(USER_ID, { email: 'taken@noor.example' })).rejects.toMatchObject({
+      await expect(
+        service.update(USER_ID, { email: 'taken@noor.example' }, admin),
+      ).rejects.toMatchObject({
         response: { code: 'EMAIL_TAKEN' },
       });
 
@@ -456,7 +519,7 @@ describe('UsersService', () => {
     it('excludes the user’s own row from the uniqueness check', async () => {
       prisma.user.update.mockResolvedValue(userRow());
 
-      await service.update(USER_ID, { phone: '+8801700000002' });
+      await service.update(USER_ID, { phone: '+8801700000002' }, admin);
 
       expect(whereOf(prisma.user.findMany)).toMatchObject({ id: { not: USER_ID } });
     });
@@ -464,11 +527,87 @@ describe('UsersService', () => {
     it('does not touch a user it cannot find', async () => {
       prisma.user.findFirst.mockResolvedValue(null);
 
-      await expect(service.update(OTHER_ID, { city: 'Sylhet' })).rejects.toBeInstanceOf(
+      await expect(service.update(OTHER_ID, { city: 'Sylhet' }, admin)).rejects.toBeInstanceOf(
         NotFoundException,
       );
 
       expect(prisma.user.update).not.toHaveBeenCalled();
+    });
+
+    describe('who may edit whom', () => {
+      /** A plain member: no `user.manage`, and `profile.manageOwn` from the base set. */
+      const member = actor({ id: USER_ID, role: Role.member, email: 'karim@noor.example' });
+
+      it('lets a member edit their own profile', async () => {
+        prisma.user.update.mockResolvedValue(userRow({ city: 'Sylhet' }));
+
+        const result = await service.update(USER_ID, { city: 'Sylhet' }, member);
+
+        // `profile.manageOwn` is a base permission, and this is the route it exists for. Gating the
+        // endpoint on `user.manage` alone would mean nobody could fix their own phone number.
+        expect(result.city).toBe('Sylhet');
+        expect(prisma.user.update).toHaveBeenCalled();
+      });
+
+      it('refuses a member editing somebody else, before reading the row', async () => {
+        await expect(service.update(OTHER_ID, { city: 'Sylhet' }, member)).rejects.toBeInstanceOf(
+          ForbiddenException,
+        );
+
+        // The refusal comes first, so an unauthorised caller cannot use this endpoint to learn who
+        // exists: a real id and a made-up one answer identically.
+        expect(prisma.user.findFirst).not.toHaveBeenCalled();
+        expect(prisma.user.update).not.toHaveBeenCalled();
+      });
+
+      it('lets an administrator edit somebody else', async () => {
+        prisma.user.findFirst.mockResolvedValue({
+          id: OTHER_ID,
+          mosqueId: MOSQUE_ID,
+          email: 'other@noor.example',
+        });
+        prisma.user.update.mockResolvedValue(userRow({ id: OTHER_ID }));
+
+        await service.update(OTHER_ID, { city: 'Sylhet' }, actor({ id: USER_ID }));
+
+        expect(prisma.user.update).toHaveBeenCalled();
+      });
+
+      it('refuses a suspended account editing even itself', async () => {
+        await expect(
+          service.update(USER_ID, { city: 'Sylhet' }, actor({ ...member, isActive: false })),
+        ).rejects.toBeInstanceOf(ForbiddenException);
+
+        // An inactive account resolves to no permissions at all, base ones included, so it has no
+        // `profile.manageOwn` to stand on.
+        expect(prisma.user.update).not.toHaveBeenCalled();
+      });
+
+      it('refuses without naming the rule it applied', async () => {
+        const logged = jest.spyOn(Logger.prototype, 'debug').mockImplementation(() => undefined);
+
+        await expect(service.update(OTHER_ID, { city: 'Sylhet' }, member)).rejects.toMatchObject({
+          response: { code: 'FORBIDDEN' },
+        });
+
+        // Same code and same sentence as every other refusal; the actor, the target and the scope go
+        // to the log where the caller cannot read them.
+        expect(logged).toHaveBeenCalledWith(expect.stringContaining(OTHER_ID));
+        logged.mockRestore();
+      });
+
+      it('cannot be used to change a role, whatever the caller sends', async () => {
+        prisma.user.update.mockResolvedValue(userRow());
+
+        // The DTO does not declare `role`, and the global pipe runs with `forbidNonWhitelisted`, so
+        // over HTTP this is a 400 before the service is reached. Should that ever change, the service
+        // must still not write the column — it is not in the payload it builds.
+        await service.update(USER_ID, { city: 'Sylhet', role: Role.super_admin } as never, member);
+
+        const data = dataOf(prisma.user.update);
+        expect(data).not.toHaveProperty('role');
+        expect(data).not.toHaveProperty('permissions');
+      });
     });
   });
 
@@ -754,6 +893,82 @@ describe('UsersService', () => {
 
       await expect(
         service.setPermissions(USER_ID, { permissions: [] }, actor()),
+      ).rejects.toMatchObject({ response: { code: 'USER_NOT_FOUND' } });
+
+      expect(prisma.user.update).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('setPositions', () => {
+    beforeEach(() => {
+      prisma.user.findFirst.mockResolvedValue({
+        id: USER_ID,
+        mosqueId: MOSQUE_ID,
+        email: 'karim@noor.example',
+      });
+    });
+
+    it('replaces the positions column and nothing else', async () => {
+      prisma.user.update.mockResolvedValue(userRow({ positions: [Position.president] }));
+
+      const result = await service.setPositions(
+        USER_ID,
+        { positions: [Position.president] },
+        actor(),
+      );
+
+      expect(result.positions).toEqual([Position.president]);
+
+      const data = dataOf(prisma.user.update);
+      expect(data).toEqual({ positions: [Position.president] });
+    });
+
+    it('holds several posts at once, because one person often does', async () => {
+      prisma.user.update.mockResolvedValue(
+        userRow({ positions: [Position.treasurer, Position.cashier] }),
+      );
+
+      const result = await service.setPositions(
+        USER_ID,
+        { positions: [Position.treasurer, Position.cashier] },
+        actor(),
+      );
+
+      expect(result.positions).toEqual([Position.treasurer, Position.cashier]);
+    });
+
+    it('clears every post when sent an empty array', async () => {
+      prisma.user.update.mockResolvedValue(userRow({ positions: [] }));
+
+      await service.setPositions(USER_ID, { positions: [] }, actor());
+
+      expect(dataOf(prisma.user.update).positions).toEqual([]);
+    });
+
+    it('does not touch the role, the permissions or the status', async () => {
+      prisma.user.update.mockResolvedValue(userRow({ positions: [Position.president] }));
+
+      const result = await service.setPositions(
+        USER_ID,
+        { positions: [Position.president] },
+        actor(),
+      );
+
+      // The point of the whole Role/Position split: a president is not an administrator. Assigning the
+      // post must leave the account exactly as authorised as it was.
+      const data = dataOf(prisma.user.update);
+      for (const field of ['role', 'permissions', 'deniedPermissions', 'isActive']) {
+        expect(data).not.toHaveProperty(field);
+      }
+      expect(result.role).toBe(Role.member);
+      expect(result.permissions).toEqual([]);
+    });
+
+    it('reports a missing user rather than creating one', async () => {
+      prisma.user.findFirst.mockResolvedValue(null);
+
+      await expect(
+        service.setPositions(USER_ID, { positions: [Position.imam] }, actor()),
       ).rejects.toMatchObject({ response: { code: 'USER_NOT_FOUND' } });
 
       expect(prisma.user.update).not.toHaveBeenCalled();

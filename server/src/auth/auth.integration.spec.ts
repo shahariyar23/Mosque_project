@@ -1909,14 +1909,32 @@ describe('Auth (integration)', () => {
       expect(response.body.code).toBe('UNAUTHENTICATED');
     });
 
-    it('opens them to any authenticated caller, since they declare no permission', async () => {
+    it('refuses an authenticated member the directory, since reading it needs user.view', async () => {
       seedMember();
       const { accessToken } = await signIn();
 
-      await request(server)
+      // Authenticated is not authorized. A member is a real signed-in person with no business reading
+      // everyone's email and phone number, so the second guard in the chain turns them away.
+      const response = await request(server)
+        .get('/api/v1/users')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .expect(403);
+
+      expect(response.body.code).toBe('FORBIDDEN');
+    });
+
+    it('opens the directory to a caller who holds user.view', async () => {
+      seedMember({ permissions: ['user.view'] });
+      const { accessToken } = await signIn();
+
+      // The grant is read from the row rather than from the token, which is what makes revoking it take
+      // effect on the next request instead of when the access token happens to expire.
+      const response = await request(server)
         .get('/api/v1/users')
         .set('Authorization', `Bearer ${accessToken}`)
         .expect(200);
+
+      expect(response.body.meta).toMatchObject({ page: 1, total: 1 });
     });
 
     it('refuses a member the routes that declare a permission', async () => {
