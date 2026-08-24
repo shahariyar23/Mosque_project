@@ -1,4 +1,4 @@
-import { Inject, Injectable, UnauthorizedException } from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PassportStrategy } from '@nestjs/passport';
 import { ExtractJwt, Strategy } from 'passport-jwt';
@@ -7,6 +7,7 @@ import { env, type AppConfig } from '../../config/app.config';
 import { PrismaService } from '../../prisma/prisma.service';
 import type { AuthenticatedUser } from '../../common/types/authenticated-user';
 import type { AccessTokenPayload } from '../types/access-token-payload';
+import { resolveSubject } from './resolve-subject';
 
 /**
  * Turns a verified bearer token into the person it belongs to.
@@ -19,19 +20,11 @@ import type { AccessTokenPayload } from '../types/access-token-payload';
  * compile-time registry — and it buys the property that matters: a suspended account, a changed role
  * and a revoked permission are all effective immediately, instead of lingering for the lifetime of a
  * token already in someone's hands.
+ *
+ * The lookup itself is `resolveSubject`, shared with the refresh strategy rather than written twice, so
+ * the two cannot drift into answering different questions about the same person. `passwordHash` is not
+ * in the columns it reads.
  */
-
-/** The columns an access decision is made from. `passwordHash` is not among them. */
-const SUBJECT_SELECT = {
-  id: true,
-  mosqueId: true,
-  email: true,
-  role: true,
-  permissions: true,
-  deniedPermissions: true,
-  isActive: true,
-} as const;
-
 @Injectable()
 export class JwtStrategy extends PassportStrategy(Strategy) {
   constructor(
@@ -49,21 +42,6 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
   }
 
   async validate(payload: AccessTokenPayload): Promise<AuthenticatedUser> {
-    const user = await this.prisma.user.findFirst({
-      // A soft-deleted account is gone as far as every read is concerned, authentication included.
-      where: { id: payload.sub, deletedAt: null },
-      select: SUBJECT_SELECT,
-    });
-
-    // Both refusals read the same to the caller. Whether the account was deleted, suspended or never
-    // existed is not something an unauthenticated request gets to learn.
-    if (!user || !user.isActive) {
-      throw new UnauthorizedException({
-        code: 'UNAUTHENTICATED',
-        message: 'Please sign in to continue.',
-      });
-    }
-
-    return user;
+    return resolveSubject(this.prisma, payload.sub);
   }
 }

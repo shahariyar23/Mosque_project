@@ -8,6 +8,7 @@ import { env, type AppConfig } from './config/app.config';
 import { validateEnvironment } from './config/env.validation';
 import { buildLoggerOptions } from './config/logger.config';
 import { AuthModule } from './auth/auth.module';
+import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
 import { PermissionsGuard } from './common/guards/permissions.guard';
 import { RolesGuard } from './common/guards/roles.guard';
 import { HealthModule } from './health/health.module';
@@ -25,16 +26,18 @@ import { UsersModule } from './users/users.module';
  * The rate-limit guard is bound globally rather than per-controller so an endpoint added later is
  * protected by default; auth-specific routes tighten it further with their own `@Throttle`.
  *
- * The two authorization guards are global for the same reason, and both pass through when a handler
- * carries no `@Roles()` or `@Permissions()` metadata — a route asks for authority by declaring it, and
- * a route that declares none is refused nothing. What they will not do is *assume* authority: with no
- * `request.user`, a route that declares a permission answers 401 rather than running.
+ * The three request guards are global, and the order they appear in below is the order Nest runs them:
+ * authenticate, then check the role, then check the permission. That sequence is the point —
+ * `RolesGuard` and `PermissionsGuard` read `request.user`, and only `JwtAuthGuard` puts it there.
  *
- * `JwtAuthGuard` is deliberately not registered here yet. Registering it would close every route,
- * including the Part 1 user endpoints, and nothing can issue a token until sign-in exists — the
- * alternative, a stub that fabricates a user, is exactly the kind of shortcut that survives into
- * production. It goes in this array *before* the two below when the auth endpoints land, because Nest
- * runs global guards in registration order and the authorization guards need `request.user` populated.
+ * `JwtAuthGuard` first means closed by default: a route is authenticated unless it says `@Public()`, so a
+ * new endpoint added in a later phase is protected by omission rather than exposed by it. The health
+ * probes and the three credential routes carry that marker; nothing else should.
+ *
+ * The two authorization guards then pass through when a handler carries no `@Roles()` or `@Permissions()`
+ * metadata — a route asks for authority by declaring it, and a route that declares none is refused
+ * nothing. What they will not do is *assume* authority: with no `request.user`, a route that declares a
+ * permission answers 401 rather than running.
  */
 @Module({
   imports: [
@@ -73,6 +76,7 @@ import { UsersModule } from './users/users.module';
   ],
   providers: [
     { provide: APP_GUARD, useClass: ThrottlerGuard },
+    { provide: APP_GUARD, useClass: JwtAuthGuard },
     { provide: APP_GUARD, useClass: RolesGuard },
     { provide: APP_GUARD, useClass: PermissionsGuard },
   ],

@@ -55,9 +55,10 @@ import { UsersService } from './users.service';
  * answers. There is no `if (user.role === ...)` anywhere in this file, and there should never be: a role
  * check in a controller is a second authorization model that nothing tests and nobody audits.
  *
- * The two assignment routes are closed already — no token, no `request.user`, and the guard refuses.
- * The Part 1 routes carry no permission metadata yet and stay open until the global authentication guard
- * arrives, which is why this module is not yet fit to run against real data.
+ * The two assignment routes are closed twice over: the global authentication guard refuses a request with
+ * no token, and `PermissionsGuard` then refuses one whose holder lacks the permission named. The Part 1
+ * routes carry no permission metadata, so they are closed by authentication alone — which is what the
+ * global guard being registered means, and why the directory is no longer reachable anonymously.
  */
 @ApiTags('Users')
 @Controller('users')

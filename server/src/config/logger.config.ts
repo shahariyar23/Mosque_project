@@ -70,24 +70,28 @@ const QUIET_ROUTES = new Set(['/health', '/health/live', '/health/ready', '/favi
 
 export function buildLoggerOptions(config: AppConfig): Params {
   const production = env.isProduction(config);
+  const silent = env.isTest(config);
 
   return {
     pinoHttp: {
-      level: env.isTest(config) ? 'silent' : production ? 'info' : 'debug',
+      level: silent ? 'silent' : production ? 'info' : 'debug',
 
       // Pretty output is a development convenience only; production stays newline-delimited JSON so
-      // a log shipper can parse it.
-      transport: production
-        ? undefined
-        : {
-            target: 'pino-pretty',
-            options: {
-              singleLine: true,
-              colorize: true,
-              translateTime: 'SYS:HH:MM:ss',
-              ignore: 'pid,hostname,req.headers,res.headers',
+      // a log shipper can parse it. Tests get neither: a transport is a worker thread, pino starts it
+      // during construction regardless of level, and one per application under test is a handle jest
+      // has to wait on for nothing — the level is already silent, so there is no output to prettify.
+      transport:
+        production || silent
+          ? undefined
+          : {
+              target: 'pino-pretty',
+              options: {
+                singleLine: true,
+                colorize: true,
+                translateTime: 'SYS:HH:MM:ss',
+                ignore: 'pid,hostname,req.headers,res.headers',
+              },
             },
-          },
 
       redact: { paths: REDACTED_PATHS, censor: '[Redacted]' },
 

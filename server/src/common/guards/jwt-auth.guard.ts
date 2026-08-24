@@ -19,8 +19,8 @@ import { unauthenticated } from './authorization';
  * authorization guards afterwards, so marking a route public does not quietly discard a permission
  * requirement written on the same handler.
  *
- * Not yet registered globally — see the note in `app.module.ts`. The one line that turns it on belongs
- * with the sign-in endpoint that makes a token obtainable, which is the next phase.
+ * Registered globally in `app.module.ts`, before the two authorization guards, so authentication is the
+ * default and a route opts out of it rather than into it.
  */
 @Injectable()
 export class JwtAuthGuard extends AuthGuard('jwt') {
@@ -45,8 +45,8 @@ export class JwtAuthGuard extends AuthGuard('jwt') {
    *
    * Every failure reads the same to the caller: a missing token, a forged signature and an expired one
    * are all "sign in again", and distinguishing them in the response would tell someone probing the
-   * API which of the three they achieved. The phase that issues tokens can add a distinct code for
-   * expiry if the client needs to tell "refresh me" from "sign in again".
+   * API which of the three they achieved. A client does not need to be told: it calls
+   * `POST /auth/refresh` on any 401, and finds out from *that* answer whether the session is still alive.
    */
   handleRequest<TUser = AuthenticatedUser>(error: unknown, user: TUser | false): TUser {
     if (error || !user) throw unauthenticated();
