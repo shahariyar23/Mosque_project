@@ -16,6 +16,8 @@ import { PermissionsModule } from './permissions/permissions.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { RolesModule } from './roles/roles.module';
 import { UsersModule } from './users/users.module';
+import { MosqueModule } from './mosque/mosque.module';
+import { VolunteersModule } from './volunteers/volunteers.module';
 
 /**
  * The composition root.
@@ -73,6 +75,8 @@ import { UsersModule } from './users/users.module';
     UsersModule,
     RolesModule,
     PermissionsModule,
+    MosqueModule,
+    VolunteersModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: ThrottlerGuard },

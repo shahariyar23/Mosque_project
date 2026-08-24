@@ -38,6 +38,9 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
     'booking.view',
     'booking.manage',
     'service.manage',
+    'facility.create',
+    'facility.update',
+    'facility.delete',
   ],
 
   // The finance owner. Holds `workflow.review` but not `workflow.approve`: a treasurer prepares a

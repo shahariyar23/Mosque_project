@@ -91,6 +91,7 @@ model Mosque {
   updatedAt DateTime @updatedAt @db.Timestamptz
 
   settings  MosqueSettings?
+  facilities Facility[]
   users     User[]
   auditLogs AuditLog[]
 
@@ -137,6 +138,23 @@ model MosqueSettings {
   updatedAt DateTime @updatedAt @db.Timestamptz
 
   @@map("mosque_settings")
+}
+
+model Facility {
+  id       String @id @default(uuid()) @db.Uuid
+  mosqueId String @db.Uuid
+  mosque   Mosque @relation(fields: [mosqueId], references: [id], onDelete: Cascade)
+
+  name        String  @db.VarChar(160)
+  description String? @db.Text
+  isAvailable Boolean @default(true)
+  capacity    Int?
+
+  createdAt DateTime @default(now()) @db.Timestamptz
+  updatedAt DateTime @updatedAt @db.Timestamptz
+
+  @@index([mosqueId, createdAt])
+  @@map("facilities")
 }
 
 // ---------------------------------------------------------------------------
@@ -195,6 +213,9 @@ model User {
 
   refreshTokens RefreshToken[]
   auditLogs     AuditLog[]
+  /// At most one: volunteering is something a person either does or does not, not a list of
+  /// enrolments. Optional because most members never volunteer.
+  volunteer     Volunteer?
 
   // Unique per mosque, not globally: two mosques may each have a member at the same address.
   @@unique([mosqueId, email])
@@ -232,6 +253,59 @@ model RefreshToken {
   @@index([userId, revokedAt])
   @@index([expiresAt])
   @@map("refresh_tokens")
+}
+
+// ---------------------------------------------------------------------------
+// Volunteering
+//
+// A volunteer is a User who has joined the roster, not a kind of account. There is deliberately no
+// `volunteer` role and no second person record: the row below hangs off a User and holds only what
+// volunteering adds — what they can do, when they are free, and whether they are currently serving.
+// So the same person appears in the members directory, possibly on the committee, and here, and
+// their name, email and phone are stored once, on `User`.
+//
+// Nothing here affects a permission check. `Volunteer.status` and `User.role` are independent: the
+// treasurer who helps at iftar is `role = treasurer` with an active volunteer row, and taking them
+// off the roster must not touch their role.
+// ---------------------------------------------------------------------------
+
+/// `on_leave` exists because the roster already distinguishes it: someone travelling for three
+/// months is not inactive, and a coordinator who had only two states would delete the row instead.
+enum VolunteerStatus {
+  active
+  inactive
+  on_leave
+}
+
+model Volunteer {
+  id String @id @default(uuid()) @db.Uuid
+  /// Unique, so one person cannot be enrolled twice. The constraint is in the database rather than
+  /// only in the service, because two concurrent enrolments would both pass a service-level check.
+  /// No `mosqueId`: this row is only ever reached through its user, whose `mosqueId` is the single
+  /// source of tenancy — the same reason `RefreshToken` carries none.
+  userId String @unique @db.Uuid
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  status VolunteerStatus @default(active)
+
+  /// Free text, because the roster is written by people rather than chosen from a list:
+  /// "Event management", "First aid, driving".
+  skills String? @db.VarChar(500)
+  /// When they are free, in their own words — "Friday", "weekends after Asr".
+  availability String? @db.VarChar(255)
+  /// The coordinator's notes. Internal: never part of any public projection.
+  notes String? @db.Text
+
+  /// When they joined the roster, which is not when the row was written — a volunteer of ten years
+  /// may be entered today.
+  joinedAt DateTime @default(now()) @db.Timestamptz
+
+  createdAt DateTime @default(now()) @db.Timestamptz
+  updatedAt DateTime @updatedAt @db.Timestamptz
+
+  // Serves the roster list, which filters on status and reads newest first.
+  @@index([status, createdAt])
+  @@map("volunteers")
 }
 
 // ---------------------------------------------------------------------------

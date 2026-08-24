@@ -3,6 +3,8 @@ import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useLanguage, translations } from "@/components/language-provider";
+import { useAuth } from "@/components/auth-provider";
+import { UserMenu } from "@/components/account/UserMenu";
 
 const links = [
   { label: "Home", href: "/", section: "home" },
@@ -17,6 +19,7 @@ const links = [
 export function SiteHeader() {
   const [open, setOpen] = useState(false);
   const { language, setLanguage } = useLanguage();
+  const { session } = useAuth();
   const [scrolled, setScrolled] = useState(false);
   const [hidden, setHidden] = useState(false);
   const prevY = useRef(0);
@@ -124,27 +127,37 @@ export function SiteHeader() {
           >
             {language === "bn" ? "English" : "বাংলা"}
           </button>
-          <Link
-            href="/signin"
-            className={`nav-link relative px-1 ${pathname === "/signin" ? "active" : ""}`}
-            aria-current={pathname === "/signin" ? "page" : undefined}
-          >
-            <span className="nav-link-label">{t("Sign In")}</span>
-            <span className="nav-underline" aria-hidden="true" />
-          </Link>
-          <Link href="/signup" className="donate-btn relative inline-block">
-            {t("Sign Up")}
-          </Link>
+          
+          {session ? (
+            <UserMenu />
+          ) : (
+            <>
+              <Link
+                href="/signin"
+                className={`nav-link relative px-1 ${pathname === "/signin" ? "active" : ""}`}
+                aria-current={pathname === "/signin" ? "page" : undefined}
+              >
+                <span className="nav-link-label">{t("Sign In")}</span>
+                <span className="nav-underline" aria-hidden="true" />
+              </Link>
+              <Link href="/signup" className="donate-btn relative inline-block">
+                {t("Sign Up")}
+              </Link>
+            </>
+          )}
         </div>
 
-        <button
-          onClick={() => setOpen((value) => !value)}
-          className="grid h-10 w-10 place-items-center border border-white/40 text-xl lg:hidden"
-          aria-expanded={open}
-          aria-label={open ? "Close navigation" : "Open navigation"}
-        >
-          {open ? "×" : "☰"}
-        </button>
+        <div className="flex items-center gap-4 lg:hidden">
+          {session && <UserMenu />}
+          <button
+            onClick={() => setOpen((value) => !value)}
+            className="grid h-10 w-10 place-items-center border border-white/40 text-xl"
+            aria-expanded={open}
+            aria-label={open ? "Close navigation" : "Open navigation"}
+          >
+            {open ? "×" : "☰"}
+          </button>
+        </div>
       </nav>
 
       <div
@@ -169,19 +182,24 @@ export function SiteHeader() {
           >
             {language === "bn" ? "English" : "বাংলা"}
           </button>
-          <Link
-            href="/signup"
-            className="mt-5 block w-full bg-[#c79a45] px-4 py-3 text-center font-semibold text-[#15251f]"
-          >
-            {t("Sign Up")}
-          </Link>
-          <Link
-            href="/signin"
-            onClick={() => setOpen(false)}
-            className="mt-3 block w-full border border-white/35 px-4 py-3 text-center text-sm font-medium"
-          >
-            {t("Sign In")}
-          </Link>
+          
+          {!session && (
+            <>
+              <Link
+                href="/signup"
+                className="mt-5 block w-full bg-[#c79a45] px-4 py-3 text-center font-semibold text-[#15251f]"
+              >
+                {t("Sign Up")}
+              </Link>
+              <Link
+                href="/signin"
+                onClick={() => setOpen(false)}
+                className="mt-3 block w-full border border-white/35 px-4 py-3 text-center text-sm font-medium"
+              >
+                {t("Sign In")}
+              </Link>
+            </>
+          )}
         </div>
       </div>
     </header>
