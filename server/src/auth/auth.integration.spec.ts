@@ -1349,6 +1349,81 @@ describe('Auth (integration)', () => {
   });
 
   // =========================================================================
+  // CHANGE PASSWORD
+  // =========================================================================
+
+  describe('POST /api/v1/auth/change-password', () => {
+    it('changes the authenticated user’s password and revokes their refresh session', async () => {
+      const member = seedMember();
+      const { accessToken, refreshToken } = await signIn();
+
+      const response = await request(server)
+        .post('/api/v1/auth/change-password')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ currentPassword: PASSWORD, newPassword: 'NewStrongPassword456!' })
+        .expect(200);
+
+      expect(response.body).toEqual({ success: true, message: 'Password changed successfully' });
+      expect(JSON.stringify(response.body)).not.toContain(member.passwordHash);
+      expect(await argon2.verify(member.passwordHash, 'NewStrongPassword456!')).toBe(true);
+      expect(database.refreshTokens.every((row) => row.revokedAt !== null)).toBe(true);
+
+      await request(server)
+        .post('/api/v1/auth/refresh')
+        .set('Cookie', cookieHeader(refreshToken))
+        .expect(401);
+      await request(server)
+        .post('/api/v1/auth/login')
+        .send({ email: member.email, password: PASSWORD })
+        .expect(401);
+      await request(server)
+        .post('/api/v1/auth/login')
+        .send({ email: member.email, password: 'NewStrongPassword456!' })
+        .expect(200);
+    });
+
+    it('rejects a wrong current password', async () => {
+      seedMember();
+      const { accessToken } = await signIn();
+
+      await request(server)
+        .post('/api/v1/auth/change-password')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ currentPassword: 'wrong-password', newPassword: 'NewStrongPassword456!' })
+        .expect(401);
+    });
+
+    it('rejects an invalid new password', async () => {
+      seedMember();
+      const { accessToken } = await signIn();
+
+      await request(server)
+        .post('/api/v1/auth/change-password')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ currentPassword: PASSWORD, newPassword: 'short' })
+        .expect(400);
+    });
+
+    it('rejects a new password that matches the current password', async () => {
+      seedMember();
+      const { accessToken } = await signIn();
+
+      await request(server)
+        .post('/api/v1/auth/change-password')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ currentPassword: PASSWORD, newPassword: PASSWORD })
+        .expect(400);
+    });
+
+    it('refuses an anonymous request', async () => {
+      await request(server)
+        .post('/api/v1/auth/change-password')
+        .send({ currentPassword: PASSWORD, newPassword: 'NewStrongPassword456!' })
+        .expect(401);
+    });
+  });
+
+  // =========================================================================
   // LOGOUT
   // =========================================================================
 

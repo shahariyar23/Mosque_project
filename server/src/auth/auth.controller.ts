@@ -40,6 +40,7 @@ import {
   PasswordRecoveryEnvelopeDto,
   RegisterEnvelopeDto,
 } from './dto/auth-response.dto';
+import { ChangePasswordDto } from './dto/change-password.dto';
 import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
@@ -177,6 +178,33 @@ export class AuthController {
     await this.auth.resetPassword(dto);
 
     return { success: true, message: 'Password reset successfully' };
+  }
+
+  @Post('change-password')
+  @HttpCode(HttpStatus.OK)
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
+  @ApiBearerAuth('access-token')
+  @ApiOperation({
+    summary: 'Change the signed-in user’s password.',
+    description:
+      'Requires the current password and invalidates every refresh-token session after a successful change.',
+  })
+  @ApiBody({ type: ChangePasswordDto })
+  @ApiOkResponse({ description: 'The password was changed.', type: PasswordRecoveryEnvelopeDto })
+  @ApiBadRequestResponse({
+    description:
+      'The request is malformed, the new password is weak, or both passwords are the same.',
+  })
+  @ApiUnauthorizedResponse({
+    description: 'No valid access token was sent, or the current password is incorrect.',
+  })
+  async changePassword(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() dto: ChangePasswordDto,
+  ): Promise<PasswordRecoveryEnvelopeDto> {
+    await this.auth.changePassword(user, dto);
+
+    return { success: true, message: 'Password changed successfully' };
   }
 
   /**

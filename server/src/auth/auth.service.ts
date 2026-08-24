@@ -20,6 +20,7 @@ import { UserResponseDto } from '../users/dto/user-response.dto';
 import { USER_SELECT } from '../users/types/user.types';
 import { UsersService } from '../users/users.service';
 import { AuthProfileDto, type AuthSessionDto } from './dto/auth-response.dto';
+import type { ChangePasswordDto } from './dto/change-password.dto';
 import type { ForgotPasswordDto } from './dto/forgot-password.dto';
 import type { LoginDto } from './dto/login.dto';
 import type { RegisterDto } from './dto/register.dto';
@@ -209,6 +210,52 @@ export class AuthService {
       });
 
       if (consumed.count !== 1) throw invalidResetToken();
+
+      await tx.refreshToken.updateMany({
+        where: { userId: user.id, revokedAt: null },
+        data: { revokedAt: now },
+      });
+    });
+  }
+
+  /**
+   * Changes the authenticated person's password and signs every browser session out on its next refresh.
+   * The subject comes from the verified JWT, never from a request-body user id.
+   */
+  async changePassword(user: AuthenticatedUser, dto: ChangePasswordDto): Promise<void> {
+    if (dto.currentPassword === dto.newPassword) {
+      throw new BadRequestException({
+        code: 'PASSWORD_UNCHANGED',
+        message: 'The new password must be different from the current password.',
+      });
+    }
+
+    const credentials = await this.prisma.user.findFirst({
+      where: { id: user.id, deletedAt: null, isActive: true },
+      select: { passwordHash: true },
+    });
+
+    if (!credentials || !(await verifyPassword(credentials.passwordHash, dto.currentPassword))) {
+      throw invalidCurrentPassword();
+    }
+
+    const passwordHash = await argon2.hash(dto.newPassword, { type: argon2.argon2id });
+    const now = new Date();
+
+    await this.prisma.$transaction(async (tx) => {
+      // Guard the write with the hash just verified. A concurrent password reset or change makes this
+      // request fail rather than silently replacing a password the caller has not verified against.
+      const updated = await tx.user.updateMany({
+        where: {
+          id: user.id,
+          passwordHash: credentials.passwordHash,
+          deletedAt: null,
+          isActive: true,
+        },
+        data: { passwordHash },
+      });
+
+      if (updated.count !== 1) throw invalidCurrentPassword();
 
       await tx.refreshToken.updateMany({
         where: { userId: user.id, revokedAt: null },
@@ -663,6 +710,14 @@ function invalidResetToken(): UnauthorizedException {
   return new UnauthorizedException({
     code: 'INVALID_RESET_TOKEN',
     message: 'The password reset token is invalid or expired.',
+  });
+}
+
+/** The current password is wrong, missing from a live account, or changed concurrently. */
+function invalidCurrentPassword(): UnauthorizedException {
+  return new UnauthorizedException({
+    code: 'INVALID_CURRENT_PASSWORD',
+    message: 'The current password is incorrect.',
   });
 }
 

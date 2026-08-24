@@ -14,6 +14,7 @@ import { USER_SELECT, type SelectedUser } from '../users/types/user.types';
 import { UsersService } from '../users/users.service';
 import { AuthService } from './auth.service';
 import { AuthController } from './auth.controller';
+import type { ChangePasswordDto } from './dto/change-password.dto';
 import type { ForgotPasswordDto } from './dto/forgot-password.dto';
 import type { LoginDto } from './dto/login.dto';
 import type { RegisterDto } from './dto/register.dto';
@@ -124,6 +125,10 @@ function forgotPasswordDto(over: Partial<ForgotPasswordDto> = {}): ForgotPasswor
 
 function resetPasswordDto(over: Partial<ResetPasswordDto> = {}): ResetPasswordDto {
   return { token: 'a-reset-token-that-is-never-stored-raw', newPassword: PLAINTEXT, ...over };
+}
+
+function changePasswordDto(over: Partial<ChangePasswordDto> = {}): ChangePasswordDto {
+  return { currentPassword: PLAINTEXT, newPassword: 'A-new-strong-password-456!', ...over };
 }
 
 /** The caller as `JwtStrategy` builds one: resolved from the row, never from a request body. */
@@ -645,6 +650,60 @@ describe('AuthService', () => {
         response: { code: 'INVALID_RESET_TOKEN' },
       });
       expect(prisma.refreshToken.updateMany).not.toHaveBeenCalled();
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // Change password
+  // ---------------------------------------------------------------------------
+
+  describe('changePassword', () => {
+    beforeEach(() => {
+      prisma.user.findFirst.mockResolvedValue({ passwordHash: HASHED });
+    });
+
+    it('hashes the replacement password and revokes every refresh session', async () => {
+      const dto = changePasswordDto();
+
+      await expect(service.changePassword(subject(), dto)).resolves.toBeUndefined();
+
+      expect(verifyMock).toHaveBeenCalledWith(HASHED, dto.currentPassword);
+      expect(hashMock).toHaveBeenCalledWith(dto.newPassword, { type: argon2.argon2id });
+      expect(dataOf(prisma.user.updateMany)).toEqual({ passwordHash: HASHED });
+      expect(whereOf(prisma.user.updateMany)).toMatchObject({
+        id: USER_ID,
+        passwordHash: HASHED,
+        deletedAt: null,
+        isActive: true,
+      });
+      expect(prisma.refreshToken.updateMany).toHaveBeenCalledWith({
+        where: { userId: USER_ID, revokedAt: null },
+        data: { revokedAt: expect.any(Date) },
+      });
+    });
+
+    it('rejects a wrong current password without changing credentials or sessions', async () => {
+      verifyMock.mockResolvedValue(false);
+
+      await expect(service.changePassword(subject(), changePasswordDto())).rejects.toBeInstanceOf(
+        UnauthorizedException,
+      );
+      expect(prisma.user.updateMany).not.toHaveBeenCalled();
+      expect(prisma.refreshToken.updateMany).not.toHaveBeenCalled();
+    });
+
+    it('rejects a new password that matches the current password', async () => {
+      await expect(
+        service.changePassword(subject(), changePasswordDto({ newPassword: PLAINTEXT })),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(verifyMock).not.toHaveBeenCalled();
+      expect(prisma.user.updateMany).not.toHaveBeenCalled();
+    });
+
+    it('does not return a password hash', async () => {
+      const result = await service.changePassword(subject(), changePasswordDto());
+
+      expect(result).toBeUndefined();
     });
   });
 
