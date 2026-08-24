@@ -509,17 +509,49 @@ export class AuthService {
   }
 
   /**
-   * The present client origin is the only existing configuration that names where browser routes live.
-   * A future email provider receives this complete URL at this one boundary, not from a controller.
+   * Builds the link a person clicks, from the configured browser origin.
+   *
+   * A future email provider receives this complete URL at the one boundary below, not from a
+   * controller — the token should exist in as few places as possible.
    */
   private passwordResetUrl(token: string): string {
-    const url = new URL('/reset-password', env.corsOrigins(this.config)[0]);
+    const url = new URL('/reset-password', env.webUrl(this.config));
     url.searchParams.set('token', token);
     return url.toString();
   }
 
-  /** TODO: hand this URL to the selected email-delivery service. Never log it. */
-  private queuePasswordResetDelivery(_url: string): void {}
+  /**
+   * The delivery boundary, still the seam an email provider will plug into.
+   *
+   * Email needs a provider, credentials and a template, none of which authentication should be
+   * choosing on its own — so nothing is sent here yet. What this must not do is stay *quiet*: a
+   * caller that receives "if the account exists, a link has been sent" while nothing was sent looks
+   * exactly like a working feature from the outside, and the mismatch would surface as an
+   * unreproducible support report rather than as a bug.
+   *
+   * In development the link goes to the console, because there is nowhere else for it to go. Only a
+   * SHA-256 of the token is ever stored, so it cannot be read back out of the database afterwards —
+   * without this branch the flow is not completable at all, not even by the person building it.
+   *
+   * Outside development the URL is never written anywhere. It carries the reset token, and a token in
+   * a log file is a credential in a log file: readable by anyone with log access, for as long as
+   * retention lasts, which for a 30-minute window is long enough to matter. The guard is on
+   * `development` specifically rather than on "not production", so `test` and any other environment
+   * record only the fact of the request.
+   */
+  private queuePasswordResetDelivery(url: string): void {
+    if (env.nodeEnv(this.config) === 'development') {
+      this.logger.warn(
+        `Password reset link (development only — never logged in any other environment): ${url}`,
+      );
+      return;
+    }
+
+    this.logger.warn(
+      'Password reset requested, but no delivery channel is configured — the link was discarded ' +
+        'and nobody received it. Implement queuePasswordResetDelivery before relying on this flow.',
+    );
+  }
 
   /**
    * Works out which mosque a new account belongs to.

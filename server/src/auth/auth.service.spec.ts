@@ -167,6 +167,11 @@ describe('AuthService', () => {
   let jwt: JwtService;
   let logged: jest.SpyInstance;
   let warned: jest.SpyInstance;
+  /**
+   * Mutable so a test can move the service into another environment. Only the password-reset delivery
+   * seam behaves differently across environments, and the difference is the point of two tests below.
+   */
+  let nodeEnv: 'development' | 'test' | 'production';
 
   beforeEach(async () => {
     prisma = {
@@ -207,6 +212,8 @@ describe('AuthService', () => {
     logged = jest.spyOn(Logger.prototype, 'log').mockImplementation(() => undefined);
     warned = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
 
+    nodeEnv = 'test';
+
     const moduleRef = await Test.createTestingModule({
       providers: [
         AuthService,
@@ -220,7 +227,7 @@ describe('AuthService', () => {
           useValue: {
             get: (key: string): unknown =>
               ({
-                NODE_ENV: 'test',
+                NODE_ENV: nodeEnv,
                 JWT_ACCESS_SECRET: ACCESS_SECRET,
                 JWT_ACCESS_EXPIRES_IN: '15m',
                 JWT_REFRESH_SECRET: REFRESH_SECRET,
@@ -240,6 +247,11 @@ describe('AuthService', () => {
     logged.mockRestore();
     warned.mockRestore();
   });
+
+  /** Everything warned so far, as one string, so an assertion does not depend on call ordering. */
+  function warnings(): string {
+    return warned.mock.calls.map((call: unknown[]) => String(call[0])).join('\n');
+  }
 
   // ---------------------------------------------------------------------------
   // Register
@@ -547,6 +559,39 @@ describe('AuthService', () => {
       const result = await service.forgotPassword(forgotPasswordDto());
 
       expect(result).toBeUndefined();
+    });
+
+    it('prints a usable reset link to the log in development, where nothing else can deliver it', async () => {
+      nodeEnv = 'development';
+
+      await service.forgotPassword(forgotPasswordDto());
+
+      const link = /https?:\/\/\S+/.exec(warnings())?.[0] ?? '';
+      expect(link).toContain('/reset-password?token=');
+
+      // The point of the assertion is that the printed link *works*: the token in its query string
+      // has to be the one the stored hash will accept. A test that only checked a URL was logged
+      // would still pass if the link carried a different token than the row, which is the one way
+      // this can be broken while looking correct.
+      expect(sha256(new URL(link).searchParams.get('token') ?? '')).toBe(
+        dataOf(prisma.user.update).passwordResetTokenHash,
+      );
+    });
+
+    it('keeps the link and the token out of the log everywhere else', async () => {
+      for (const environment of ['test', 'production'] as const) {
+        warned.mockClear();
+        nodeEnv = environment;
+
+        await service.forgotPassword(forgotPasswordDto());
+
+        expect(warnings()).not.toContain('reset-password');
+        expect(warnings()).not.toContain('token=');
+        // But it still says something. A channel that sends nothing while the caller is told a link
+        // went out looks like a working feature from the outside, and would be reported as a
+        // mysterious missing email rather than as a missing implementation.
+        expect(warnings()).toContain('no delivery channel is configured');
+      }
     });
   });
 

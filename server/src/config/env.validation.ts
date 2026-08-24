@@ -85,6 +85,24 @@ export class EnvironmentVariables {
   @IsNotEmpty()
   CORS_ORIGINS = 'http://localhost:3000';
 
+  /**
+   * Where the browser application lives, used to build links that are sent to people rather than
+   * returned to a caller — today only the password-reset link.
+   *
+   * Separate from `CORS_ORIGINS` on purpose. That variable is a security allow-list and is routinely
+   * several entries long: a staging host, a preview deployment, a second local port. Reading a link
+   * base out of it means the address in someone's inbox is decided by whichever origin happens to be
+   * written first, which is not a property anyone maintaining that list would expect to be choosing.
+   * Optional, because falling back to the first origin is right for a single-origin development
+   * setup and keeps existing `.env` files working; set it explicitly anywhere that matters.
+   */
+  @IsOptional()
+  @IsString()
+  @Matches(/^https?:\/\/[^\s]+$/, {
+    message: 'APP_WEB_URL must be an absolute http:// or https:// URL, e.g. https://noor.example',
+  })
+  APP_WEB_URL?: string;
+
   @IsInt()
   @Min(1)
   THROTTLE_TTL = 60;
@@ -129,6 +147,9 @@ export function validateEnvironment(raw: Record<string, unknown>): EnvironmentVa
       THROTTLE_LIMIT: toInt(raw.THROTTLE_LIMIT, defaults.THROTTLE_LIMIT),
       SWAGGER_ENABLED: toBoolean(raw.SWAGGER_ENABLED, defaults.SWAGGER_ENABLED),
       COOKIE_DOMAIN: raw.COOKIE_DOMAIN === '' ? undefined : raw.COOKIE_DOMAIN,
+      // An empty value has to become absent rather than fail the URL check, so that a commented-out
+      // or blank line in .env means "use the fallback" instead of stopping boot.
+      APP_WEB_URL: raw.APP_WEB_URL === '' ? undefined : raw.APP_WEB_URL,
     },
     { enableImplicitConversion: false, exposeDefaultValues: true },
   );

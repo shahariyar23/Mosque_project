@@ -105,6 +105,8 @@ type UserRow = {
   newsletter: boolean;
   emailVerifiedAt: Date | null;
   lastLoginAt: Date | null;
+  passwordResetTokenHash: string | null;
+  passwordResetExpiresAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
   deletedAt: Date | null;
@@ -189,6 +191,14 @@ function matchesField(actual: unknown, expected: unknown): boolean {
       }
       case 'mode':
         // Consumed by `contains` above.
+        break;
+      case 'gt':
+        // Only `gt`, and only because the password-reset lookup filters on an expiry still in the
+        // future. The rest of the comparison family stays unimplemented on purpose: an operator this
+        // fake silently accepted but did not apply would match every row, and a test asserting that
+        // an *expired* token is refused would then pass while the filter did nothing.
+        if (!(actual instanceof Date) || !(operand instanceof Date)) return false;
+        if (actual.getTime() <= operand.getTime()) return false;
         break;
       default:
         // Loud rather than lenient: a filter this fake does not implement would otherwise match
@@ -332,6 +342,16 @@ class InMemoryDatabase {
       Object.assign(row, defined(args.data), { updatedAt: new Date() });
       return Promise.resolve(project(row, args.select));
     },
+
+    /**
+     * Returns a count, because the password-reset path treats it as the arbitration: the token is
+     * only accepted if exactly one row was still holding it when the write landed.
+     */
+    updateMany: (args: { where: unknown; data: Row }): Promise<{ count: number }> => {
+      const matched = this.matchingUsers(args.where);
+      for (const row of matched) Object.assign(row, defined(args.data), { updatedAt: new Date() });
+      return Promise.resolve({ count: matched.length });
+    },
   };
 
   readonly mosque = {
@@ -380,14 +400,22 @@ class InMemoryDatabase {
   };
 
   /**
-   * The array form only, which is all this project uses.
+   * Both of Prisma's shapes, because this project now uses both.
    *
-   * The operations have already begun by the time they arrive — a fake has no lazy promise — so this
-   * is not atomic. It does not need to be: what the rotation test asserts is the arbitration in
-   * `updateMany`, which is a single statement either way.
+   * The array form's operations have already begun by the time they arrive — a fake has no lazy
+   * promise — so it is not atomic. It does not need to be: what the rotation test asserts is the
+   * arbitration in `updateMany`, which is a single statement either way.
+   *
+   * The callback form is what the password-reset path uses, and it is handed `this`: the interactive
+   * client Prisma passes a real transaction is the same set of delegates, so a test that substituted
+   * something narrower here would be exercising a different object than production does. Nothing
+   * rolls back on a throw, which is worth knowing when reading a failure — but every write in that
+   * transaction is guarded by the `updateMany` count rather than by the rollback.
    */
-  $transaction(operations: Promise<unknown>[]): Promise<unknown[]> {
-    return Promise.all(operations);
+  $transaction(
+    work: ((client: InMemoryDatabase) => Promise<unknown>) | Promise<unknown>[],
+  ): Promise<unknown> {
+    return typeof work === 'function' ? work(this) : Promise.all(work);
   }
 
   isHealthy(): Promise<boolean> {
@@ -433,6 +461,8 @@ class InMemoryDatabase {
       newsletter: false,
       emailVerifiedAt: null,
       lastLoginAt: null,
+      passwordResetTokenHash: null,
+      passwordResetExpiresAt: null,
       createdAt: now,
       updatedAt: now,
       deletedAt: null,
@@ -1427,6 +1457,363 @@ describe('Auth (integration)', () => {
       await request(server)
         .post('/api/v1/auth/refresh')
         .set('Cookie', cookieHeader(theirs.refreshToken))
+        .expect(200);
+    });
+  });
+
+  // =========================================================================
+  // FORGOT PASSWORD
+  // =========================================================================
+
+  describe('POST /api/v1/auth/forgot-password', () => {
+    /** Minutes from now until a row's reset token expires. */
+    function ttlMinutesOf(row: UserRow): number {
+      if (row.passwordResetExpiresAt === null) throw new Error('no expiry was set');
+      return (row.passwordResetExpiresAt.getTime() - Date.now()) / 60_000;
+    }
+
+    it('stores a token only as a SHA-256 hash, with a thirty-minute window', async () => {
+      const member = seedMember();
+
+      await request(server)
+        .post('/api/v1/auth/forgot-password')
+        .send({ email: 'karim@noor.example' })
+        .expect(200);
+
+      const stored = member.passwordResetTokenHash;
+      expect(stored).toMatch(/^[0-9a-f]{64}$/);
+      expect(ttlMinutesOf(member)).toBeGreaterThan(29);
+      expect(ttlMinutesOf(member)).toBeLessThanOrEqual(30);
+    });
+
+    it('keeps the token and the link out of the response entirely', async () => {
+      const member = seedMember();
+
+      const response = await request(server)
+        .post('/api/v1/auth/forgot-password')
+        .send({ email: 'karim@noor.example' })
+        .expect(200);
+
+      // The only thing that reaches the caller is the generic sentence. The hash is in the row, so
+      // the body cannot contain the token — but it must not carry a link, an expiry or an id either,
+      // any of which would make a reset completable by whoever sent the request.
+      expect(response.body).toEqual({
+        success: true,
+        message: 'If the account exists, a password reset link has been sent.',
+      });
+      expect(JSON.stringify(response.body)).not.toContain(member.id);
+    });
+
+    it('answers an unknown address exactly as it answers a known one', async () => {
+      seedMember();
+
+      const known = await request(server)
+        .post('/api/v1/auth/forgot-password')
+        .send({ email: 'karim@noor.example' })
+        .expect(200);
+
+      const unknown = await request(server)
+        .post('/api/v1/auth/forgot-password')
+        .send({ email: 'nobody@noor.example' })
+        .expect(200);
+
+      // The whole point of the endpoint's uniformity: a sign-up form that refuses duplicates already
+      // tells an attacker which addresses exist, and this must not confirm it a second time.
+      expect(unknown.body).toEqual(known.body);
+    });
+
+    it('answers a disabled or soft-deleted account the same way, and issues it nothing', async () => {
+      const disabled = seedMember({ email: 'off@noor.example', isActive: false });
+      const deleted = seedMember({ email: 'gone@noor.example', deletedAt: new Date() });
+
+      for (const email of ['off@noor.example', 'gone@noor.example']) {
+        const response = await request(server)
+          .post('/api/v1/auth/forgot-password')
+          .send({ email })
+          .expect(200);
+
+        expect(response.body.message).toBe(
+          'If the account exists, a password reset link has been sent.',
+        );
+      }
+
+      // Indistinguishable from the outside, and no usable token behind it either way.
+      expect(disabled.passwordResetTokenHash).toBeNull();
+      expect(deleted.passwordResetTokenHash).toBeNull();
+    });
+
+    it('accepts a phone number as the identifier', async () => {
+      const member = seedMember();
+
+      await request(server)
+        .post('/api/v1/auth/forgot-password')
+        .send({ phone: '+8801700000001' })
+        .expect(200);
+
+      expect(member.passwordResetTokenHash).toMatch(/^[0-9a-f]{64}$/);
+    });
+
+    it('refuses a request that names neither identifier, or both', async () => {
+      seedMember();
+
+      for (const body of [{}, { email: 'karim@noor.example', phone: '+8801700000001' }]) {
+        const response = await request(server)
+          .post('/api/v1/auth/forgot-password')
+          .send(body)
+          .expect(400);
+
+        expect(response.body.code).toBe('IDENTIFIER_REQUIRED');
+      }
+    });
+
+    it('replaces an outstanding token rather than adding a second one', async () => {
+      const member = seedMember();
+
+      await request(server)
+        .post('/api/v1/auth/forgot-password')
+        .send({ email: 'karim@noor.example' })
+        .expect(200);
+      const first = member.passwordResetTokenHash;
+
+      await request(server)
+        .post('/api/v1/auth/forgot-password')
+        .send({ email: 'karim@noor.example' })
+        .expect(200);
+      const second = member.passwordResetTokenHash;
+
+      // One live token per account. Asking twice has to retire the first link, or a stale email
+      // stays usable for its full window after the person has already asked for a new one.
+      expect(second).not.toBe(first);
+      expect(second).toMatch(/^[0-9a-f]{64}$/);
+    });
+
+    it('rejects a body carrying anything the DTO does not declare', async () => {
+      seedMember();
+
+      const response = await request(server)
+        .post('/api/v1/auth/forgot-password')
+        .send({ email: 'karim@noor.example', newPassword: 'SmuggledPassword1' })
+        .expect(400);
+
+      expect(response.body.errors).toMatchObject({
+        newPassword: ['property newPassword should not exist'],
+      });
+    });
+
+    it('rate-limits after five attempts in the window', async () => {
+      seedMember();
+
+      for (let attempt = 0; attempt < 5; attempt += 1) {
+        await request(server)
+          .post('/api/v1/auth/forgot-password')
+          .send({ email: 'karim@noor.example' })
+          .expect(200);
+      }
+
+      const response = await request(server)
+        .post('/api/v1/auth/forgot-password')
+        .send({ email: 'karim@noor.example' })
+        .expect(429);
+
+      expect(response.body.code).toBe('RATE_LIMITED');
+    });
+  });
+
+  // =========================================================================
+  // RESET PASSWORD
+  // =========================================================================
+
+  describe('POST /api/v1/auth/reset-password', () => {
+    const NEW_PASSWORD = 'Rotated!Passphrase9';
+
+    /**
+     * A member holding a live reset token, and the raw token to present.
+     *
+     * The delivery hook is unimplemented, so the raw token is not obtainable through the API at all.
+     * Planting the hash is what the service compares against anyway — it never sees the raw value
+     * except to hash it — so this drives the same code path a real link would.
+     */
+    function seedWithResetToken(minutesLeft = 30, overrides: Partial<UserRow> = {}) {
+      const token = randomUUID();
+      const member = seedMember({
+        passwordResetTokenHash: hashToken(token),
+        passwordResetExpiresAt: new Date(Date.now() + minutesLeft * 60_000),
+        ...overrides,
+      });
+      return { member, token };
+    }
+
+    it('replaces the password with a fresh argon2id hash', async () => {
+      const { member, token } = seedWithResetToken();
+      const before = member.passwordHash;
+
+      const response = await request(server)
+        .post('/api/v1/auth/reset-password')
+        .send({ token, newPassword: NEW_PASSWORD })
+        .expect(200);
+
+      expect(response.body).toEqual({ success: true, message: 'Password reset successfully' });
+      expect(member.passwordHash).not.toBe(before);
+      expect(member.passwordHash.startsWith('$argon2id$')).toBe(true);
+      // The stored value is a hash of the new password and not the password itself.
+      expect(member.passwordHash).not.toContain(NEW_PASSWORD);
+      await expect(argon2.verify(member.passwordHash, NEW_PASSWORD)).resolves.toBe(true);
+    });
+
+    it('lets the new password sign in and refuses the old one', async () => {
+      const { token } = seedWithResetToken();
+
+      await request(server)
+        .post('/api/v1/auth/reset-password')
+        .send({ token, newPassword: NEW_PASSWORD })
+        .expect(200);
+
+      await request(server)
+        .post('/api/v1/auth/login')
+        .send({ email: 'karim@noor.example', password: NEW_PASSWORD })
+        .expect(200);
+
+      await request(server)
+        .post('/api/v1/auth/login')
+        .send({ email: 'karim@noor.example', password: PASSWORD })
+        .expect(401);
+    });
+
+    it('consumes the token, so the same link cannot be used twice', async () => {
+      const { member, token } = seedWithResetToken();
+
+      await request(server)
+        .post('/api/v1/auth/reset-password')
+        .send({ token, newPassword: NEW_PASSWORD })
+        .expect(200);
+
+      expect(member.passwordResetTokenHash).toBeNull();
+      expect(member.passwordResetExpiresAt).toBeNull();
+
+      const replay = await request(server)
+        .post('/api/v1/auth/reset-password')
+        .send({ token, newPassword: 'SecondAttempt!42' })
+        .expect(401);
+
+      expect(replay.body.code).toBe('INVALID_RESET_TOKEN');
+    });
+
+    it('revokes every live session, so a stolen refresh cookie dies with the password', async () => {
+      const { member, token } = seedWithResetToken();
+      const { refreshToken } = await signIn();
+
+      await request(server)
+        .post('/api/v1/auth/reset-password')
+        .send({ token, newPassword: NEW_PASSWORD })
+        .expect(200);
+
+      const live = database.refreshTokens.filter(
+        (row) => row.userId === member.id && row.revokedAt === null,
+      );
+      expect(live).toHaveLength(0);
+
+      // Which is the property that matters: the cookie from before the reset is now dead.
+      await request(server)
+        .post('/api/v1/auth/refresh')
+        .set('Cookie', cookieHeader(refreshToken))
+        .expect(401);
+    });
+
+    it('refuses a token that was never issued', async () => {
+      seedWithResetToken();
+
+      const response = await request(server)
+        .post('/api/v1/auth/reset-password')
+        .send({ token: randomUUID(), newPassword: NEW_PASSWORD })
+        .expect(401);
+
+      expect(response.body.code).toBe('INVALID_RESET_TOKEN');
+    });
+
+    it('refuses a token whose window has closed', async () => {
+      const { member, token } = seedWithResetToken(-1);
+      const before = member.passwordHash;
+
+      const response = await request(server)
+        .post('/api/v1/auth/reset-password')
+        .send({ token, newPassword: NEW_PASSWORD })
+        .expect(401);
+
+      expect(response.body.code).toBe('INVALID_RESET_TOKEN');
+      expect(member.passwordHash).toBe(before);
+    });
+
+    it('refuses a token belonging to an account that has since been disabled or deleted', async () => {
+      const disabled = seedWithResetToken(30, { isActive: false, email: 'off@noor.example' });
+      const deleted = seedWithResetToken(30, {
+        deletedAt: new Date(),
+        email: 'gone@noor.example',
+        phone: '+8801700000003',
+      });
+
+      for (const { member, token } of [disabled, deleted]) {
+        const before = member.passwordHash;
+
+        await request(server)
+          .post('/api/v1/auth/reset-password')
+          .send({ token, newPassword: NEW_PASSWORD })
+          .expect(401);
+
+        expect(member.passwordHash).toBe(before);
+      }
+    });
+
+    it('answers a wrong token and an expired one identically', async () => {
+      const { token: expired } = seedWithResetToken(-1);
+
+      const unknown = await request(server)
+        .post('/api/v1/auth/reset-password')
+        .send({ token: randomUUID(), newPassword: NEW_PASSWORD })
+        .expect(401);
+
+      const stale = await request(server)
+        .post('/api/v1/auth/reset-password')
+        .send({ token: expired, newPassword: NEW_PASSWORD })
+        .expect(401);
+
+      // "Expired" and "never existed" have to read the same, or the difference tells a caller that a
+      // guessed token was real once — which is a hint about a live account.
+      expect(stale.body.code).toBe(unknown.body.code);
+      expect(stale.body.message).toBe(unknown.body.message);
+    });
+
+    it('never echoes the token it was given', async () => {
+      const { token } = seedWithResetToken();
+
+      const response = await request(server)
+        .post('/api/v1/auth/reset-password')
+        .send({ token, newPassword: NEW_PASSWORD })
+        .expect(200);
+
+      expect(JSON.stringify(response.body)).not.toContain(token);
+    });
+
+    it('holds a new password to the same rules as registration', async () => {
+      const { member, token } = seedWithResetToken();
+      const before = member.passwordHash;
+
+      const response = await request(server)
+        .post('/api/v1/auth/reset-password')
+        .send({ token, newPassword: 'short' })
+        .expect(400);
+
+      expect(response.body.code).toBe('VALIDATION_FAILED');
+      // Refused by the pipe, so the service never ran and nothing was consumed.
+      expect(member.passwordHash).toBe(before);
+      expect(member.passwordResetTokenHash).not.toBeNull();
+    });
+
+    it('is reachable without a bearer token, since whoever needs it cannot sign in', async () => {
+      const { token } = seedWithResetToken();
+
+      await request(server)
+        .post('/api/v1/auth/reset-password')
+        .send({ token, newPassword: NEW_PASSWORD })
         .expect(200);
     });
   });

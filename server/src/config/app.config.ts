@@ -10,6 +10,19 @@ import type { EnvironmentVariables, NodeEnv } from './env.validation';
  */
 export type AppConfig = ConfigService<EnvironmentVariables, true>;
 
+/**
+ * Standalone rather than a method on `env`, because `webUrl` needs it too and a getter that reads
+ * `env` from inside `env`'s own initializer is a circular reference TypeScript cannot infer a type
+ * through.
+ */
+function corsOriginList(config: AppConfig): string[] {
+  return config
+    .get('CORS_ORIGINS', { infer: true })
+    .split(',')
+    .map((origin) => origin.trim())
+    .filter(Boolean);
+}
+
 export const env = {
   nodeEnv: (config: AppConfig): NodeEnv => config.get('NODE_ENV', { infer: true }),
 
@@ -39,12 +52,21 @@ export const env = {
     config.get('COOKIE_DOMAIN', { infer: true }),
 
   /** Split and trimmed; empty entries dropped so a trailing comma is harmless. */
-  corsOrigins: (config: AppConfig): string[] =>
-    config
-      .get('CORS_ORIGINS', { infer: true })
-      .split(',')
-      .map((origin) => origin.trim())
-      .filter(Boolean),
+  corsOrigins: (config: AppConfig): string[] => corsOriginList(config),
+
+  /**
+   * The base for links sent to people, as opposed to origins the API will accept requests from.
+   *
+   * Falls back to the first CORS origin, which is the right answer for a single-origin development
+   * setup and keeps `APP_WEB_URL` optional. The final fallback exists because the origin list drops
+   * empty entries and can therefore return nothing at all — a value of `","` passes `@IsNotEmpty`
+   * and yields an empty array, and `new URL(path, undefined)` throws. A password-reset request is
+   * not the place to discover that, so it resolves to localhost instead of failing.
+   */
+  webUrl: (config: AppConfig): string =>
+    config.get('APP_WEB_URL', { infer: true }) ??
+    corsOriginList(config)[0] ??
+    'http://localhost:3000',
 
   throttleTtl: (config: AppConfig): number => config.get('THROTTLE_TTL', { infer: true }),
 
