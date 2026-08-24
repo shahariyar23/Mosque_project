@@ -1,0 +1,272 @@
+// NOOR Mosque Management System — Prisma schema
+//
+// Phase 1 defines the tenancy and identity core: the mosque, the person, their session tokens and
+// the audit trail. Domain models (members, prayer times, events, finance) arrive in Phase 2.
+//
+// Two conventions hold throughout:
+//
+//  * Every tenant-owned row carries `mosqueId`. The system runs one mosque today and is built so a
+//    second one needs no schema change, only a scoped query.
+//  * Money is `Decimal`, never `Float`. Binary floating point cannot represent 0.10 exactly, and a
+//    ledger that drifts by fractions of a taka is not a ledger.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------------------
+// Identity
+//
+// Mirrors `web/src/lib/permissions.ts`, which is the authority for this model. Seven roles, and
+// deliberately no `president`: the President is a *position*, and the person who approves is
+// whoever holds `workflow.approve`. When the committee changes, someone reassigns a role and a
+// position and no code changes.
+// ---------------------------------------------------------------------------
+
+enum Role {
+  super_admin
+  mosque_admin
+  secretary
+  treasurer
+  cashier
+  imam
+  member
+}
+
+/// Committee posts. These grant nothing — a position never affects a permission check. They exist
+/// because a position is the label a person recognises themselves by.
+enum Position {
+  president
+  vice_president
+  general_secretary
+  assistant_secretary
+  treasurer
+  cashier
+  imam
+  muazzin
+  khatib
+  education_coordinator
+  event_coordinator
+  volunteer_coordinator
+  volunteer
+  caretaker
+  member
+}
+
+// ---------------------------------------------------------------------------
+// Tenancy
+// ---------------------------------------------------------------------------
+
+model Mosque {
+  id   String @id @default(uuid()) @db.Uuid
+  /// URL-safe identifier, stable once issued.
+  slug String @unique @db.VarChar(64)
+  name String @db.VarChar(160)
+
+  // Contact and location, all optional: a mosque is created before its profile is filled in.
+  email        String? @db.VarChar(160)
+  phone        String? @db.VarChar(32)
+  website      String? @db.VarChar(255)
+  addressLine  String? @db.VarChar(255)
+  city         String? @db.VarChar(120)
+  district     String? @db.VarChar(120)
+  country      String? @db.VarChar(120)
+  postalCode   String? @db.VarChar(24)
+  /// Coordinates for prayer-time calculation. Decimal, not Float — a rounded latitude shifts Fajr.
+  latitude     Decimal? @db.Decimal(9, 6)
+  longitude    Decimal? @db.Decimal(9, 6)
+  /// IANA zone, e.g. "Asia/Dhaka". Prayer schedules are meaningless without it.
+  timezone     String   @default("Asia/Dhaka") @db.VarChar(64)
+  establishedYear Int?
+  description  String? @db.Text
+  logoUrl      String? @db.VarChar(500)
+
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now()) @db.Timestamptz
+  updatedAt DateTime @updatedAt @db.Timestamptz
+
+  settings  MosqueSettings?
+  users     User[]
+  auditLogs AuditLog[]
+
+  @@index([isActive])
+  @@map("mosques")
+}
+
+/// Settings live in their own row rather than as columns on `Mosque`: the frontend edits them as
+/// five independent panels (general, notifications, prayer, security, appearance), and separating
+/// them keeps a settings write from touching the profile a different screen owns.
+model MosqueSettings {
+  id       String @id @default(uuid()) @db.Uuid
+  mosqueId String @unique @db.Uuid
+  mosque   Mosque @relation(fields: [mosqueId], references: [id], onDelete: Cascade)
+
+  // General
+  defaultLanguage String @default("en") @db.VarChar(8)
+  currency        String @default("BDT") @db.VarChar(8)
+  dateFormat      String @default("DD/MM/YYYY") @db.VarChar(24)
+
+  // Notifications
+  emailNotifications Boolean @default(true)
+  smsNotifications   Boolean @default(false)
+  pushNotifications  Boolean @default(true)
+  prayerReminders    Boolean @default(true)
+  eventReminders     Boolean @default(true)
+
+  // Prayer
+  calculationMethod String @default("MuslimWorldLeague") @db.VarChar(48)
+  asrMethod         String @default("Standard") @db.VarChar(24)
+  /// Minutes added to each calculated time before it is published as the jamaat time.
+  iqamahOffset      Int    @default(10)
+
+  // Security
+  twoFactorRequired  Boolean @default(false)
+  sessionTimeoutMins Int     @default(60)
+  passwordMinLength  Int     @default(8)
+
+  // Appearance
+  theme       String  @default("system") @db.VarChar(16)
+  primaryColor String? @db.VarChar(16)
+
+  createdAt DateTime @default(now()) @db.Timestamptz
+  updatedAt DateTime @updatedAt @db.Timestamptz
+
+  @@map("mosque_settings")
+}
+
+// ---------------------------------------------------------------------------
+// The person
+// ---------------------------------------------------------------------------
+
+model User {
+  id       String @id @default(uuid()) @db.Uuid
+  mosqueId String @db.Uuid
+  mosque   Mosque @relation(fields: [mosqueId], references: [id], onDelete: Cascade)
+
+  fullName String  @db.VarChar(160)
+  /// Stored lowercased so uniqueness is case-insensitive in practice.
+  email    String  @db.VarChar(160)
+  /// E.164. Sign-in accepts either email or phone, so both are addressable and both are unique.
+  phone    String? @db.VarChar(32)
+
+  /// Argon2id output. The plaintext is never stored, never logged, and never returned by any
+  /// endpoint — no `select` in this codebase includes this column.
+  passwordHash String @db.VarChar(255)
+
+  role Role @default(member)
+
+  /// Committee posts. Display only.
+  positions Position[] @default([])
+
+  /// Granted on top of the role, and removed after everything else — deny always wins.
+  /// Held as permission *strings* against the registry in code rather than as join tables: the
+  /// registry is a fixed, reviewed list that ships with the application, not user-editable data,
+  /// and two extra tables would buy referential integrity over constants that already cannot vary.
+  permissions       String[] @default([])
+  deniedPermissions String[] @default([])
+
+  /// An inactive account resolves false for every permission, base ones included.
+  isActive Boolean @default(true)
+
+  // Profile
+  dateOfBirth DateTime? @db.Date
+  gender      String?   @db.VarChar(8)
+  city        String?   @db.VarChar(120)
+  avatarUrl   String?   @db.VarChar(500)
+  newsletter  Boolean   @default(false)
+
+  emailVerifiedAt DateTime? @db.Timestamptz
+  lastLoginAt     DateTime? @db.Timestamptz
+
+  createdAt DateTime  @default(now()) @db.Timestamptz
+  updatedAt DateTime  @updatedAt @db.Timestamptz
+  /// Soft delete. A user is never hard-deleted: their name appears on donations they recorded and
+  /// on audit rows, and those references have to keep resolving.
+  deletedAt DateTime? @db.Timestamptz
+
+  refreshTokens RefreshToken[]
+  auditLogs     AuditLog[]
+
+  // Unique per mosque, not globally: two mosques may each have a member at the same address.
+  @@unique([mosqueId, email])
+  @@unique([mosqueId, phone])
+  @@index([mosqueId, role])
+  @@index([mosqueId, isActive])
+  @@index([deletedAt])
+  @@map("users")
+}
+
+/// One row per issued refresh token, so sessions can be revoked individually and rotation can
+/// detect reuse.
+model RefreshToken {
+  id     String @id @default(uuid()) @db.Uuid
+  userId String @db.Uuid
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  /// SHA-256 of the token, never the token itself. A leaked database must not yield usable sessions.
+  tokenHash String @unique @db.VarChar(64)
+
+  expiresAt DateTime @db.Timestamptz
+  /// Set when the token is used or explicitly revoked. A rotated token presented a second time is a
+  /// signal worth acting on, which is only possible if spent tokens are kept rather than deleted.
+  revokedAt DateTime? @db.Timestamptz
+  /// Which token replaced this one, for tracing a rotation chain.
+  replacedById String? @db.Uuid
+
+  // Coarse client detail for a "your sessions" screen. Not identity, and not used for authorisation.
+  userAgent String? @db.VarChar(255)
+  ipAddress String? @db.VarChar(64)
+
+  createdAt DateTime @default(now()) @db.Timestamptz
+
+  @@index([userId, revokedAt])
+  @@index([expiresAt])
+  @@map("refresh_tokens")
+}
+
+// ---------------------------------------------------------------------------
+// Audit
+//
+// Append-only by convention: rows are written and read, never updated. Financial and permission
+// changes are the ones that matter, so the actor is recorded by id *and* by name — the name is
+// denormalised so a log entry still reads correctly after the person's record changes.
+// ---------------------------------------------------------------------------
+
+model AuditLog {
+  id       String @id @default(uuid()) @db.Uuid
+  mosqueId String @db.Uuid
+  mosque   Mosque @relation(fields: [mosqueId], references: [id], onDelete: Cascade)
+
+  /// Null for actions taken before sign-in, e.g. a failed login attempt.
+  actorId   String? @db.Uuid
+  actor     User?   @relation(fields: [actorId], references: [id], onDelete: SetNull)
+  actorName String  @db.VarChar(160)
+  actorRole String? @db.VarChar(32)
+
+  /// `resource.action`, matching the permission registry's vocabulary.
+  action   String  @db.VarChar(64)
+  resource String  @db.VarChar(64)
+  /// Id of the affected row, when the action concerns one.
+  resourceId String? @db.VarChar(64)
+
+  /// What changed. Never contains a password, token or secret — the writer passes field names and
+  /// business values only.
+  changes Json?
+  /// Free-text note, e.g. the reason given when voiding a donation.
+  note    String? @db.Text
+
+  ipAddress String? @db.VarChar(64)
+  userAgent String? @db.VarChar(255)
+
+  createdAt DateTime @default(now()) @db.Timestamptz
+
+  @@index([mosqueId, createdAt])
+  @@index([mosqueId, resource, resourceId])
+  @@index([actorId])
+  @@map("audit_logs")
+}
