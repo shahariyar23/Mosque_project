@@ -89,7 +89,7 @@ export function UserMenu() {
           <span className="text-[10px] text-white/70">Member</span>
         </div>
         <ChevronDown
-          className={`hidden h-4 w-4 text-white/70 transition-transform duration-200 lg:block ${
+          className={`h-4 w-4 text-white/70 transition-transform duration-200 ${
             isOpen ? "rotate-180" : ""
           }`}
         />
@@ -98,7 +98,7 @@ export function UserMenu() {
       {/* Dropdown Menu */}
       {isOpen && (
         <div
-          className="absolute right-0 top-full mt-2 w-screen max-w-[340px] origin-top-right transform overflow-hidden rounded-xl border border-white/10 bg-[#073a2d] text-white shadow-2xl transition-all animate-in fade-in zoom-in-95 sm:w-[360px]"
+          className="fixed left-4 right-4 top-[80px] origin-top-right transform overflow-hidden rounded-xl border border-white/10 bg-[#073a2d] text-white shadow-2xl transition-all animate-in fade-in zoom-in-95 sm:absolute sm:left-auto sm:right-0 sm:top-full sm:mt-2 sm:w-[360px]"
           role="menu"
         >
           {/* Header */}
@@ -124,7 +124,7 @@ export function UserMenu() {
             </div>
           </div>
 
-          <div className="max-h-[calc(100vh-100px)] overflow-y-auto">
+          <div className="max-h-[calc(100vh-240px)] overflow-y-auto">
             {/* Admin Action */}
             {(user.role === "super_admin" || user.role === "mosque_admin") && (
               <div className="border-b border-white/10 p-2">

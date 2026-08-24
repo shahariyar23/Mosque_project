@@ -113,6 +113,37 @@ export class EnvironmentVariables {
 
   @IsBoolean()
   SWAGGER_ENABLED = true;
+
+  /**
+   * The AlAdhan prayer-time API. Configured rather than hardcoded for the ordinary reason that a
+   * third-party host is an operational fact and not a source-code one: it lets a deployment point at
+   * a mirror or a self-hosted instance, and it lets a test point at a local stub without patching
+   * globals. The default is the public service, so nothing has to be set to run.
+   */
+  @IsString()
+  @Matches(/^https?:\/\/[^\s]+$/, {
+    message: 'ALADHAN_BASE_URL must be an absolute http:// or https:// URL',
+  })
+  ALADHAN_BASE_URL = 'https://api.aladhan.com/v1';
+
+  /**
+   * How long to wait on AlAdhan before giving up. Bounded at both ends: below a second is a timeout
+   * that fires on a healthy connection, and above thirty the caller is left holding a request that a
+   * proxy will have abandoned anyway. A prayer schedule is not worth blocking a worker on.
+   */
+  @IsInt()
+  @Min(1000)
+  @Max(30000)
+  ALADHAN_TIMEOUT_MS = 8000;
+
+  /**
+   * How long a normalized day's times stay cached. A calculated schedule for a fixed date and
+   * location does not change, so this could be very long; it is a day by default because the mosque's
+   * own offsets *can* change, and a stale entry that outlives the working day would be confusing.
+   */
+  @IsInt()
+  @Min(0)
+  PRAYER_CACHE_TTL_SECONDS = 86400;
 }
 
 /** `"1" | "true" | "yes" | "on"` → true. Anything else present → false. */
@@ -146,6 +177,14 @@ export function validateEnvironment(raw: Record<string, unknown>): EnvironmentVa
       THROTTLE_TTL: toInt(raw.THROTTLE_TTL, defaults.THROTTLE_TTL),
       THROTTLE_LIMIT: toInt(raw.THROTTLE_LIMIT, defaults.THROTTLE_LIMIT),
       SWAGGER_ENABLED: toBoolean(raw.SWAGGER_ENABLED, defaults.SWAGGER_ENABLED),
+      ALADHAN_TIMEOUT_MS: toInt(raw.ALADHAN_TIMEOUT_MS, defaults.ALADHAN_TIMEOUT_MS),
+      PRAYER_CACHE_TTL_SECONDS: toInt(
+        raw.PRAYER_CACHE_TTL_SECONDS,
+        defaults.PRAYER_CACHE_TTL_SECONDS,
+      ),
+      // Blank falls back to the default rather than failing the URL check, so a commented-out line
+      // in .env means "use the public API" instead of stopping boot.
+      ALADHAN_BASE_URL: raw.ALADHAN_BASE_URL === '' ? undefined : raw.ALADHAN_BASE_URL,
       COOKIE_DOMAIN: raw.COOKIE_DOMAIN === '' ? undefined : raw.COOKIE_DOMAIN,
       // An empty value has to become absent rather than fail the URL check, so that a commented-out
       // or blank line in .env means "use the fallback" instead of stopping boot.

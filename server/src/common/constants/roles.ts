@@ -95,6 +95,7 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
     'dashboard.view',
     'prayer.manage',
     'jumuah.manage',
+    'ramadan.manage',
     'khutbah.view',
     'khutbah.create',
     'khutbah.update',

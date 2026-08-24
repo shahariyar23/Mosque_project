@@ -92,6 +92,11 @@ model Mosque {
 
   settings  MosqueSettings?
   facilities Facility[]
+  /// At most one row of prayer-calculation overrides. Absent means "calculate from the mosque's own
+  /// coordinates and settings, unadjusted".
+  prayerSettings   PrayerSettings?
+  jumuahSchedules  JumuahSchedule[]
+  ramadanSchedules RamadanSchedule[]
   users     User[]
   auditLogs AuditLog[]
 
@@ -306,6 +311,147 @@ model Volunteer {
   // Serves the roster list, which filters on status and reads newest first.
   @@index([status, createdAt])
   @@map("volunteers")
+}
+
+// ---------------------------------------------------------------------------
+// Prayer, Jumu'ah and Ramadan
+//
+// Three models with one thing in common: they hold what a *mosque decides*, never what a calculation
+// produces. Daily prayer times are computed by AlAdhan from coordinates and are not stored — they are
+// the same for every mosque at the same location and would be a cache masquerading as a record.
+// What is stored is the part no formula can know: that this mosque calls Fajr five minutes after the
+// calculated time, that its khutbah begins at 13:15, that Taraweeh is at 20:30.
+//
+// Wall-clock times are `VarChar(5)` holding `HH:mm`, not `DateTime`. A jamaat time is a time of day in
+// the mosque's own timezone with no date attached: `time without time zone` comes back through Prisma
+// as a `Date` on 1970-01-01 that every caller then has to remember not to read the date part of, and
+// `timestamptz` would force a fictional date to be chosen before the value could be written at all.
+// `Mosque.timezone` says which wall clock is meant, which is the only other fact needed.
+// ---------------------------------------------------------------------------
+
+/// Per-mosque overrides for the calculated daily schedule.
+///
+/// Every field is either nullable or defaults to zero, and that is the design: a row of all defaults
+/// behaves exactly as no row at all. The nullable ones fall back to what the mosque already records —
+/// `method` and `school` to `MosqueSettings.calculationMethod` / `asrMethod`, the coordinates and
+/// timezone to `Mosque` — so nothing here is a second copy of a value stored elsewhere. A null means
+/// "whatever the mosque already says"; a value means someone deliberately overrode it.
+model PrayerSettings {
+  id       String @id @default(uuid()) @db.Uuid
+  mosqueId String @unique @db.Uuid
+  mosque   Mosque @relation(fields: [mosqueId], references: [id], onDelete: Cascade)
+
+  /// AlAdhan calculation method id. Null derives it from `MosqueSettings.calculationMethod`.
+  method Int?
+  /// Asr school: 0 = Shafi/Standard, 1 = Hanafi. Null derives it from `MosqueSettings.asrMethod`.
+  school Int?
+
+  /// Coordinates to calculate from, when they differ from the mosque's own — a mosque whose registered
+  /// address is an office, or one that follows a neighbouring city's schedule. Null uses `Mosque`.
+  latitude  Decimal? @db.Decimal(9, 6)
+  longitude Decimal? @db.Decimal(9, 6)
+  /// IANA zone override. Null uses `Mosque.timezone`.
+  timezone  String?  @db.VarChar(64)
+
+  /// Minutes added to each calculated time before it is published. Signed: −3 is as valid as +5.
+  /// One column per prayer rather than an array or a JSON blob, so a migration can widen one of them
+  /// and a query can order by one of them.
+  imsakOffset    Int @default(0)
+  fajrOffset     Int @default(0)
+  sunriseOffset  Int @default(0)
+  dhuhrOffset    Int @default(0)
+  asrOffset      Int @default(0)
+  sunsetOffset   Int @default(0)
+  maghribOffset  Int @default(0)
+  ishaOffset     Int @default(0)
+  midnightOffset Int @default(0)
+
+  createdAt DateTime @default(now()) @db.Timestamptz
+  updatedAt DateTime @updatedAt @db.Timestamptz
+
+  @@map("prayer_settings")
+}
+
+/// A Jumu'ah jamaat.
+///
+/// Never calculated. Khutbah and prayer times are a mosque's own decision — they follow the khatib's
+/// availability and the local council, not the sun — so AlAdhan has nothing to say about them.
+///
+/// `date` is nullable, and the distinction it draws is the model's whole point: null is the standing
+/// weekly schedule ("Jumu'ah is at 13:15"), a date is that one Friday ("moved to 12:45 for Eid week").
+/// Deliberately not unique on `(mosqueId, date)`: a mosque that fills up holds a second jamaat, and a
+/// constraint here would make the common case unrepresentable.
+model JumuahSchedule {
+  id       String @id @default(uuid()) @db.Uuid
+  mosqueId String @db.Uuid
+  mosque   Mosque @relation(fields: [mosqueId], references: [id], onDelete: Cascade)
+
+  /// The Friday this applies to. Null is the standing weekly schedule.
+  date DateTime? @db.Date
+
+  /// `HH:mm` in `Mosque.timezone`. See the section note above on why these are not DateTime.
+  khutbahTime String @db.VarChar(5)
+  prayerTime  String @db.VarChar(5)
+
+  /// Who delivers the khutbah, as free text: often a visiting khatib who has no account here.
+  imam     String? @db.VarChar(160)
+  /// Which hall or floor, for a mosque that runs more than one.
+  location String? @db.VarChar(160)
+  /// Visible to anyone who can read the prayer schedule. Not a place for private remarks.
+  notes    String? @db.Text
+
+  /// False retires an entry without deleting it, so last year's arrangement stays on the record.
+  isActive Boolean @default(true)
+
+  createdAt DateTime @default(now()) @db.Timestamptz
+  updatedAt DateTime @updatedAt @db.Timestamptz
+
+  // Serves the list, which is scoped to one mosque and read by date. `isActive` is left to a filter
+  // rather than given an index of its own: a mosque accumulates a few hundred rows here at most, and
+  // a second index on the same table costs every write to save nothing measurable on the read.
+  @@index([mosqueId, date])
+  @@map("jumuah_schedules")
+}
+
+/// One day of Ramadan at one mosque.
+///
+/// `year` is the Hijri year and is stored rather than derived: a Gregorian date does not yield it
+/// without a calendar conversion, and "show me Ramadan 1447" is the question this table is asked.
+///
+/// Suhoor and Iftar are nullable while the fasting bounds are not, because the bounds are the fast
+/// itself and the two meals are the mosque's arrangements around it — a mosque that serves no iftar
+/// still has an Iftar time, but one that has not decided yet should be able to publish the rest.
+model RamadanSchedule {
+  id       String @id @default(uuid()) @db.Uuid
+  mosqueId String @db.Uuid
+  mosque   Mosque @relation(fields: [mosqueId], references: [id], onDelete: Cascade)
+
+  /// Hijri year, e.g. 1447.
+  year Int
+  /// The Gregorian day this row describes.
+  date DateTime @db.Date
+
+  /// `HH:mm` in `Mosque.timezone`. When the fast begins (Imsak) and ends (Maghrib).
+  fastingStart String @db.VarChar(5)
+  fastingEnd   String @db.VarChar(5)
+
+  /// When the mosque serves or recommends the pre-dawn meal.
+  suhoorTime   String? @db.VarChar(5)
+  /// When the fast is broken at the mosque.
+  iftarTime    String? @db.VarChar(5)
+  /// When Taraweeh begins. Null on the nights a mosque does not hold it.
+  taraweehTime String? @db.VarChar(5)
+
+  notes String? @db.Text
+
+  createdAt DateTime @default(now()) @db.Timestamptz
+  updatedAt DateTime @updatedAt @db.Timestamptz
+
+  // One row per mosque per day. Entering the 14th twice is a mistake, not a second schedule — unlike
+  // Jumu'ah, where a second jamaat on one Friday is ordinary. This also serves every read the table
+  // has, since "one mosque's Ramadan 1447 in date order" is a prefix of it; no separate index.
+  @@unique([mosqueId, year, date])
+  @@map("ramadan_schedules")
 }
 
 // ---------------------------------------------------------------------------

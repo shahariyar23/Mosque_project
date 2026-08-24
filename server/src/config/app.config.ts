@@ -73,4 +73,14 @@ export const env = {
   throttleLimit: (config: AppConfig): number => config.get('THROTTLE_LIMIT', { infer: true }),
 
   swaggerEnabled: (config: AppConfig): boolean => config.get('SWAGGER_ENABLED', { infer: true }),
+
+  /** Trailing slash trimmed, so callers can join paths without doubling it. */
+  aladhanBaseUrl: (config: AppConfig): string =>
+    config.get('ALADHAN_BASE_URL', { infer: true }).replace(/\/+$/, ''),
+
+  aladhanTimeoutMs: (config: AppConfig): number =>
+    config.get('ALADHAN_TIMEOUT_MS', { infer: true }),
+
+  prayerCacheTtlSeconds: (config: AppConfig): number =>
+    config.get('PRAYER_CACHE_TTL_SECONDS', { infer: true }),
 };

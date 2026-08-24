@@ -79,10 +79,13 @@ export function SiteHeader() {
   const routeActiveIndex = links.findIndex((link) => link.href === pathname);
   const currentActiveIndex = pathname === "/" ? 0 : routeActiveIndex;
 
+  const isAppPage = pathname.startsWith("/account") || pathname.startsWith("/dashboard");
+  const forceScrolled = scrolled || isAppPage;
+
   return (
     <header
       ref={headerRef}
-      className={`fixed inset-x-0 top-0 z-40 text-white transition-all duration-300 ${scrolled ? "site-header--scrolled" : ""} ${hidden ? "-translate-y-full" : "translate-y-0"}`}
+      className={`fixed inset-x-0 top-0 z-40 text-white transition-all duration-300 ${forceScrolled ? "site-header--scrolled" : ""} ${hidden ? "-translate-y-full" : "translate-y-0"}`}
     >
       <nav
         className="mx-auto flex max-w-7xl items-center justify-between px-5 py-5 lg:px-8"
