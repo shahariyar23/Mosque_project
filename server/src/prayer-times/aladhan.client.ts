@@ -2,11 +2,7 @@ import { Inject, Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
 import { env, type AppConfig } from '../config/app.config';
-import type {
-  AlAdhanDay,
-  AlAdhanTimingsResponse,
-  RawTimings,
-} from './aladhan.types';
+import type { AlAdhanDay, AlAdhanTimingsResponse, RawTimings } from './aladhan.types';
 import { ALADHAN_TIMING_KEYS, PRAYER_KEYS } from './prayer-times.constants';
 import { parseAlAdhanTime, toAlAdhanDate } from './prayer-time.utils';
 
@@ -150,8 +146,11 @@ export function parseTimingsResponse(body: unknown): AlAdhanDay {
   const envelope = body as AlAdhanTimingsResponse;
 
   // Upstream answers 200 with a `code` of its own; 200 there is the only success.
-  if (envelope.code !== undefined && Number(envelope.code) !== 200) {
-    const status = typeof envelope.status === 'string' ? envelope.status : String(envelope.code);
+  // `code` is `unknown` because it is a claim from a third party — read as a number so a reply that sends
+  // an object there is reported as `NaN` rather than stringified into `[object Object]`.
+  const code = Number(envelope.code);
+  if (envelope.code !== undefined && code !== 200) {
+    const status = typeof envelope.status === 'string' ? envelope.status : `code ${code}`;
     throw new AlAdhanUnavailableError('malformed', `upstream reported ${status}`);
   }
 
@@ -173,7 +172,8 @@ export function parseTimingsResponse(body: unknown): AlAdhanDay {
     timings: parsed as RawTimings,
     gregorianDate: toIsoDate(envelope.data?.date?.gregorian?.date),
     hijri: readHijri(envelope.data?.date?.hijri),
-    timezone: typeof envelope.data?.meta?.timezone === 'string' ? envelope.data.meta.timezone : null,
+    timezone:
+      typeof envelope.data?.meta?.timezone === 'string' ? envelope.data.meta.timezone : null,
   };
 }
 

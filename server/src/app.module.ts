@@ -18,6 +18,9 @@ import { RolesModule } from './roles/roles.module';
 import { UsersModule } from './users/users.module';
 import { MosqueModule } from './mosque/mosque.module';
 import { VolunteersModule } from './volunteers/volunteers.module';
+import { PrayerTimesModule } from './prayer-times/prayer-times.module';
+import { JumuahModule } from './jumuah/jumuah.module';
+import { RamadanModule } from './ramadan/ramadan.module';
 
 /**
  * The composition root.
@@ -77,6 +80,9 @@ import { VolunteersModule } from './volunteers/volunteers.module';
     PermissionsModule,
     MosqueModule,
     VolunteersModule,
+    PrayerTimesModule,
+    JumuahModule,
+    RamadanModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: ThrottlerGuard },

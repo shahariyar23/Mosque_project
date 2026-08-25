@@ -93,6 +93,16 @@ export const PERMISSION_GROUPS = {
     'fund.manage',
     'receipt.view',
     'receipt.viewOwn',
+    // A campaign is a fundraising appeal inside a fund. It gets its own three rather than riding on
+    // `fund.*` because the audience differs: a communications volunteer drafts and edits appeals
+    // without ever being trusted with the fund structure money is accounted against.
+    //
+    // `campaign.publish` is separate from `campaign.manage` for the same reason `event.publish` and
+    // `announcement.publish` are separate from their manage grants — writing an appeal and putting it
+    // on the public website with a money target attached are different acts of authority.
+    'campaign.view',
+    'campaign.manage',
+    'campaign.publish',
   ],
   contributions: [
     'contribution.view',

@@ -1,6 +1,16 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
-import { IsInt, IsIn, IsLatitude, IsLongitude, IsOptional, IsString, Matches, Max, Min } from 'class-validator';
+import {
+  IsInt,
+  IsIn,
+  IsLatitude,
+  IsLongitude,
+  IsOptional,
+  IsString,
+  Matches,
+  Max,
+  Min,
+} from 'class-validator';
 
 import { ISO_DATE_PATTERN } from '../prayer-time.utils';
 import { MAX_METHOD_ID, MIN_METHOD_ID } from '../prayer-times.constants';

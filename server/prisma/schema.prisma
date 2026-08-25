@@ -97,6 +97,8 @@ model Mosque {
   prayerSettings   PrayerSettings?
   jumuahSchedules  JumuahSchedule[]
   ramadanSchedules RamadanSchedule[]
+  donationFunds    DonationFund[]
+  campaigns        Campaign[]
   users     User[]
   auditLogs AuditLog[]
 
@@ -452,6 +454,125 @@ model RamadanSchedule {
   // has, since "one mosque's Ramadan 1447 in date order" is a prefix of it; no separate index.
   @@unique([mosqueId, year, date])
   @@map("ramadan_schedules")
+}
+
+// ---------------------------------------------------------------------------
+// Giving: where money may be directed
+//
+// These two tables hold no money. A fund is the standing purpose a donation can be allocated to, a
+// campaign is a time-boxed appeal within one; both are categories, and the donations, receipts and
+// balances that reference them arrive in a later part. Nothing here sums anything.
+//
+// `targetAmount` is `Decimal(14, 2)` for the reason at the top of this file. It is a goal rather than
+// a balance, but it is displayed next to real totals on a progress bar, and a goal that arrives as
+// 49999.999999999996 is worse than no goal.
+// ---------------------------------------------------------------------------
+
+enum FundStatus {
+  active
+  inactive
+  completed
+  archived
+}
+
+enum CampaignStatus {
+  draft
+  active
+  completed
+  cancelled
+  archived
+}
+
+/// A purpose donations can be directed to: Zakat, Sadaqah, mosque maintenance, the imam's salary.
+///
+/// The set is per mosque and entirely the mosque's own — no seeded list, no enum of categories. Two
+/// mosques that both keep a "General Fund" keep two rows, because the money is not shared.
+model DonationFund {
+  id       String @id @default(uuid()) @db.Uuid
+  mosqueId String @db.Uuid
+  mosque   Mosque @relation(fields: [mosqueId], references: [id], onDelete: Cascade)
+
+  name String @db.VarChar(160)
+  /// URL-safe identifier, unique within the mosque. Stable once issued: a public page may link to it.
+  slug String @db.VarChar(64)
+
+  description String? @db.Text
+
+  status FundStatus @default(active)
+
+  /// What the mosque hopes to raise, when it has said. Null means the fund runs open-ended, which is
+  /// normal for Zakat and for a general fund.
+  targetAmount Decimal? @db.Decimal(14, 2)
+
+  /// The window the fund is collected over, when it has one. Both null for a standing fund.
+  startDate DateTime? @db.Date
+  endDate   DateTime? @db.Date
+
+  /// Whether the public website may show this fund. False keeps it to the back office.
+  isPublic Boolean @default(false)
+
+  createdAt DateTime @default(now()) @db.Timestamptz
+  updatedAt DateTime @updatedAt @db.Timestamptz
+
+  campaigns Campaign[]
+
+  // One slug per mosque, not one globally: the slug appears in a public URL, and two mosques are
+  // each entitled to a "zakat".
+  @@unique([mosqueId, slug])
+  // Serves the list route, which filters by status far more often than it does not.
+  @@index([mosqueId, status])
+  @@index([mosqueId, createdAt])
+  @@map("donation_funds")
+}
+
+/// A specific appeal: "Build the new roof", "Ramadan iftar 1447".
+///
+/// A campaign may sit inside a fund, so the roof appeal's money lands in the construction fund and is
+/// accounted for there. `fundId` is nullable because a one-off appeal that belongs to no standing
+/// fund is ordinary, and requiring a fund first would push mosques into creating throwaway ones.
+model Campaign {
+  id       String @id @default(uuid()) @db.Uuid
+  mosqueId String @db.Uuid
+  mosque   Mosque @relation(fields: [mosqueId], references: [id], onDelete: Cascade)
+
+  /// The fund this appeal collects into, when it collects into one.
+  ///
+  /// `Restrict`, not `Cascade` or `SetNull`: deleting a fund must not silently take its campaigns with
+  /// it, nor quietly orphan them. The service refuses the delete and offers archiving instead — this
+  /// is the database saying the same thing to anything that bypasses the service.
+  fundId String?       @db.Uuid
+  fund   DonationFund? @relation(fields: [fundId], references: [id], onDelete: Restrict)
+
+  title String @db.VarChar(200)
+  /// URL-safe identifier, unique within the mosque.
+  slug  String @db.VarChar(64)
+
+  description String? @db.Text
+
+  /// What the appeal is asking for. Required, unlike a fund's: an appeal without a number is a fund.
+  targetAmount Decimal @db.Decimal(14, 2)
+
+  startDate DateTime @db.Date
+  endDate   DateTime @db.Date
+
+  status CampaignStatus @default(draft)
+
+  /// A URL or storage key. Never the image itself — Postgres is not a CDN, and a 2 MB banner in a row
+  /// is read back on every list query that forgets to exclude it.
+  imageUrl String? @db.VarChar(500)
+
+  /// Whether the public website may show this campaign. Independent of `status`: a completed appeal
+  /// is often left visible with its result, and a drafted one is never visible.
+  isPublic Boolean @default(false)
+
+  createdAt DateTime @default(now()) @db.Timestamptz
+  updatedAt DateTime @updatedAt @db.Timestamptz
+
+  @@unique([mosqueId, slug])
+  @@index([mosqueId, status])
+  @@index([mosqueId, createdAt])
+  @@index([fundId])
+  @@map("campaigns")
 }
 
 // ---------------------------------------------------------------------------

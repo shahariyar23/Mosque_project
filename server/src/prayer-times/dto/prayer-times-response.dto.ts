@@ -70,7 +70,10 @@ export class PrayerTimesResponseDto {
   @ApiProperty({ type: HijriDateDto, nullable: true })
   hijri!: HijriDateDto | null;
 
-  @ApiProperty({ description: 'The IANA zone these times are wall-clock in.', example: 'Asia/Dhaka' })
+  @ApiProperty({
+    description: 'The IANA zone these times are wall-clock in.',
+    example: 'Asia/Dhaka',
+  })
   timezone!: string;
 
   @ApiProperty({ type: CoordinatesDto })
@@ -125,7 +128,8 @@ export class PrayerSettingsResponseDto {
   @ApiProperty({
     type: CoordinatesDto,
     nullable: true,
-    description: 'The coordinates that will be used. Null when the mosque has none recorded, in which case prayer times cannot be calculated until they are.',
+    description:
+      'The coordinates that will be used. Null when the mosque has none recorded, in which case prayer times cannot be calculated until they are.',
   })
   effectiveCoordinates!: CoordinatesDto | null;
 
@@ -148,6 +152,9 @@ export class PrayerSettingsResponseDto {
   })
   offsets!: Record<PrayerKey, number>;
 
-  @ApiProperty({ nullable: true, description: 'When the overrides were last changed. Null if never.' })
+  @ApiProperty({
+    nullable: true,
+    description: 'When the overrides were last changed. Null if never.',
+  })
   updatedAt!: string | null;
 }

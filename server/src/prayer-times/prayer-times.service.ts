@@ -8,7 +8,7 @@ import type { Mosque, MosqueSettings, PrayerSettings } from '@prisma/client';
 import { Prisma } from '@prisma/client';
 
 import { PrismaService } from '../prisma/prisma.service';
-import { AlAdhanClient, AlAdhanUnavailableError } from './aladhan.client';
+import { AlAdhanClient, AlAdhanUnavailableError, type AlAdhanRequest } from './aladhan.client';
 import type { AlAdhanDay } from './aladhan.types';
 import type {
   PrayerSettingsResponseDto,
@@ -28,7 +28,7 @@ import {
   resolveSchoolId,
   type PrayerKey,
 } from './prayer-times.constants';
-import { shiftTime, todayInZone } from './prayer-time.utils';
+import { shiftTime, todayInZone, ISO_DATE_PATTERN } from './prayer-time.utils';
 
 /** A mosque with the two rows that decide how its schedule is calculated. */
 type MosqueWithPrayerConfig = Mosque & {
@@ -57,6 +57,18 @@ export interface PrayerTimesOverrides {
   tune?: string;
 }
 
+/**
+ * The columns this service writes.
+ *
+ * Derived from the create input minus the four the database owns, so a column added to the model shows
+ * up here rather than being silently unwritable. Assignable to both halves of the upsert: the update
+ * accepts each field on its own, and the create accepts it once `mosqueId` is added.
+ */
+type PrayerSettingsWriteData = Omit<
+  Prisma.PrayerSettingsUncheckedCreateInput,
+  'id' | 'mosqueId' | 'createdAt' | 'updatedAt'
+>;
+
 @Injectable()
 export class PrayerTimesService {
   private readonly logger = new Logger(PrayerTimesService.name);
@@ -81,9 +93,31 @@ export class PrayerTimesService {
   ): Promise<PrayerTimesResponseDto> {
     const mosque = await this.loadMosque(mosqueId);
     const config = resolveConfig(mosque, overrides);
+
+    // The path form of this route (`/prayer-times/:date`) has no DTO to validate it, so the check lives
+    // here where both forms pass through. An unchecked date would be reformatted into upstream's
+    // `DD-MM-YYYY` regardless of what it said, and the 400 would arrive from a third party as a 503.
+    if (overrides.date !== undefined && !ISO_DATE_PATTERN.test(overrides.date)) {
+      throw new BadRequestException('date must be a calendar date in YYYY-MM-DD format');
+    }
+
+    // No date supplied means today — and today is a question about where the mosque is, not where the
+    // server is. A server in UTC answering for Dhaka would roll the schedule over six hours late.
     const date = overrides.date ?? todayInZone(config.timezone);
 
-    const cacheKey = PrayerTimesCache.key({ ...config, date, tune: overrides.tune ?? null });
+    const request: AlAdhanRequest = {
+      date,
+      latitude: config.latitude,
+      longitude: config.longitude,
+      method: config.method,
+      school: config.school,
+      timezone: config.timezone,
+      // The mosque's saved offsets are deliberately not sent. Only a caller's one-off `tune` is, and
+      // only because a caller reaching for that parameter is asking upstream a question directly.
+      tune: overrides.tune ?? null,
+    };
+
+    const cacheKey = PrayerTimesCache.key(request);
     const cached = this.cache.get(cacheKey);
 
     let day: AlAdhanDay;
@@ -93,20 +127,12 @@ export class PrayerTimesService {
       day = cached;
       source = 'cache';
     } else {
-      day = await this.fetchDay({ ...config, date, tune: overrides.tune ?? null });
+      day = await this.fetchDay(request);
       this.cache.set(cacheKey, day);
       source = 'aladhan';
     }
 
     return buildResponse(day, config, date, source);
-  }
-
-  /** Today in the mosque's own timezone — not the server's. See `todayInZone`. */
-  async getToday(
-    mosqueId: string,
-    overrides: Omit<PrayerTimesOverrides, 'date'> = {},
-  ): Promise<PrayerTimesResponseDto> {
-    return this.getPrayerTimes(mosqueId, overrides);
   }
 
   /**
@@ -198,15 +224,7 @@ export class PrayerTimesService {
    * that is not an `AlAdhanUnavailableError` is rethrown untouched, so a genuine bug in this module
    * still reaches the global filter as a 500 instead of being reported as someone else's outage.
    */
-  private async fetchDay(request: {
-    date: string;
-    latitude: number;
-    longitude: number;
-    method: number;
-    school: number;
-    timezone: string;
-    tune: string | null;
-  }): Promise<AlAdhanDay> {
+  private async fetchDay(request: AlAdhanRequest): Promise<AlAdhanDay> {
     try {
       return await this.aladhan.getTimings(request);
     } catch (error) {
@@ -332,46 +350,33 @@ function describeSchool(id: number): { id: number; name: string } {
 }
 
 /**
- * DTO → Prisma update payload.
+ * DTO → the columns to write.
  *
- * Written out field by field rather than spread, because the two shapes differ in a way a spread would
- * paper over: `latitude` arrives as a `number` and the column is a `Decimal`, and an explicit `null`
- * has to survive as a null while an omitted field has to stay absent. `undefined` in a Prisma `update`
- * means "leave alone" and `null` means "clear", which is exactly the distinction the DTO documents, so
- * the mapping is direct once the numbers are converted.
+ * `!== undefined` rather than `in`, because the two differ on a field that class-transformer may have
+ * materialised as `undefined`, and there "omitted" is the right reading. An explicit `null` survives as
+ * a null, which is the whole point of the DTO's three-way shape: absent leaves the column alone,
+ * `null` clears it, a value sets it.
  */
-function toPrismaData(dto: UpdatePrayerSettingsDto): Prisma.PrayerSettingsUncheckedUpdateInput &
-  Prisma.PrayerSettingsUncheckedCreateInput extends never
-  ? never
-  : Prisma.PrayerSettingsUpdateInput {
-  const data: Record<string, unknown> = {};
+function toPrismaData(dto: UpdatePrayerSettingsDto): PrayerSettingsWriteData {
+  const data: PrayerSettingsWriteData = {};
 
-  if ('method' in dto) data.method = dto.method ?? null;
-  if ('school' in dto) data.school = dto.school ?? null;
-  if ('timezone' in dto) data.timezone = dto.timezone ?? null;
+  if (dto.method !== undefined) data.method = dto.method;
+  if (dto.school !== undefined) data.school = dto.school;
+  if (dto.timezone !== undefined) data.timezone = dto.timezone;
 
-  if ('latitude' in dto) {
-    data.latitude = dto.latitude === null || dto.latitude === undefined
-      ? null
-      : new Prisma.Decimal(dto.latitude);
-  }
-  if ('longitude' in dto) {
-    data.longitude = dto.longitude === null || dto.longitude === undefined
-      ? null
-      : new Prisma.Decimal(dto.longitude);
-  }
+  // Prisma accepts a number for a `Decimal` column and does the conversion itself, so there is nothing
+  // to construct here — and six decimal places is well inside what a double represents exactly.
+  if (dto.latitude !== undefined) data.latitude = dto.latitude;
+  if (dto.longitude !== undefined) data.longitude = dto.longitude;
 
   for (const key of PRAYER_KEYS) {
     const column = OFFSET_COLUMNS[key];
-    if (column in dto) {
-      const value = dto[column];
-      // A null here would violate the column's NOT NULL; the DTO does not permit one, and an offset
-      // has a meaningful zero to reset to anyway.
-      if (typeof value === 'number') data[column] = value;
-    }
+    const value = dto[column];
+    // The columns are NOT NULL and the DTO does not permit a null; an offset resets to zero, not null.
+    if (value !== undefined) data[column] = value;
   }
 
-  return data as Prisma.PrayerSettingsUpdateInput;
+  return data;
 }
 
 /** Prisma `Decimal` → number. Null and undefined both mean "not set". */

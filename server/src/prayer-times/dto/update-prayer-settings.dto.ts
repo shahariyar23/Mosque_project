@@ -63,7 +63,8 @@ export class UpdatePrayerSettingsDto {
   school?: number | null;
 
   @ApiPropertyOptional({
-    description: 'Calculate from these coordinates instead of the mosque’s. Null uses the mosque’s.',
+    description:
+      'Calculate from these coordinates instead of the mosque’s. Null uses the mosque’s.',
     nullable: true,
     example: 23.810331,
   })
@@ -90,7 +91,11 @@ export class UpdatePrayerSettingsDto {
   })
   timezone?: string | null;
 
-  @ApiPropertyOptional({ description: 'Minutes added to the calculated Imsak.', minimum: -30, maximum: 30 })
+  @ApiPropertyOptional({
+    description: 'Minutes added to the calculated Imsak.',
+    minimum: -30,
+    maximum: 30,
+  })
   @IsOptional()
   @Type(() => Number)
   @IsInt()
