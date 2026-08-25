@@ -5,7 +5,7 @@ import { mockMyClasses } from "@/data/mock-user-data";
 import { GraduationCap, Clock, MapPin, UserCircle } from "lucide-react";
 
 export default async function ClassesPage() {
-  const session = await getSession();
+  const session = getSession();
 
   if (!session) {
     redirect("/signin");

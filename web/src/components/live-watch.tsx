@@ -49,9 +49,12 @@ export function LiveWatch({ times24, language }: Props) {
 
   useEffect(() => {
     const updateClock = () => {
-      const t = new Date().toLocaleTimeString("en-GB", {
+      const t = new Date().toLocaleTimeString("en-US", {
         timeZone: "Asia/Dhaka",
-        hour12: false,
+        hour12: true,
+        hour: "numeric",
+        minute: "2-digit",
+        second: "2-digit",
       });
       setDhakaNow(language === "bn" ? toBanglaDigits(t) : t);
     };
@@ -84,10 +87,15 @@ export function LiveWatch({ times24, language }: Props) {
 
   return (
     <div className="flex items-center gap-3">
-      <div className="text-white/90">{ClockIcon}</div>
+      <div className="text-white/80">
+        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+          <circle cx="12" cy="12" r="9" />
+          <path d="M12 7v5l3 2" />
+        </svg>
+      </div>
       <div>
         <div className="font-mono text-3xl tracking-wider">{dhakaNow}</div>
-        <div className="mt-2 text-sm text-white/70">
+        <div className="mt-1 text-sm text-white/70">
           {language === "bn" ? "ঢাকা সময়" : "Dhaka time"}
         </div>
       </div>

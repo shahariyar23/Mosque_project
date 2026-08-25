@@ -1,8 +1,9 @@
 "use client";
-
+import { useRef } from "react";
 import Link from "next/link";
 import { useLanguage } from "@/components/language-provider";
 import { IslamicTexture } from "@/components/islamic-texture";
+import { gsap, ScrollTrigger, useIsomorphicLayoutEffect } from "@/lib/gsap";
 
 type FooterLink = { label: string; href: string };
 type FooterGroup = { title: string; links: FooterLink[] };
@@ -77,20 +78,67 @@ export function SiteFooter() {
   const { language, setLanguage } = useLanguage();
   const bengali = language === "bn";
   const groups = bengali ? bengaliGroups : englishGroups;
+  const footerRef = useRef<HTMLElement>(null);
+  const textureRef = useRef<HTMLDivElement>(null);
+
+  useIsomorphicLayoutEffect(() => {
+    const ctx = gsap.context(() => {
+      const prefersReducedMotion = window.matchMedia(
+        "(prefers-reduced-motion: reduce)"
+      ).matches;
+      if (prefersReducedMotion) return;
+
+      // Parallax for the Islamic Texture
+      gsap.to(textureRef.current, {
+        y: -100, // Move up slightly as we scroll down
+        ease: "none",
+        scrollTrigger: {
+          trigger: footerRef.current,
+          start: "top bottom",
+          end: "bottom top",
+          scrub: true,
+        },
+      });
+
+      // Reveal animation for newsletter
+      gsap.fromTo(
+        ".newsletter-content",
+        { opacity: 0, y: 30 },
+        {
+          opacity: 1,
+          y: 0,
+          duration: 0.8,
+          ease: "power3.out",
+          scrollTrigger: {
+            trigger: ".newsletter-section",
+            start: "top 80%",
+            once: true,
+          },
+        }
+      );
+    }, footerRef);
+    return () => ctx.revert();
+  }, []);
 
   return (
     <footer
       id="contact"
+      ref={footerRef}
       className="relative overflow-hidden bg-[#10251e] text-[#f5f3ea]"
     >
-      <IslamicTexture
-        variant="footer"
-        position="center"
-        className="absolute inset-x-0 bottom-0 h-85 bg-contain bg-bottom bg-no-repeat sm:h-107.5"
-      />
+      <div ref={textureRef} className="absolute inset-x-0 bottom-[-100px] h-85 sm:h-107.5 pointer-events-none z-0">
+        <IslamicTexture
+          variant="footer"
+          position="center"
+          className="h-full w-full bg-contain bg-bottom bg-no-repeat"
+        />
+      </div>
       <div className="relative z-10">
-        <section className="border-b border-white/10 bg-[#0d4d3b] px-5 py-16 sm:py-20">
-          <div className="mx-auto flex max-w-7xl flex-col gap-8 lg:flex-row lg:items-end lg:justify-center lg:px-8">
+        <section className="newsletter-section relative overflow-hidden border-b border-white/10 bg-[#0d4d3b] px-5 py-16 sm:py-20">
+          {/* Subtle moving gradient background for newsletter */}
+          <div className="absolute inset-0 bg-[linear-gradient(45deg,transparent_25%,rgba(255,255,255,0.03)_50%,transparent_75%)] bg-[length:250%_250%] animate-[gradient_15s_linear_infinite]" />
+          
+          <div className="newsletter-content relative z-10 mx-auto flex max-w-7xl flex-col gap-8 lg:flex-row lg:items-end lg:justify-center lg:px-8">
             <div>
               <p className="text-xs font-bold tracking-[.22em] text-[#e0be79]">
                 {bengali ? "নূরের সঙ্গে থাকুন" : "STAY CONNECTED"}
@@ -122,11 +170,11 @@ export function SiteFooter() {
                 placeholder={
                   bengali ? "আপনার ইমেইল ঠিকানা" : "Your email address"
                 }
-                className="w-full max-w-sm border border-white/20 bg-white/10 px-4 py-3 text-center text-white outline-none placeholder:text-white/45 focus:border-[#e0be79]"
+                className="w-full max-w-sm border border-white/20 bg-white/10 px-4 py-3 text-center text-white outline-none placeholder:text-white/45 focus:border-[#e0be79] transition-colors"
               />
               <button
                 type="submit"
-                className="bg-[#c79a45] px-6 py-3 text-center font-semibold text-[#153128] transition hover:bg-[#e0be79]"
+                className="bg-[#c79a45] px-6 py-3 text-center font-semibold text-[#153128] transition hover:bg-[#e0be79] hover:-translate-y-0.5"
               >
                 {bengali ? "যোগ দিন" : "Join"}
               </button>

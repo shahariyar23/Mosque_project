@@ -16,7 +16,7 @@ import {
 } from "lucide-react";
 
 export default async function AccountDashboard() {
-  const session = await getSession();
+  const session = getSession();
 
   if (!session) {
     redirect("/signin");

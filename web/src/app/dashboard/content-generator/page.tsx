@@ -3,7 +3,7 @@ import { PageHeader } from "@/components/dashboard/page-header";
 import { getSession } from "@/lib/session";
 
 export default async function ContentGeneratorPage() {
-  const session = await getSession();
+  const session = getSession();
   if (!session?.permissions.includes("article.manage")) {
     return (
       <div className="rounded-xl border border-[#e2e1d6] bg-white p-8 text-center">

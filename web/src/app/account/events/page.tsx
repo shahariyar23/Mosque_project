@@ -5,7 +5,7 @@ import { mockMyEvents } from "@/data/mock-user-data";
 import { CalendarDays, MapPin, Clock } from "lucide-react";
 
 export default async function EventsPage() {
-  const session = await getSession();
+  const session = getSession();
 
   if (!session) {
     redirect("/signin");

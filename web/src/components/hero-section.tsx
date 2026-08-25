@@ -1,89 +1,114 @@
 "use client";
 
 import { useLanguage } from "@/components/language-provider";
+import { ArrowRight, Moon, BookOpen, CalendarDays, Heart } from "lucide-react";
 
 export function HeroSection() {
   const { language } = useLanguage();
   const bangla = language === "bn";
-  const copy = bangla
-    ? {
-        eyebrow: "আমাদের মসজিদে স্বাগতম",
-        faith: "ঈমান।",
-        knowledge: "জ্ঞান।",
-        community: "সম্প্রদায়।",
-        description: "ইবাদত, শিক্ষা ও সম্প্রদায়ের মিলনস্থল।",
-        prayer: "নামাজের সময় দেখুন",
-        donate: "এখনই দান করুন",
-        date: "১৮ আগস্ট ২০২৬",
-        day: "মঙ্গলবার",
-        hijri: "০৪ সফর ১৪৪৮",
-        location: "ঢাকা, বাংলাদেশ",
-        local: "স্থানীয় নামাজের সময়",
-      }
-    : {
-        eyebrow: "WELCOME TO OUR MOSQUE",
-        faith: "Faith.",
-        knowledge: "Knowledge.",
-        community: "Community.",
-        description:
-          "A place where worship, learning and community come together.",
-        prayer: "View Prayer Times",
-        donate: "Donate Now",
-        date: "18 AUGUST 2026",
-        day: "Tuesday",
-        hijri: "04 SAFAR 1448",
-        location: "DHAKA, BANGLADESH",
-        local: "Local prayer times",
-      };
+  
   return (
     <section
       id="home"
-      className="relative min-h-[730px] overflow-hidden bg-[#073a2d] text-white"
+      className="relative min-h-[850px] lg:min-h-[900px] overflow-hidden bg-[#073a2d] text-white flex flex-col lg:flex-row items-center pt-32 lg:pt-20"
     >
-      <div className="absolute inset-0 bg-[linear-gradient(90deg,rgba(3,33,25,.94),rgba(3,33,25,.55)),url('https://images.unsplash.com/photo-1564769625392-651b5f5f0b53?auto=format&fit=crop&w=1800&q=85')] bg-cover bg-center" />
-      <div className="relative mx-auto flex min-h-[730px] max-w-7xl flex-col justify-center px-5 pb-20 pt-32 lg:px-8">
-        <p className="mb-6 text-xs font-bold tracking-[.26em] text-[#e0be79]">
-          {copy.eyebrow}
-        </p>
-        <h1 className="max-w-3xl text-5xl font-semibold leading-[1.06] sm:text-6xl lg:text-8xl">
-          {copy.faith}
-          <br />
-          {copy.knowledge}
-          <br />
-          {copy.community}
-        </h1>
-        <p className="mt-7 max-w-xl text-base leading-7 text-white/75 sm:text-lg">
-          {copy.description}
-        </p>
-        <div className="mt-9 flex flex-wrap gap-3">
-          <a
-            href="#prayer-times"
-            className="bg-[#c79a45] px-6 py-3.5 font-semibold text-[#153128]"
-          >
-            {copy.prayer}
-          </a>
-          <a
-            href="#donations"
-            className="border border-white/50 px-6 py-3.5 font-semibold"
-          >
-            {copy.donate}
-          </a>
-        </div>
-        <div className="mt-16 flex max-w-xl flex-wrap gap-x-8 gap-y-4 border-t border-white/30 pt-5 text-sm">
-          <span>
-            <b className="block text-[#e0be79]">{copy.date}</b>
-            {copy.day}
-          </span>
-          <span>
-            <b className="block text-[#e0be79]">{copy.hijri}</b>
-            <span className="arabic">صفر ١٤٤٨</span>
-          </span>
-          <span>
-            <b className="block text-[#e0be79]">{copy.location}</b>
-            {copy.local}
-          </span>
+      <style dangerouslySetInnerHTML={{ __html: `
+        @media (max-width: 1023px) {
+          .hero-video-bg {
+            object-position: 78% center !important;
+          }
+        }
+      `}} />
+
+      {/* Background Video */}
+      <video
+        autoPlay
+        loop
+        muted
+        playsInline
+        className="hero-video-bg absolute inset-0 z-0 h-full w-full object-cover lg:object-center"
+      >
+        <source src="/hero.mp4" type="video/mp4" />
+      </video>
+      
+      {/* Gradient Overlay for Text Readability */}
+      <div className="absolute inset-0 z-0 bg-gradient-to-b from-[#04241b]/95 via-[#072a20]/40 to-transparent lg:bg-gradient-to-r lg:from-[#072a20]/90 lg:via-[#072a20]/60 lg:to-transparent lg:w-2/3 pointer-events-none" />
+
+      {/* Content Container */}
+      <div className="relative z-10 mx-auto w-full max-w-7xl px-4 lg:px-8 pointer-events-none mt-10 lg:mt-0 flex flex-col items-center lg:items-start text-center lg:text-left">
+        <div className="max-w-2xl pointer-events-auto flex flex-col items-center lg:items-start">
+          
+          {/* Top Arabic Text */}
+          <div className="flex items-center justify-center lg:justify-start gap-3 text-[#dca74e] mb-4 lg:mb-6">
+            <span className="text-[10px]">❖</span>
+            <span className="font-arabic text-lg sm:text-xl tracking-wider">بِسْمِ ٱللَّٰهِ ٱلرَّحْمَٰنِ ٱلرَّحِيمِ</span>
+            <span className="text-[10px]">❖</span>
+          </div>
+
+          {/* Main Heading */}
+          <h1 className="text-[38px] sm:text-6xl lg:text-[72px] font-serif text-[#f2e6ce] leading-[1.1] tracking-wide mb-4 lg:mb-6">
+            DISCOVER THE<br />
+            BEAUTY OF FAITH
+          </h1>
+
+          {/* Subheading */}
+          <p className="text-[#b0beba] text-sm sm:text-lg max-w-[300px] sm:max-w-[450px] leading-relaxed mb-8 lg:mb-10">
+            NOOR is your digital companion for a stronger connection with Allah and your community.
+          </p>
+
+          {/* Buttons - Side by side even on mobile to match image 1 */}
+          <div className="flex flex-row justify-center lg:justify-start gap-3 sm:gap-5">
+            <a
+              href="#explore"
+              className="bg-gradient-to-r from-[#e7b864] to-[#c18931] text-[#13231c] px-4 sm:px-7 py-2.5 sm:py-3.5 rounded-full text-sm sm:text-base font-medium flex items-center gap-1.5 sm:gap-2 hover:opacity-90 transition-opacity"
+            >
+              Explore Now <ArrowRight size={16} />
+            </a>
+            <a
+              href="#learn"
+              className="border border-[#dca74e]/50 text-[#dca74e] px-4 sm:px-7 py-2.5 sm:py-3.5 rounded-full text-sm sm:text-base font-medium flex items-center gap-1.5 sm:gap-2 hover:bg-[#dca74e]/10 transition-colors"
+            >
+              Learn More <ArrowRight size={16} />
+            </a>
+          </div>
+
+          {/* Features Grid */}
+          <div className="mt-16 lg:mt-20">
+            <p className="text-[#7d8c83] text-[10px] sm:text-xs tracking-[0.2em] font-semibold mb-6">
+              FEATURES
+            </p>
+            <div className="flex flex-wrap justify-center lg:justify-start gap-6 sm:gap-12">
+              <a href="#prayer" className="flex flex-col items-center gap-3 group">
+                <div className="text-[#dca74e] group-hover:scale-110 transition-transform">
+                  <Moon size={28} className="sm:w-8 sm:h-8" strokeWidth={1.5} />
+                </div>
+                <span className="text-xs sm:text-sm text-[#b0beba]">Prayer Times</span>
+              </a>
+              <a href="#quran" className="flex flex-col items-center gap-3 group">
+                <div className="text-[#dca74e] group-hover:scale-110 transition-transform">
+                  <BookOpen size={28} className="sm:w-8 sm:h-8" strokeWidth={1.5} />
+                </div>
+                <span className="text-xs sm:text-sm text-[#b0beba]">Quran</span>
+              </a>
+              <a href="#events" className="flex flex-col items-center gap-3 group">
+                <div className="text-[#dca74e] group-hover:scale-110 transition-transform">
+                  <CalendarDays size={28} className="sm:w-8 sm:h-8" strokeWidth={1.5} />
+                </div>
+                <span className="text-xs sm:text-sm text-[#b0beba]">Events</span>
+              </a>
+              <a href="#donate" className="flex flex-col items-center gap-3 group">
+                <div className="text-[#dca74e] group-hover:scale-110 transition-transform">
+                  <Heart size={28} className="sm:w-8 sm:h-8" strokeWidth={1.5} />
+                </div>
+                <span className="text-xs sm:text-sm text-[#b0beba]">Donate</span>
+              </a>
+            </div>
+          </div>
+
         </div>
       </div>
     </section>
   );
 }
+
+

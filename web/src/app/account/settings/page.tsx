@@ -4,7 +4,7 @@ import Link from "next/link";
 import { UserRound, LockKeyhole, Bell, ShieldCheck, LogOut, Trash2, ChevronRight } from "lucide-react";
 
 export default async function SettingsPage() {
-  const session = await getSession();
+  const session = getSession();
 
   if (!session) {
     redirect("/signin");

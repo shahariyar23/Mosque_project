@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { useLanguage, translations } from "@/components/language-provider";
 import { useAuth } from "@/components/auth-provider";
 import { UserMenu } from "@/components/account/UserMenu";
+import { gsap, useIsomorphicLayoutEffect } from "@/lib/gsap";
 
 const links = [
   { label: "Home", href: "/", section: "home" },
@@ -82,6 +83,42 @@ export function SiteHeader() {
   const isAppPage = pathname.startsWith("/account") || pathname.startsWith("/dashboard");
   const forceScrolled = scrolled || isAppPage;
 
+  useIsomorphicLayoutEffect(() => {
+    const ctx = gsap.context(() => {
+      const prefersReducedMotion = window.matchMedia(
+        "(prefers-reduced-motion: reduce)"
+      ).matches;
+      if (prefersReducedMotion) return;
+
+      const tl = gsap.timeline({ defaults: { ease: "power3.out" } });
+      
+      tl.fromTo(
+        ".logo-group",
+        { opacity: 0, y: -10 },
+        { opacity: 1, y: 0, duration: 0.6 }
+      )
+      .fromTo(
+        ".nav-link",
+        { opacity: 0, y: -10 },
+        { opacity: 1, y: 0, duration: 0.4, stagger: 0.05 },
+        "-=0.3"
+      )
+      .fromTo(
+        ".nav-lang-btn",
+        { opacity: 0, y: -10 },
+        { opacity: 1, y: 0, duration: 0.4 },
+        "-=0.2"
+      )
+      .fromTo(
+        ".nav-user-menu, .donate-btn",
+        { opacity: 0, y: -10 },
+        { opacity: 1, y: 0, duration: 0.4 },
+        "-=0.2"
+      );
+    }, headerRef);
+    return () => ctx.revert();
+  }, []);
+
   return (
     <header
       ref={headerRef}
@@ -125,14 +162,16 @@ export function SiteHeader() {
 
           <button
             onClick={() => setLanguage(language === "bn" ? "en" : "bn")}
-            className="text-xs text-[#e0be79]"
+            className="nav-lang-btn text-xs text-[#e0be79]"
             aria-label="Switch between English and Bangla"
           >
             {language === "bn" ? "English" : "বাংলা"}
           </button>
           
           {session ? (
-            <UserMenu />
+            <div className="nav-user-menu">
+              <UserMenu />
+            </div>
           ) : (
             <>
               <Link

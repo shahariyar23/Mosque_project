@@ -90,6 +90,12 @@ export const PERMISSION_GROUPS = {
     "fund.manage",
     "receipt.view",
     "receipt.viewOwn",
+    // EXT — fundraising appeals inside a fund. Split from `fund.*` because drafting an appeal and
+    // owning the fund structure money is accounted against are different jobs, and `publish` is
+    // split from `manage` for the same reason it is on events and announcements.
+    "campaign.view",
+    "campaign.manage",
+    "campaign.publish",
   ],
   // EXT — monthly member contributions have no home in the spec's registry yet.
   contributions: ["contribution.view", "contribution.viewOwn", "contribution.record", "contribution.manage"],
@@ -126,6 +132,9 @@ export const FINANCE_EXTENSIONS: Permission[] = [
   "fund.manage",
   "receipt.view",
   "receipt.viewOwn",
+  "campaign.view",
+  "campaign.manage",
+  "campaign.publish",
   "contribution.view",
   "contribution.viewOwn",
   "contribution.record",
@@ -218,6 +227,9 @@ export const rolePermissions: Record<Role, Permission[]> = {
     "transaction.void",
     "fund.view",
     "fund.manage",
+    "campaign.view",
+    "campaign.manage",
+    "campaign.publish",
     "receipt.issue",
     "receipt.view",
     "contribution.view",

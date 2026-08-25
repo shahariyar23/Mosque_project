@@ -32,7 +32,7 @@ export const metadata: Metadata = {
  * an auth concern, so it lands with `/signin`; this gate is what enforces access in the meantime.
  */
 export default async function DashboardLayout({ children }: { children: ReactNode }) {
-  const session = await getSession();
+  const session = getSession();
 
   if (!session) {
     redirect(`/signin?next=${encodeURIComponent("/dashboard")}`);

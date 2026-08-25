@@ -33,7 +33,7 @@ export default async function AccountLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const session = await getSession();
+  const session = getSession();
 
   if (!session) {
     redirect("/signin");

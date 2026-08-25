@@ -5,7 +5,7 @@ import { mockDonationSummary, mockDonationHistory } from "@/data/mock-user-data"
 import { Receipt, Search, Filter } from "lucide-react";
 
 export default async function DonationsPage() {
-  const session = await getSession();
+  const session = getSession();
 
   if (!session) {
     redirect("/signin");

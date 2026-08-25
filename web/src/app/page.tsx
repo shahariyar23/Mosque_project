@@ -6,6 +6,8 @@ import { ServicesEventsSection } from "@/components/services-events-section";
 import { DonationFooterSection } from "@/components/donation-footer-section";
 import { SiteFooter } from "@/components/site-footer";
 
+import { QuickLinks } from "@/components/home/QuickLinks";
+
 const prayers = [
   ["Fajr", "4:38 AM", "Passed"],
   ["Sunrise", "5:55 AM", ""],
@@ -48,27 +50,7 @@ export default function Home() {
       <SiteHeader />
       <HeroSection />
       <PrayerTimesSection />
-      <section className="mx-auto max-w-7xl px-5 py-20 lg:px-8">
-        <div className="grid grid-cols-2 border border-[#dfdfd5] sm:grid-cols-3 lg:grid-cols-6">
-          {[
-            ["◷", "Prayer Times"],
-            ["☾", "Jumu’ah"],
-            ["✦", "Events"],
-            ["◈", "Quran"],
-            ["♡", "Donate"],
-            ["⌁", "Contact"],
-          ].map(([i, t]) => (
-            <a
-              href="#"
-              className="border border-[#dfdfd5] p-5 text-center transition hover:bg-[#0d4d3b] hover:text-white"
-              key={t}
-            >
-              <span className="block text-xl text-[#c79a45]">{i}</span>
-              <span className="mt-3 block text-sm font-semibold">{t}</span>
-            </a>
-          ))}
-        </div>
-      </section>
+      <QuickLinks />
       <AboutSection />
 
       <ServicesEventsSection />

@@ -4,7 +4,7 @@ import { mockNotifications } from "@/data/mock-user-data";
 import { Bell, HandCoins, CalendarDays, Ticket, Info, CheckCircle2 } from "lucide-react";
 
 export default async function NotificationsPage() {
-  const session = await getSession();
+  const session = getSession();
 
   if (!session) {
     redirect("/signin");

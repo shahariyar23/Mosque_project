@@ -5,7 +5,7 @@ import { mockMyBookings } from "@/data/mock-user-data";
 import { Ticket, CalendarDays, Clock, MapPin } from "lucide-react";
 
 export default async function BookingsPage() {
-  const session = await getSession();
+  const session = getSession();
 
   if (!session) {
     redirect("/signin");

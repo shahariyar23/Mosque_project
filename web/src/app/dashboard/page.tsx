@@ -34,7 +34,7 @@ export const metadata: Metadata = {
  * matches `/dashboard/anything` but not `/dashboard` itself, and the index route fell through to a 404.
  */
 export default async function OverviewPage() {
-  const session = await getSession();
+  const session = getSession();
   const firstName = session?.user.name.split(" ")[0] ?? "there";
   const mosqueName = session?.user.mosqueName ?? "the mosque";
 

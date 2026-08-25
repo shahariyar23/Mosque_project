@@ -10,14 +10,14 @@ export const metadata: Metadata = {
   description: "A welcoming place for worship, learning and community.",
 };
 
-export default async function RootLayout({
+export default function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
   const fontVariables = [inter, hindSiliguri, notoSerif, notoSerifBengali]
     .map((font) => font.variable)
     .join(" ");
 
-  const session = await getSession();
+  const session = getSession();
 
   return (
     <html lang="en">

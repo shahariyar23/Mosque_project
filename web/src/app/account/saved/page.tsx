@@ -5,7 +5,7 @@ import { mockSavedContent } from "@/data/mock-user-data";
 import { Bookmark, BookmarkMinus, FileText, CalendarDays, GraduationCap } from "lucide-react";
 
 export default async function SavedContentPage() {
-  const session = await getSession();
+  const session = getSession();
 
   if (!session) {
     redirect("/signin");

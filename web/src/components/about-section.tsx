@@ -1,9 +1,68 @@
 "use client";
+import { useRef } from "react";
+import dynamic from "next/dynamic";
 import { useLanguage } from "@/components/language-provider";
+import { gsap, ScrollTrigger, useIsomorphicLayoutEffect } from "@/lib/gsap";
+
+const About3D = dynamic(() => import("@/components/home/About3D"), { ssr: false });
 
 export function AboutSection() {
   const { language } = useLanguage();
   const bn = language === "bn";
+  const containerRef = useRef<HTMLElement>(null);
+  const imageRef = useRef<HTMLDivElement>(null);
+
+  useIsomorphicLayoutEffect(() => {
+    const ctx = gsap.context(() => {
+      const prefersReducedMotion = window.matchMedia(
+        "(prefers-reduced-motion: reduce)"
+      ).matches;
+      
+      if (prefersReducedMotion || !containerRef.current) return;
+
+      // Image clip-path reveal
+      if (imageRef.current) {
+        gsap.fromTo(
+          imageRef.current,
+          { clipPath: "polygon(0 100%, 100% 100%, 100% 100%, 0% 100%)", opacity: 0 },
+          {
+            clipPath: "polygon(0 0%, 100% 0%, 100% 100%, 0% 100%)",
+            opacity: 1,
+            duration: 1.2,
+            ease: "power3.inOut",
+            scrollTrigger: {
+              trigger: containerRef.current,
+              start: "top 75%",
+              once: true,
+            },
+          }
+        );
+      }
+
+      // Text stagger reveal
+      const textElements = gsap.utils.toArray(containerRef.current.querySelectorAll(".about-text"));
+      if (textElements.length) {
+        gsap.fromTo(
+          textElements as any,
+        { opacity: 0, y: 20 },
+        {
+          opacity: 1,
+          y: 0,
+          duration: 0.8,
+          stagger: 0.1,
+          ease: "power3.out",
+          scrollTrigger: {
+            trigger: containerRef.current,
+            start: "top 70%",
+            once: true,
+          },
+        }
+      );
+      }
+    }, containerRef);
+    return () => ctx.revert();
+  }, []);
+
   const copy = bn
     ? {
         eyebrow: "আমাদের মসজিদ সম্পর্কে",
@@ -29,21 +88,28 @@ export function AboutSection() {
         ],
         action: "Learn More About Us",
       };
+      
   return (
     <section
       id="about"
+      ref={containerRef}
       className="mx-auto grid max-w-7xl gap-10 px-5 py-12 lg:grid-cols-2 lg:px-8"
     >
-      <div className="min-h-[360px] bg-[linear-gradient(#0b423155,#0b423155),url('https://images.unsplash.com/photo-1564121211835-e88c852648ab?auto=format&fit=crop&w=1000&q=80')] bg-cover bg-center" />
+      <div 
+        ref={imageRef}
+        className="relative min-h-[360px] bg-[linear-gradient(#0b423155,#0b423155),url('https://images.unsplash.com/photo-1564121211835-e88c852648ab?auto=format&fit=crop&w=1000&q=80')] bg-cover bg-center overflow-hidden"
+      >
+        <About3D />
+      </div>
       <div className="self-center">
-        <p className="text-xs font-bold tracking-[.2em] text-[#c79a45]">
+        <p className="about-text text-xs font-bold tracking-[.2em] text-[#c79a45]">
           {copy.eyebrow}
         </p>
-        <h2 className="mt-4 text-4xl font-semibold leading-tight">
+        <h2 className="about-text mt-4 text-4xl font-semibold leading-tight">
           {copy.title}
         </h2>
-        <p className="mt-5 max-w-xl leading-7 text-[#69726d]">{copy.text}</p>
-        <div className="mt-8 grid grid-cols-2 gap-6 border-t border-[#dcdcd2] pt-6 sm:grid-cols-4">
+        <p className="about-text mt-5 max-w-xl leading-7 text-[#69726d]">{copy.text}</p>
+        <div className="about-text mt-8 grid grid-cols-2 gap-6 border-t border-[#dcdcd2] pt-6 sm:grid-cols-4">
           {copy.stats.map(([number, label]) => (
             <div key={label}>
               <b className="text-2xl text-[#0d4d3b]">{number}</b>
@@ -52,7 +118,7 @@ export function AboutSection() {
           ))}
         </div>
         <a
-          className="mt-8 inline-block border-b-2 border-[#c79a45] pb-1 font-semibold"
+          className="about-text mt-8 inline-block border-b-2 border-[#c79a45] pb-1 font-semibold transition hover:text-[#c79a45]"
           href="/about"
         >
           {copy.action}

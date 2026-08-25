@@ -9,7 +9,7 @@ export default async function DonationDetailsPage({
 }: {
   params: Promise<{ id: string }>;
 }) {
-  const session = await getSession();
+  const session = getSession();
 
   if (!session) {
     redirect("/signin");

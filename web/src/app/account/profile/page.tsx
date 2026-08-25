@@ -4,7 +4,7 @@ import Link from "next/link";
 import { UserRound, Mail, Phone, MapPin, ShieldCheck, LockKeyhole } from "lucide-react";
 
 export default async function ProfilePage() {
-  const session = await getSession();
+  const session = getSession();
 
   if (!session) {
     redirect("/signin");
