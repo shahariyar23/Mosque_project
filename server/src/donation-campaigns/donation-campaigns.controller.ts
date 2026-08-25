@@ -88,7 +88,8 @@ export class DonationCampaignsController {
       'derived from.',
   })
   @ApiForbiddenResponse({
-    description: 'Authenticated, but without `campaign.manage` — or without `campaign.publish` while ' +
+    description:
+      'Authenticated, but without `campaign.manage` — or without `campaign.publish` while ' +
       'trying to publish.',
   })
   @ApiConflictResponse({ description: 'This mosque already has a campaign with that slug.' })
@@ -176,7 +177,8 @@ export class DonationCampaignsController {
       'this mosque.',
   })
   @ApiForbiddenResponse({
-    description: 'Authenticated, but without `campaign.manage` — or without `campaign.publish` while ' +
+    description:
+      'Authenticated, but without `campaign.manage` — or without `campaign.publish` while ' +
       'trying to publish.',
   })
   @ApiNotFoundResponse({ description: 'No such campaign in this mosque.' })

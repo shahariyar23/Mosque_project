@@ -41,7 +41,10 @@ export class DonationFundResponseDto {
   })
   slug!: string;
 
-  @ApiPropertyOptional({ nullable: true, example: 'Obligatory annual charity, distributed locally.' })
+  @ApiPropertyOptional({
+    nullable: true,
+    example: 'Obligatory annual charity, distributed locally.',
+  })
   description!: string | null;
 
   @ApiProperty({ enum: FundStatus })

@@ -65,7 +65,10 @@ export class DonationFundsService {
    * for a slug rather than inventing one, because a slug is a permanent public URL and a machine
    * transliteration is a worse guess than the mosque's own.
    */
-  async create(actor: AuthenticatedUser, dto: CreateDonationFundDto): Promise<DonationFundResponseDto> {
+  async create(
+    actor: AuthenticatedUser,
+    dto: CreateDonationFundDto,
+  ): Promise<DonationFundResponseDto> {
     const slug = this.resolveSlug(dto.slug, dto.name);
     this.assertRange(dto.startDate ?? null, dto.endDate ?? null);
 

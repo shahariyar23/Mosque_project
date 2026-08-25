@@ -273,7 +273,8 @@ export class DonationCampaignsService {
     status: CampaignStatus | undefined,
     isPublic: boolean | undefined,
   ): void {
-    const publishing = isPublic === true || (status !== undefined && status !== CampaignStatus.draft);
+    const publishing =
+      isPublic === true || (status !== undefined && status !== CampaignStatus.draft);
 
     if (!publishing) return;
     if (hasPermission(effectivePermissions(actor), 'campaign.publish')) return;

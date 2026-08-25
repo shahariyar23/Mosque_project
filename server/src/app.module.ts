@@ -21,6 +21,8 @@ import { VolunteersModule } from './volunteers/volunteers.module';
 import { PrayerTimesModule } from './prayer-times/prayer-times.module';
 import { JumuahModule } from './jumuah/jumuah.module';
 import { RamadanModule } from './ramadan/ramadan.module';
+import { DonationFundsModule } from './donation-funds/donation-funds.module';
+import { DonationCampaignsModule } from './donation-campaigns/donation-campaigns.module';
 
 /**
  * The composition root.
@@ -83,6 +85,10 @@ import { RamadanModule } from './ramadan/ramadan.module';
     PrayerTimesModule,
     JumuahModule,
     RamadanModule,
+    // Funds first, then campaigns: a campaign is filed under a fund, and reading them in that order is
+    // the same order the two tables relate in.
+    DonationFundsModule,
+    DonationCampaignsModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: ThrottlerGuard },
