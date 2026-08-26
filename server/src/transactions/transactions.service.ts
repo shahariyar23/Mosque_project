@@ -38,7 +38,10 @@ export class TransactionsService {
   /**
    * Records a new financial ledger transaction for the caller's mosque.
    */
-  async create(actor: AuthenticatedUser, dto: CreateTransactionDto): Promise<TransactionResponseDto> {
+  async create(
+    actor: AuthenticatedUser,
+    dto: CreateTransactionDto,
+  ): Promise<TransactionResponseDto> {
     if (dto.fundId) await this.assertFundOwned(actor.mosqueId, dto.fundId);
     if (dto.toFundId) await this.assertFundOwned(actor.mosqueId, dto.toFundId);
     if (dto.donationId) await this.assertDonationOwned(actor.mosqueId, dto.donationId);
@@ -97,7 +100,10 @@ export class TransactionsService {
     query: TransactionQueryDto,
   ): Promise<{ data: TransactionResponseDto[]; meta: TransactionListMetaDto }> {
     const page = Math.max(1, query.page ?? 1);
-    const limit = Math.min(MAX_PAGE_SIZE, Math.max(1, query.limit ?? DEFAULT_TRANSACTION_PAGE_SIZE));
+    const limit = Math.min(
+      MAX_PAGE_SIZE,
+      Math.max(1, query.limit ?? DEFAULT_TRANSACTION_PAGE_SIZE),
+    );
     const skip = (page - 1) * limit;
 
     const where = this.buildWhere(actor.mosqueId, query);
@@ -130,36 +136,37 @@ export class TransactionsService {
    * Aggregates financial ledger summary across the mosque.
    */
   async summary(actor: AuthenticatedUser): Promise<TransactionSummaryDto> {
-    const [incomeAgg, expenseAgg, totalCount, pendingCount, voidedCount] = await this.prisma.$transaction([
-      this.prisma.transaction.aggregate({
-        where: {
-          mosqueId: actor.mosqueId,
-          type: TransactionType.income,
-          status: TransactionStatus.completed,
-        },
-        _sum: { amount: true },
-      }),
-      this.prisma.transaction.aggregate({
-        where: {
-          mosqueId: actor.mosqueId,
-          type: TransactionType.expense,
-          status: TransactionStatus.completed,
-        },
-        _sum: { amount: true },
-      }),
-      this.prisma.transaction.count({
-        where: { mosqueId: actor.mosqueId },
-      }),
-      this.prisma.transaction.count({
-        where: { mosqueId: actor.mosqueId, status: TransactionStatus.pending },
-      }),
-      this.prisma.transaction.count({
-        where: {
-          mosqueId: actor.mosqueId,
-          status: { in: [TransactionStatus.voided, TransactionStatus.cancelled] },
-        },
-      }),
-    ]);
+    const [incomeAgg, expenseAgg, totalCount, pendingCount, voidedCount] =
+      await this.prisma.$transaction([
+        this.prisma.transaction.aggregate({
+          where: {
+            mosqueId: actor.mosqueId,
+            type: TransactionType.income,
+            status: TransactionStatus.completed,
+          },
+          _sum: { amount: true },
+        }),
+        this.prisma.transaction.aggregate({
+          where: {
+            mosqueId: actor.mosqueId,
+            type: TransactionType.expense,
+            status: TransactionStatus.completed,
+          },
+          _sum: { amount: true },
+        }),
+        this.prisma.transaction.count({
+          where: { mosqueId: actor.mosqueId },
+        }),
+        this.prisma.transaction.count({
+          where: { mosqueId: actor.mosqueId, status: TransactionStatus.pending },
+        }),
+        this.prisma.transaction.count({
+          where: {
+            mosqueId: actor.mosqueId,
+            status: { in: [TransactionStatus.voided, TransactionStatus.cancelled] },
+          },
+        }),
+      ]);
 
     const income = incomeAgg._sum.amount ?? new Prisma.Decimal(0);
     const expense = expenseAgg._sum.amount ?? new Prisma.Decimal(0);
@@ -228,7 +235,9 @@ export class TransactionsService {
         resourceId: updated.id,
         note: `Updated transaction ${updated.id}`,
         changes: {
-          description: dto.description ? { old: transaction.description, new: dto.description } : undefined,
+          description: dto.description
+            ? { old: transaction.description, new: dto.description }
+            : undefined,
           category: dto.category ? { old: transaction.category, new: dto.category } : undefined,
         },
       });

@@ -16,6 +16,8 @@ import { AuditLogService } from '../audit/audit-log.service';
 import { unauthenticated } from '../common/guards/authorization';
 import type { AuthenticatedUser } from '../common/types/authenticated-user';
 import { env, type AppConfig } from '../config/app.config';
+import { formatDeviceSummary, formatLoginTime } from '../mail/templates/login-alert.template';
+import { MailService } from '../mail/mail.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { UserResponseDto } from '../users/dto/user-response.dto';
 import { USER_SELECT } from '../users/types/user.types';
@@ -93,6 +95,7 @@ export class AuthService {
     private readonly jwt: JwtService,
     private readonly users: UsersService,
     private readonly audit: AuditLogService,
+    private readonly mail: MailService,
   ) {}
 
   /**
@@ -182,14 +185,37 @@ export class AuthService {
       userAgent: origin.userAgent,
     });
 
+    if (profile.email) {
+      const securityUrl = new URL('/forgot-password', env.webUrl(this.config)).toString();
+      const device = formatDeviceSummary(origin.userAgent);
+      const location = profile.city
+        ? `${profile.city}, Bangladesh (approx.)`
+        : 'Dhaka, Bangladesh (approx.)';
+
+      this.mail
+        .sendLoginAlertEmail(profile.email, {
+          device,
+          location,
+          time: formatLoginTime(),
+          securityUrl,
+          userName: profile.fullName,
+          websiteUrl: env.webUrl(this.config),
+        })
+        .catch((err: unknown) => {
+          this.logger.warn(
+            `Failed to dispatch login alert email for ${credentials.id}: ${String(err)}`,
+          );
+        });
+    }
+
     return result;
   }
 
   /**
    * Starts password recovery without confirming that an account exists.
    *
-   * Delivery is deliberately isolated until an email provider is selected. The token therefore only
-   * exists in this method and the generated URL, never in a database row, response or log entry.
+   * Dispatches the 03-forgot-password.html email with the secure recovery link.
+   * The token only exists in this method and the generated URL, never in a database row or response.
    */
   async forgotPassword(dto: ForgotPasswordDto): Promise<void> {
     const user = await this.findRecoverableUser(dto);
@@ -204,7 +230,18 @@ export class AuthService {
       },
     });
 
-    this.queuePasswordResetDelivery(this.passwordResetUrl(token));
+    const resetUrl = this.passwordResetUrl(token);
+
+    if (user.email) {
+      await this.mail.sendPasswordResetEmail(user.email, {
+        resetUrl,
+        expiresIn: '30 minutes',
+        userName: user.fullName,
+        mosqueName: user.mosque?.name,
+        websiteUrl: env.webUrl(this.config),
+        supportEmail: user.mosque?.email || env.emailFrom(this.config),
+      });
+    }
   }
 
   /** Replaces the password, consumes the token and revokes all refresh sessions atomically. */
@@ -213,9 +250,17 @@ export class AuthService {
     const tokenHash = hashToken(dto.token);
     const now = new Date();
 
-    // Declared out here so the audit entry can be written once the transaction has committed. Recording
-    // inside it would file an entry for a reset that a later statement in the same transaction rolls back.
-    let subject: { id: string; mosqueId: string; fullName: string; role: Role } | undefined;
+    // Declared out here so the audit entry and confirmation email can be dispatched once the transaction has committed.
+    let subject:
+      | {
+          id: string;
+          mosqueId: string;
+          email: string;
+          fullName: string;
+          role: Role;
+          mosque: { name: string; email: string | null } | null;
+        }
+      | undefined;
 
     await this.prisma.$transaction(async (tx) => {
       const user = await tx.user.findFirst({
@@ -225,10 +270,14 @@ export class AuthService {
           deletedAt: null,
           isActive: true,
         },
-        // Four columns rather than one, and the extra three are all for the trail: a reset is done by
-        // someone holding a link rather than a token, so this row is the only description of them there
-        // will ever be. `passwordResetTokenHash` is not among them and must not be.
-        select: { id: true, mosqueId: true, fullName: true, role: true },
+        select: {
+          id: true,
+          mosqueId: true,
+          email: true,
+          fullName: true,
+          role: true,
+          mosque: { select: { name: true, email: true } },
+        },
       });
 
       if (!user) throw invalidResetToken();
@@ -268,6 +317,17 @@ export class AuthService {
       changes: { passwordChangedAt: now.toISOString(), sessionsRevoked: true },
       note: 'Reset with a recovery link; all sessions revoked.',
     });
+
+    if (subject.email) {
+      const loginUrl = new URL('/login', env.webUrl(this.config)).toString();
+      await this.mail.sendPasswordResetSuccessEmail(subject.email, {
+        loginUrl,
+        userName: subject.fullName,
+        mosqueName: subject.mosque?.name,
+        websiteUrl: env.webUrl(this.config),
+        supportEmail: subject.mosque?.email || env.emailFrom(this.config),
+      });
+    }
   }
 
   /**
@@ -638,7 +698,12 @@ export class AuthService {
    * A duplicate email or phone without a mosque slug deliberately receives the same generic success
    * response as a missing account, because choosing a tenant would otherwise disclose account data.
    */
-  private async findRecoverableUser(dto: ForgotPasswordDto): Promise<{ id: string } | null> {
+  private async findRecoverableUser(dto: ForgotPasswordDto): Promise<{
+    id: string;
+    email: string;
+    fullName: string;
+    mosque: { name: string; email: string | null } | null;
+  } | null> {
     const matches = await this.prisma.user.findMany({
       where: {
         deletedAt: null,
@@ -646,7 +711,12 @@ export class AuthService {
         ...identifierOf(dto),
         ...(dto.mosqueSlug === undefined ? {} : { mosque: { slug: dto.mosqueSlug } }),
       },
-      select: { id: true },
+      select: {
+        id: true,
+        email: true,
+        fullName: true,
+        mosque: { select: { name: true, email: true } },
+      },
       take: 2,
     });
 
@@ -656,46 +726,12 @@ export class AuthService {
   /**
    * Builds the link a person clicks, from the configured browser origin.
    *
-   * A future email provider receives this complete URL at the one boundary below, not from a
-   * controller — the token should exist in as few places as possible.
+   * The token exists only in memory for this function call and in the transmitted email link.
    */
   private passwordResetUrl(token: string): string {
     const url = new URL('/reset-password', env.webUrl(this.config));
     url.searchParams.set('token', token);
     return url.toString();
-  }
-
-  /**
-   * The delivery boundary, still the seam an email provider will plug into.
-   *
-   * Email needs a provider, credentials and a template, none of which authentication should be
-   * choosing on its own — so nothing is sent here yet. What this must not do is stay *quiet*: a
-   * caller that receives "if the account exists, a link has been sent" while nothing was sent looks
-   * exactly like a working feature from the outside, and the mismatch would surface as an
-   * unreproducible support report rather than as a bug.
-   *
-   * In development the link goes to the console, because there is nowhere else for it to go. Only a
-   * SHA-256 of the token is ever stored, so it cannot be read back out of the database afterwards —
-   * without this branch the flow is not completable at all, not even by the person building it.
-   *
-   * Outside development the URL is never written anywhere. It carries the reset token, and a token in
-   * a log file is a credential in a log file: readable by anyone with log access, for as long as
-   * retention lasts, which for a 30-minute window is long enough to matter. The guard is on
-   * `development` specifically rather than on "not production", so `test` and any other environment
-   * record only the fact of the request.
-   */
-  private queuePasswordResetDelivery(url: string): void {
-    if (env.nodeEnv(this.config) === 'development') {
-      this.logger.warn(
-        `Password reset link (development only — never logged in any other environment): ${url}`,
-      );
-      return;
-    }
-
-    this.logger.warn(
-      'Password reset requested, but no delivery channel is configured — the link was discarded ' +
-        'and nobody received it. Implement queuePasswordResetDelivery before relying on this flow.',
-    );
   }
 
   /**

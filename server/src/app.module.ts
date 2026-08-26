@@ -34,6 +34,7 @@ import { DashboardModule } from './dashboard/dashboard.module';
 import { AuditModule } from './audit/audit.module';
 import { ReceiptsModule } from './receipts/receipts.module';
 import { TransactionsModule } from './transactions/transactions.module';
+import { MailModule } from './mail/mail.module';
 
 /**
  * The composition root.
@@ -108,6 +109,8 @@ import { TransactionsModule } from './transactions/transactions.module';
     ExpensesModule,
     ReceiptsModule,
     TransactionsModule,
+    MailModule,
+
     // Then what the money was meant for and who it went to. Budgets and salaries are independent of each
     // other and of the three above; reports come last because they read all four tables and nothing reads
     // them. Registration order does not affect resolution — Nest builds the graph from the dependencies —

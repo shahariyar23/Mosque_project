@@ -177,7 +177,9 @@ export class TransactionResponseDto {
     dto.fundId = row.fundId;
     dto.fund = row.fund ? { id: row.fund.id, name: row.fund.name, slug: row.fund.slug } : null;
     dto.toFundId = row.toFundId;
-    dto.toFund = row.toFund ? { id: row.toFund.id, name: row.toFund.name, slug: row.toFund.slug } : null;
+    dto.toFund = row.toFund
+      ? { id: row.toFund.id, name: row.toFund.name, slug: row.toFund.slug }
+      : null;
     dto.donationId = row.donationId;
     dto.donation = row.donation
       ? {

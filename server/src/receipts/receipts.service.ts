@@ -23,10 +23,7 @@ import { toMoney } from '../common/utils/money';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateReceiptDto } from './dto/create-receipt.dto';
 import { ReceiptQueryDto } from './dto/receipt-query.dto';
-import {
-  ReceiptListMetaDto,
-  ReceiptResponseDto,
-} from './dto/receipt-response.dto';
+import { ReceiptListMetaDto, ReceiptResponseDto } from './dto/receipt-response.dto';
 import { VoidReceiptDto } from './dto/void-receipt.dto';
 import {
   DEFAULT_RECEIPT_PAGE_SIZE,
@@ -144,7 +141,9 @@ export class ReceiptsService {
                 status: TransactionStatus.completed,
                 amount: donation.amount,
                 currency: donation.currency,
-                description: donation.notes || `Donation receipt issued (${donation.reference || donation.id})`,
+                description:
+                  donation.notes ||
+                  `Donation receipt issued (${donation.reference || donation.id})`,
                 category: 'Donation',
                 reference: donation.reference,
                 paymentMethod: donation.paymentMethod,
@@ -171,7 +170,8 @@ export class ReceiptsService {
           if (!resolvedFundId) {
             throw new BadRequestException({
               code: 'FUND_REQUIRED',
-              message: 'A donation fund is required to issue a receipt and record the income transaction.',
+              message:
+                'A donation fund is required to issue a receipt and record the income transaction.',
             });
           }
 
@@ -330,7 +330,11 @@ export class ReceiptsService {
   /**
    * Voids an issued receipt. Marks it as VOIDED and cancels linked donation & ledger transaction.
    */
-  async void(actor: AuthenticatedUser, id: string, dto: VoidReceiptDto): Promise<ReceiptResponseDto> {
+  async void(
+    actor: AuthenticatedUser,
+    id: string,
+    dto: VoidReceiptDto,
+  ): Promise<ReceiptResponseDto> {
     const receipt = await this.getOwned(actor.mosqueId, id);
 
     if (receipt.status === ReceiptStatus.voided) {

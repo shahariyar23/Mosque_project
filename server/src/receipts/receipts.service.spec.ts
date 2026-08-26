@@ -115,10 +115,7 @@ describe('ReceiptsService - Financial Ledger & Transaction Integration', () => {
     };
 
     const module: TestingModule = await Test.createTestingModule({
-      providers: [
-        ReceiptsService,
-        { provide: PrismaService, useValue: prisma },
-      ],
+      providers: [ReceiptsService, { provide: PrismaService, useValue: prisma }],
     }).compile();
 
     service = module.get<ReceiptsService>(ReceiptsService);

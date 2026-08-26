@@ -1,7 +1,17 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { ReceiptStatus } from '@prisma/client';
 import { Type } from 'class-transformer';
-import { IsEnum, IsInt, IsISO8601, IsOptional, IsString, IsUUID, Max, MaxLength, Min } from 'class-validator';
+import {
+  IsEnum,
+  IsInt,
+  IsISO8601,
+  IsOptional,
+  IsString,
+  IsUUID,
+  Max,
+  MaxLength,
+  Min,
+} from 'class-validator';
 
 import { MAX_PAGE_SIZE } from '../../common/pagination/page';
 import { DEFAULT_RECEIPT_PAGE_SIZE } from '../types/receipt.types';
@@ -29,7 +39,8 @@ export class ReceiptQueryDto {
   limit?: number;
 
   @ApiPropertyOptional({
-    description: 'Case-insensitive search across receipt number, donor name and donation donor name.',
+    description:
+      'Case-insensitive search across receipt number, donor name and donation donor name.',
     maxLength: 120,
     example: 'REC-2026',
   })

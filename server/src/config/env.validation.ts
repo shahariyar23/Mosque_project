@@ -115,6 +115,37 @@ export class EnvironmentVariables {
   SWAGGER_ENABLED = true;
 
   /**
+   * Mail transport (Titan Email SMTP)
+   */
+  @IsString()
+  @IsNotEmpty()
+  EMAIL_HOST = 'smtp.titan.email';
+
+  @IsInt()
+  @Min(1)
+  @Max(65535)
+  EMAIL_PORT = 465;
+
+  @IsBoolean()
+  EMAIL_SECURE = true;
+
+  @IsOptional()
+  @IsString()
+  EMAIL_USER?: string;
+
+  @IsOptional()
+  @IsString()
+  EMAIL_PASSWORD?: string;
+
+  @IsOptional()
+  @IsString()
+  EMAIL_FROM = 'noreply@mostak.tech';
+
+  @IsString()
+  @IsNotEmpty()
+  EMAIL_FROM_NAME = 'NOOR';
+
+  /**
    * The AlAdhan prayer-time API. Configured rather than hardcoded for the ordinary reason that a
    * third-party host is an operational fact and not a source-code one: it lets a deployment point at
    * a mirror or a self-hosted instance, and it lets a test point at a local stub without patching
@@ -177,6 +208,13 @@ export function validateEnvironment(raw: Record<string, unknown>): EnvironmentVa
       THROTTLE_TTL: toInt(raw.THROTTLE_TTL, defaults.THROTTLE_TTL),
       THROTTLE_LIMIT: toInt(raw.THROTTLE_LIMIT, defaults.THROTTLE_LIMIT),
       SWAGGER_ENABLED: toBoolean(raw.SWAGGER_ENABLED, defaults.SWAGGER_ENABLED),
+      EMAIL_PORT: toInt(raw.EMAIL_PORT, defaults.EMAIL_PORT),
+      EMAIL_SECURE: toBoolean(raw.EMAIL_SECURE, defaults.EMAIL_SECURE),
+      EMAIL_HOST: raw.EMAIL_HOST === '' ? undefined : raw.EMAIL_HOST,
+      EMAIL_USER: raw.EMAIL_USER === '' ? undefined : raw.EMAIL_USER,
+      EMAIL_PASSWORD: raw.EMAIL_PASSWORD === '' ? undefined : raw.EMAIL_PASSWORD,
+      EMAIL_FROM: raw.EMAIL_FROM === '' ? undefined : raw.EMAIL_FROM,
+      EMAIL_FROM_NAME: raw.EMAIL_FROM_NAME === '' ? undefined : raw.EMAIL_FROM_NAME,
       ALADHAN_TIMEOUT_MS: toInt(raw.ALADHAN_TIMEOUT_MS, defaults.ALADHAN_TIMEOUT_MS),
       PRAYER_CACHE_TTL_SECONDS: toInt(
         raw.PRAYER_CACHE_TTL_SECONDS,

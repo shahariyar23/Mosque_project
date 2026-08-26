@@ -132,7 +132,7 @@ export class UserResponseDto {
     // user is actually deleted (deletedAt is a non-null Date). For normal reads, or for rows
     // where deletedAt is null, the field is omitted entirely.
     if ('deletedAt' in user && user.deletedAt != null) {
-      dto.deletedAt = toInstant(user.deletedAt as Date);
+      dto.deletedAt = toInstant(user.deletedAt);
     }
 
     return dto;

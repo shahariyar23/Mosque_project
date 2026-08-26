@@ -221,3 +221,78 @@ export const logoutUser = async (token: string | null): Promise<void> => {
     // Nothing to recover: the caller clears the session either way.
   }
 };
+
+/**
+ * Requests a password recovery link.
+ */
+export const forgotPassword = async (payload: {
+  email: string;
+  mosqueSlug?: string;
+}): Promise<void> => {
+  const response = await fetch(`${apiBase()}/api/v1/auth/forgot-password`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+    credentials: "include",
+  });
+
+  if (!response.ok) {
+    const body = (await response.json().catch(() => null)) as
+      | { message?: string }
+      | null;
+    throw new Error(body?.message ?? "Failed to request password reset.");
+  }
+};
+
+/**
+ * Resets password using the one-time token.
+ */
+export const resetPassword = async (payload: {
+  token: string;
+  newPassword: string;
+}): Promise<void> => {
+  const response = await fetch(`${apiBase()}/api/v1/auth/reset-password`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+    credentials: "include",
+  });
+
+  if (!response.ok) {
+    const body = (await response.json().catch(() => null)) as
+      | { message?: string }
+      | null;
+    throw new Error(
+      body?.message ?? "Invalid or expired reset token. Please request a new link.",
+    );
+  }
+};
+
+/**
+ * Changes password for the authenticated user.
+ */
+export const changePassword = async (
+  token: string,
+  payload: { currentPassword: string; newPassword: string },
+): Promise<void> => {
+  const response = await fetch(`${apiBase()}/api/v1/auth/change-password`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify(payload),
+    credentials: "include",
+  });
+
+  if (!response.ok) {
+    const body = (await response.json().catch(() => null)) as
+      | { message?: string }
+      | null;
+    throw new Error(
+      body?.message ??
+        "Failed to change password. Please check your current password.",
+    );
+  }
+};
+
