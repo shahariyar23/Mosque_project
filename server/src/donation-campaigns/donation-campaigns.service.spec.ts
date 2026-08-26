@@ -112,6 +112,9 @@ describe('DonationCampaignsService', () => {
             // Read directly rather than through DonationFundsService — one scoped query, against a
             // dependency between two feature modules that would outlive the reason for it.
             donationFund: { findFirst: jest.fn() },
+            // `remove` counts donations filed against the campaign before deleting it. Only that path
+            // touches this table, which is why it is a bare `count` rather than a full model mock.
+            donation: { count: jest.fn().mockResolvedValue(0) },
             $transaction: jest.fn((operations: Promise<unknown>[]) => Promise.all(operations)),
           },
         },
@@ -124,6 +127,7 @@ describe('DonationCampaignsService', () => {
 
   const campaigns = () => prisma.campaign as unknown as Record<string, jest.Mock>;
   const donationFunds = () => prisma.donationFund as unknown as Record<string, jest.Mock>;
+  const donations = () => prisma.donation as unknown as Record<string, jest.Mock>;
 
   const writtenData = (call: jest.Mock): Record<string, unknown> =>
     (call.mock.calls[0][0] as { data: Record<string, unknown> }).data;
@@ -689,6 +693,42 @@ describe('DonationCampaignsService', () => {
       );
 
       await expect(service.remove(ACTOR, CAMPAIGN_ID)).rejects.toThrow(NotFoundException);
+    });
+
+    it('refuses with a 409 while donations are recorded against the campaign', async () => {
+      campaigns().findFirst.mockResolvedValue(row());
+      donations().count.mockResolvedValue(4);
+
+      await expect(service.remove(ACTOR, CAMPAIGN_ID)).rejects.toMatchObject({
+        response: { code: 'CAMPAIGN_IN_USE' },
+      });
+      expect(campaigns().delete).not.toHaveBeenCalled();
+    });
+
+    it('counts those donations by campaign, not across the table', async () => {
+      campaigns().findFirst.mockResolvedValue(row());
+      donations().count.mockResolvedValue(1);
+
+      await expect(service.remove(ACTOR, CAMPAIGN_ID)).rejects.toThrow(ConflictException);
+
+      expect(queriedWhere(donations().count)).toEqual({ campaignId: CAMPAIGN_ID });
+    });
+
+    // The pre-check can lose a race with a donation recorded a moment later, and the foreign key is what
+    // actually holds the line. Its P2003 must not surface as the shared translation's "bad fundId" — this
+    // request has no `fundId` at all.
+    it('reads a foreign-key refusal on delete as the campaign being in use', async () => {
+      campaigns().findFirst.mockResolvedValue(row());
+      campaigns().delete.mockRejectedValue(
+        new Prisma.PrismaClientKnownRequestError('Foreign key constraint failed', {
+          code: 'P2003',
+          clientVersion: '6.0.0',
+        }),
+      );
+
+      await expect(service.remove(ACTOR, CAMPAIGN_ID)).rejects.toMatchObject({
+        response: { code: 'CAMPAIGN_IN_USE' },
+      });
     });
   });
 

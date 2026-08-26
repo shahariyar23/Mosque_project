@@ -28,6 +28,20 @@ export const MONEY_MESSAGE =
   'must be a non-negative amount with at most 2 decimal places, for example "1500.00"';
 
 /**
+ * The same amount, but it has to be more than nothing: rejects `0`, `0.0` and `0.00`.
+ *
+ * A fund's target may legitimately be zero — an open-ended fund is recorded that way — but a donation of
+ * nothing and an expense of nothing are not events, they are mistakes, and letting one through puts a row
+ * in a financial table that a reconciliation later has to explain. The leading negative lookahead is the
+ * only difference from `MONEY_PATTERN`; the rest of the shape, including the twelve-digit and two-place
+ * limits, is the same and for the same reasons.
+ */
+export const POSITIVE_MONEY_PATTERN = /^(?!0+(?:\.0+)?$)\d{1,12}(?:\.\d{1,2})?$/;
+
+export const POSITIVE_MONEY_MESSAGE =
+  'must be an amount greater than zero with at most 2 decimal places, for example "500.00"';
+
+/**
  * Normalises a money input to the string form `MONEY_PATTERN` validates.
  *
  * Returns the value untouched when it is neither a string nor a finite number, so class-validator

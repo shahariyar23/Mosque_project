@@ -599,6 +599,9 @@ describe('Auth (integration)', () => {
 
   // ---- Lifecycle ------------------------------------------------------------
 
+  // Explicitly 30s, not the 5s default. This hook compiles the entire `AppModule` — every feature module in
+  // the application — and then hashes a password with argon2, which is deliberately slow. That cost grows
+  // with the application, so a suite that covers the whole of it cannot live inside a per-test default.
   beforeAll(async () => {
     // Dynamic so that the environment above is in place before `ConfigModule.forRoot` validates it.
     const { AppModule } = await import('../app.module');
@@ -625,7 +628,7 @@ describe('Auth (integration)', () => {
     cookieName = env.refreshCookieName(config);
 
     passwordHash = await argon2.hash(PASSWORD, { type: argon2.argon2id });
-  });
+  }, 30_000);
 
   afterAll(async () => {
     throttling.shutdown();

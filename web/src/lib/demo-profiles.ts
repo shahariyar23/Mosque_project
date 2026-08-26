@@ -162,7 +162,7 @@ export const profileKeys = Object.keys(demoProfiles) as ProfileKey[];
  * dashboard that hides half its own menu reads as broken rather than as a permission model. Switch to
  * Treasurer, Imam or Cashier to see the model actually narrow things down.
  */
-export const DEFAULT_PROFILE: ProfileKey = "member";
+export const DEFAULT_PROFILE: ProfileKey = "super_admin";
 
 export function isProfileKey(value: string | undefined): value is ProfileKey {
   return value !== undefined && value in demoProfiles;

@@ -78,6 +78,9 @@ describe('DonationFundsService', () => {
               update: jest.fn(),
               delete: jest.fn(),
             },
+            // `remove` counts donations filed under the fund before deleting it. Only that path touches
+            // this table, which is why it is a bare `count` rather than a full model mock.
+            donation: { count: jest.fn().mockResolvedValue(0) },
             // The service transacts the count with the page. The mock resolves the array it is handed,
             // which is what `$transaction([...])` does with already-issued promises.
             $transaction: jest.fn((operations: Promise<unknown>[]) => Promise.all(operations)),
@@ -91,6 +94,7 @@ describe('DonationFundsService', () => {
   });
 
   const funds = () => prisma.donationFund as unknown as Record<string, jest.Mock>;
+  const donations = () => prisma.donation as unknown as Record<string, jest.Mock>;
 
   /** The `data` a write was given, typed so an assertion is not reading `any` off a jest mock. */
   const writtenData = (call: jest.Mock): Record<string, unknown> =>
@@ -479,6 +483,27 @@ describe('DonationFundsService', () => {
       await expect(service.remove(ACTOR, FUND_ID)).rejects.toMatchObject({
         response: { code: 'FUND_IN_USE' },
       });
+    });
+
+    // Donations are the other thing filed under a fund, and they are counted separately because only a
+    // delete asks the question.
+    it('refuses with a 409 while donations are still filed under the fund', async () => {
+      funds().findFirst.mockResolvedValue(row({ _count: { campaigns: 0 } }));
+      donations().count.mockResolvedValue(3);
+
+      await expect(service.remove(ACTOR, FUND_ID)).rejects.toMatchObject({
+        response: { code: 'FUND_IN_USE' },
+      });
+      expect(funds().delete).not.toHaveBeenCalled();
+    });
+
+    it('counts those donations by fund, not across the table', async () => {
+      funds().findFirst.mockResolvedValue(row({ _count: { campaigns: 0 } }));
+      donations().count.mockResolvedValue(1);
+
+      await expect(service.remove(ACTOR, FUND_ID)).rejects.toThrow(ConflictException);
+
+      expect(queriedWhere(donations().count)).toEqual({ fundId: FUND_ID });
     });
 
     // The pre-check can lose a race with a campaign created a moment later; the foreign key is what

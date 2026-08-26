@@ -201,7 +201,8 @@ export class DonationCampaignsController {
   @ApiOperation({
     summary: 'Delete a campaign.',
     description:
-      'Requires `campaign.manage`. For a campaign that has been live, `PATCH /:id` with ' +
+      'Requires `campaign.manage`. Only a campaign that has received no donations can be deleted; once ' +
+      'one has, this answers 409. For any campaign that has been live, `PATCH /:id` with ' +
       '`{ "status": "archived" }` is the better answer — it stops the appeal without losing the record ' +
       'and can be undone. Deleting twice is a 404.',
   })
@@ -210,6 +211,10 @@ export class DonationCampaignsController {
   @ApiForbiddenResponse({ description: 'Authenticated, but without `campaign.manage`.' })
   @ApiNotFoundResponse({
     description: 'No such campaign in this mosque, or it was already deleted.',
+  })
+  @ApiConflictResponse({
+    description:
+      'The campaign has donations recorded against it. Archive it with `PATCH` instead of deleting it.',
   })
   async remove(
     @CurrentUser() user: AuthenticatedUser,
