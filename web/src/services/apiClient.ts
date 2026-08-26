@@ -35,8 +35,10 @@ import { getAccessToken, notifyUnauthenticated, setAccessToken } from "@/service
  * Both are kept; nothing else from the body is. That is what stops a stack trace reaching the screen.
  */
 
-/** The base origin, from the environment. Never a hard-coded host — same expression as `authService`. */
-const apiBase = (): string => process.env.NEXT_PUBLIC_API_URL ?? "";
+import { getApiBaseUrl } from "@/config/api";
+
+/** The base origin, from the centralized API config. */
+const apiBase = getApiBaseUrl;
 
 const API_PREFIX = "/api/v1";
 
