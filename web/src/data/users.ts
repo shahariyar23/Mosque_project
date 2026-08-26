@@ -1,4 +1,5 @@
 import type { AdminUser } from "@/lib/mosque/types";
+import { siteConfig } from "@/config/site";
 
 /**
  * The back-office directory — every account that can sign in to run the mosque.
@@ -20,7 +21,7 @@ import type { AdminUser } from "@/lib/mosque/types";
  *  - USR-013 was invited but has never signed in.
  */
 
-const MOSQUE = { id: "MSQ-001", name: "Noor Community Mosque" };
+const MOSQUE = { id: "MSQ-001", name: siteConfig.fullName };
 
 export const adminUsers: AdminUser[] = [
   {

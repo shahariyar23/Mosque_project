@@ -9,9 +9,11 @@ import { InlineNotice } from "@/components/finance/ui/states";
 import { DetailDrawer, DetailField, DetailGrid, DetailSection } from "@/components/ui/detail-drawer";
 import { StatGrid } from "@/components/ui/stat-card";
 import { RoleBadge } from "@/components/ui/status-badge";
-import { adminUsers } from "@/data/users";
 import { groupPermissions, permissionGroups } from "@/lib/mosque/access";
 import { formatCount } from "@/lib/mosque/format";
+import { useApiList } from "@/hooks/use-api";
+import { fetchUsers } from "@/services/userService";
+import { useDashboardSession } from "@/components/dashboard/session-provider";
 import type { StatMetric } from "@/lib/mosque/types";
 import {
   allPermissions,
@@ -34,54 +36,6 @@ import {
  * from `rolePermissions`, the matrix from folding each role through `permissionGroups`, the counts
  * from the real directory — so the page can never describe a role the system does not actually grant.
  */
-
-const positionList = Object.keys(positionLabels) as Position[];
-
-const metrics: StatMetric[] = [
-  {
-    id: "roles",
-    label: "Roles",
-    value: formatCount(roles.length),
-    hint: "From super admin to member",
-    icon: "shield",
-    tone: "neutral",
-  },
-  {
-    id: "permissions",
-    label: "Permissions",
-    value: formatCount(allPermissions.length),
-    hint: `Across ${formatCount(permissionGroups.length)} areas`,
-    icon: "key",
-    tone: "gold",
-  },
-  {
-    id: "posts",
-    label: "Committee posts",
-    value: formatCount(positionList.length),
-    hint: "Labels — they grant nothing",
-    icon: "user",
-    tone: "neutral",
-  },
-  {
-    id: "accounts",
-    label: "Accounts governed",
-    value: formatCount(adminUsers.length),
-    hint: "Hold one of these roles",
-    icon: "users",
-    tone: "positive",
-  },
-];
-
-/** How many directory accounts currently hold each role. */
-const heldByRole = roles.reduce<Record<Role, number>>(
-  (counts, role) => {
-    counts[role] = adminUsers.filter((user) => user.role === role).length;
-    return counts;
-  },
-  {} as Record<Role, number>,
-);
-
-const platformOnly = new Set<string>(PLATFORM_ONLY);
 
 /* -------------------------------------------------------------------------- *
  * Coverage cell
@@ -112,8 +66,61 @@ function CoverageCell({ held, total }: { held: number; total: number }) {
  * View
  * -------------------------------------------------------------------------- */
 
+const platformOnly = new Set<string>(PLATFORM_ONLY);
+
 export function AccessView() {
   const [selectedRole, setSelectedRole] = useState<Role | null>(null);
+  const { can } = useDashboardSession();
+
+  // We fetch a large page of users to compute counts. Ideally the API would provide a stats endpoint.
+  const { rows: users = [] } = useApiList(fetchUsers, { limit: 1000 }, { enabled: can("user.view") });
+
+  const positionList = Object.keys(positionLabels) as Position[];
+  
+  const heldByRole = useMemo(() => {
+    return roles.reduce<Record<Role, number>>(
+      (counts, role) => {
+        counts[role] = users.filter((user) => user.role === role).length;
+        return counts;
+      },
+      {} as Record<Role, number>,
+    );
+  }, [users]);
+
+  const metrics: StatMetric[] = [
+    {
+      id: "roles",
+      label: "Roles",
+      value: formatCount(roles.length),
+      hint: "From super admin to member",
+      icon: "shield",
+      tone: "neutral",
+    },
+    {
+      id: "permissions",
+      label: "Permissions",
+      value: formatCount(allPermissions.length),
+      hint: `Across ${formatCount(permissionGroups.length)} areas`,
+      icon: "key",
+      tone: "gold",
+    },
+    {
+      id: "posts",
+      label: "Committee posts",
+      value: formatCount(positionList.length),
+      hint: "Labels — they grant nothing",
+      icon: "user",
+      tone: "neutral",
+    },
+    {
+      id: "accounts",
+      label: "Accounts governed",
+      value: formatCount(users.filter(u => u.role !== "member").length),
+      hint: "Hold one of these roles",
+      icon: "users",
+      tone: "positive",
+    },
+  ];
 
   // Precompute each role's permission set once for the matrix.
   const roleSets = useMemo(
@@ -191,7 +198,7 @@ export function AccessView() {
                       scope="col"
                       className="whitespace-nowrap px-3 py-2.5 text-center text-[12px] font-semibold text-[#3d453f]"
                     >
-                      {roleLabels[role]}
+                      {roleLabels[role as Role]}
                     </th>
                   ))}
                 </tr>
@@ -243,7 +250,7 @@ export function AccessView() {
         </PanelBody>
       </Panel>
 
-      {selectedRole ? <RoleDetailDrawer role={selectedRole} onClose={() => setSelectedRole(null)} /> : null}
+      {selectedRole ? <RoleDetailDrawer role={selectedRole} users={users} onClose={() => setSelectedRole(null)} /> : null}
     </div>
   );
 }
@@ -252,10 +259,12 @@ export function AccessView() {
  * Role detail drawer
  * -------------------------------------------------------------------------- */
 
-function RoleDetailDrawer({ role, onClose }: { role: Role; onClose: () => void }) {
+import type { User } from "@/services/userService";
+
+function RoleDetailDrawer({ role, users, onClose }: { role: Role; users: User[]; onClose: () => void }) {
   const granted = rolePermissions[role];
   const groups = groupPermissions(granted);
-  const holders = adminUsers.filter((user) => user.role === role);
+  const holders = users.filter((user) => user.role === role);
   const withoutPlatform = granted.filter((permission) => platformOnly.has(permission)).length;
 
   return (
@@ -263,7 +272,7 @@ function RoleDetailDrawer({ role, onClose }: { role: Role; onClose: () => void }
       open
       onClose={onClose}
       eyebrow="Role"
-      title={roleLabels[role]}
+      title={roleLabels[role as Role]}
       subtitle={`${formatCount(granted.length)} permissions`}
       badge={<RoleBadge role={role} />}
       footer={
@@ -292,8 +301,8 @@ function RoleDetailDrawer({ role, onClose }: { role: Role; onClose: () => void }
                   key={user.id}
                   className="rounded-full border border-[#dcdacd] bg-[#f6f5ee] px-2.5 py-1 text-[12px] font-medium text-[#4d564f]"
                 >
-                  {user.name}
-                  {!user.isActive ? <span className="ml-1 text-[#a13228]">· suspended</span> : null}
+                  {user.fullName}
+                  {user.status === "inactive" ? <span className="ml-1 text-[#a13228]">· suspended</span> : null}
                 </span>
               ))}
             </div>

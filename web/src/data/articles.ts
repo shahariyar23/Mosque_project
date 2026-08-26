@@ -1,4 +1,5 @@
 import type { Article } from "@/lib/mosque/types";
+import { siteConfig } from "@/config/site";
 
 /**
  * The written content the mosque publishes to its site — reminders, explainers and seasonal pieces.
@@ -230,7 +231,7 @@ export const articles: Article[] = [
   },
   {
     id: "ART-014",
-    title: "Eid al-Adha at Noor Mosque: A Look Back",
+    title: `Eid al-Adha at ${siteConfig.name} Mosque: A Look Back`,
     slug: "eid-al-adha-look-back",
     author: "Editorial Team",
     category: "Community",

@@ -111,15 +111,23 @@ describe('DonationsService', () => {
               create: jest.fn(),
               update: jest.fn(),
             },
-            // The three tables an ownership check reads. Each is one scoped query, rather than a
-            // dependency on another feature's service that would outlive the reason for it.
+            transaction: {
+              findFirst: jest.fn().mockResolvedValue(null),
+              create: jest.fn().mockResolvedValue({ id: 'tx-1' }),
+              update: jest.fn().mockResolvedValue({ id: 'tx-1' }),
+            },
             donationFund: { findFirst: jest.fn().mockResolvedValue({ id: FUND_ID }) },
             campaign: {
               findFirst: jest.fn().mockResolvedValue({ id: CAMPAIGN_ID, fundId: FUND_ID }),
             },
             user: { findFirst: jest.fn().mockResolvedValue({ id: DONOR_ID }) },
             mosqueSettings: { findUnique: jest.fn().mockResolvedValue({ currency: 'BDT' }) },
-            $transaction: jest.fn((operations: Promise<unknown>[]) => Promise.all(operations)),
+            $transaction: jest.fn((arg: any) => {
+              if (typeof arg === 'function') {
+                return arg(prisma);
+              }
+              return Promise.all(arg);
+            }),
           },
         },
       ],

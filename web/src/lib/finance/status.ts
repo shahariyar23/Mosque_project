@@ -55,26 +55,37 @@ export const metricToneClass: Record<MetricTone, { value: string; icon: string }
   gold: { value: "text-[#17211d]", icon: "border-[#e3ce9d] bg-[#f7f0df] text-[#a97b23]" },
 };
 
-export const transactionStatusTone: Record<TransactionStatus, Tone> = {
+export const transactionStatusTone: Record<string, Tone> = {
   Pending: "pending",
   Completed: "success",
   Approved: "info",
   Rejected: "danger",
   Cancelled: "neutral",
+  pending: "pending",
+  completed: "success",
+  approved: "info",
+  rejected: "danger",
+  cancelled: "neutral",
+  voided: "danger",
 };
 
-export const transactionTypeTone: Record<TransactionType, Tone> = {
+export const transactionTypeTone: Record<string, Tone> = {
   Income: "success",
   Expense: "danger",
   Transfer: "info",
+  income: "success",
+  expense: "danger",
+  transfer: "info",
 };
 
-export const donationStatusTone: Record<DonationStatus, Tone> = {
+export const donationStatusTone: Record<string, Tone> = {
   Recorded: "pending",
   Verified: "success",
-  // Danger rather than neutral: a voided row still shows an amount, and it must be obvious at a
-  // glance that the amount no longer counts.
   Voided: "danger",
+  pending: "pending",
+  completed: "success",
+  cancelled: "danger",
+  failed: "danger",
 };
 
 export const contributionStatusTone: Record<ContributionStatus, Tone> = {
@@ -91,42 +102,81 @@ export const contributionPlanStatusTone: Record<ContributionPlanStatus, Tone> = 
   Cancelled: "neutral",
 };
 
-export const expenseStatusTone: Record<ExpenseStatus, Tone> = {
+export const expenseStatusTone: Record<string, Tone> = {
   Draft: "neutral",
   "Pending Approval": "pending",
   Approved: "info",
   Rejected: "danger",
   Paid: "success",
+  pending: "pending",
+  approved: "info",
+  paid: "success",
+  cancelled: "danger",
 };
 
-export const salaryStatusTone: Record<SalaryStatus, Tone> = {
+export const salaryStatusTone: Record<string, Tone> = {
   Pending: "pending",
   Approved: "info",
   Paid: "success",
   Failed: "danger",
+  pending: "pending",
+  paid: "success",
+  cancelled: "danger",
 };
 
-export const staffStatusTone: Record<StaffStatus, Tone> = {
+export const staffStatusTone: Record<string, Tone> = {
   Active: "success",
   "On Leave": "pending",
   Inactive: "neutral",
+  active: "success",
+  on_leave: "pending",
+  inactive: "neutral",
 };
 
-export const fundStatusTone: Record<FundStatus, Tone> = {
+export const fundStatusTone: Record<string, Tone> = {
   Active: "success",
   Inactive: "neutral",
+  active: "success",
+  inactive: "neutral",
+  completed: "info",
+  archived: "neutral",
 };
 
-export const recurringStatusTone: Record<RecurringStatus, Tone> = {
+export const budgetStatusTone: Record<string, Tone> = {
+  Draft: "neutral",
+  Active: "success",
+  Closed: "neutral",
+  Cancelled: "danger",
+  draft: "neutral",
+  active: "success",
+  closed: "neutral",
+  cancelled: "danger",
+};
+
+export const campaignStatusTone: Record<string, Tone> = {
+  draft: "neutral",
+  active: "success",
+  completed: "info",
+  cancelled: "danger",
+  archived: "neutral",
+};
+
+export const recurringStatusTone: Record<string, Tone> = {
   Active: "success",
   Paused: "pending",
   Completed: "info",
   Cancelled: "neutral",
+  active: "success",
+  paused: "pending",
+  completed: "info",
+  cancelled: "neutral",
 };
 
-export const receiptStatusTone: Record<ReceiptStatus, Tone> = {
+export const receiptStatusTone: Record<string, Tone> = {
   Issued: "success",
   Void: "danger",
+  issued: "success",
+  voided: "danger",
 };
 
 /** Approval pipelines rendered by <WorkflowSteps />. */

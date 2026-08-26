@@ -95,8 +95,18 @@ describe('ExpensesService', () => {
               update: jest.fn(),
               delete: jest.fn(),
             },
+            transaction: {
+              findFirst: jest.fn().mockResolvedValue(null),
+              create: jest.fn().mockResolvedValue({ id: 'tx-exp-1' }),
+              update: jest.fn().mockResolvedValue({ id: 'tx-exp-1' }),
+            },
             mosqueSettings: { findUnique: jest.fn().mockResolvedValue({ currency: 'BDT' }) },
-            $transaction: jest.fn((operations: Promise<unknown>[]) => Promise.all(operations)),
+            $transaction: jest.fn((arg: any) => {
+              if (typeof arg === 'function') {
+                return arg(prisma);
+              }
+              return Promise.all(arg);
+            }),
           },
         },
       ],

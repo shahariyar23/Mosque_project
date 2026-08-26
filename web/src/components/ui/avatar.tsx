@@ -29,7 +29,7 @@ export type AvatarSize = keyof typeof sizes;
 /** Stable index from the name. Sum of code points, so it never depends on insertion order. */
 function paletteFor(name: string): string {
   let total = 0;
-  for (let index = 0; index < name.length; index += 1) total += name.charCodeAt(index);
+  for (let index = 0; index < name?.length; index += 1) total += name.charCodeAt(index);
   return palettes[total % palettes.length];
 }
 

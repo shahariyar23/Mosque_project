@@ -51,19 +51,42 @@ export type Page<Row> = {
 export const DEFAULT_PAGE_SIZE = 10;
 
 /**
+ * Per-field validation messages, keyed by the field name the form uses.
+ *
+ * Mirrors the `errors` object on the API's error body, which the server fills from class-validator.
+ * A form maps these onto its inputs so a rejected submit says which field was wrong, rather than
+ * showing one sentence above everything.
+ */
+export type FieldErrors = Record<string, string[]>;
+
+/**
  * An error a service is willing to show a person.
  *
  * `code` is for the caller to branch on; `message` is what reaches the screen, which is why it is
  * written in plain language. A service must never surface a raw fetch, database or stack message —
  * that is the rule the error states on every page depend on.
+ *
+ * `status` and `fieldErrors` are populated when the error came from the API. The backend's exception
+ * filter returns `{ statusCode, code, message, errors? }` with a stable machine `code` and a message
+ * written for a reader, so both are carried through verbatim and nothing else from the body is. That is
+ * what keeps a stack trace or a driver message from ever reaching the screen.
  */
 export class ServiceError extends Error {
   readonly code: string;
+  /** HTTP status, when this came from the API. `0` for a request that never got a response. */
+  readonly status: number;
+  readonly fieldErrors?: FieldErrors;
 
-  constructor(code: string, message: string) {
+  constructor(
+    code: string,
+    message: string,
+    options?: { status?: number; fieldErrors?: FieldErrors },
+  ) {
     super(message);
     this.name = "ServiceError";
     this.code = code;
+    this.status = options?.status ?? 0;
+    this.fieldErrors = options?.fieldErrors;
   }
 }
 

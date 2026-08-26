@@ -1,5 +1,5 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import { DonationStatus, Prisma, TransactionStatus, TransactionType } from '@prisma/client';
 
 import { type DataScope, effectivePermissions, scopeFor } from '../common/constants/roles';
 import { forbidden } from '../common/guards/authorization';
@@ -66,27 +66,48 @@ export class DonationsService {
     const currency = await this.resolveCurrency(actor.mosqueId, dto.currency);
 
     try {
-      const created = await this.prisma.donation.create({
-        // Field by field rather than spread from the DTO, and `mosqueId` from the token: a field added to
-        // the DTO later cannot reach the database until someone names it here, and no request body can
-        // direct money into another mosque's books.
-        data: {
-          mosqueId: actor.mosqueId,
-          fundId: dto.fundId,
-          campaignId: dto.campaignId ?? null,
-          userId: dto.userId ?? null,
-          donorName: dto.donorName ?? null,
-          donorEmail: dto.donorEmail ?? null,
-          amount: toMoney(dto.amount),
-          currency,
-          paymentMethod: dto.paymentMethod,
-          // Both fall back to the column defaults — `pending` and now — when the caller does not say.
-          ...(dto.status !== undefined ? { status: dto.status } : {}),
-          ...(dto.donatedAt !== undefined ? { donatedAt: toInstant(dto.donatedAt) } : {}),
-          reference: dto.reference ?? null,
-          notes: dto.notes ?? null,
-        },
-        select: DONATION_SELECT,
+      const created = await this.prisma.$transaction(async (tx) => {
+        const donation = await tx.donation.create({
+          data: {
+            mosqueId: actor.mosqueId,
+            fundId: dto.fundId,
+            campaignId: dto.campaignId ?? null,
+            userId: dto.userId ?? null,
+            donorName: dto.donorName ?? null,
+            donorEmail: dto.donorEmail ?? null,
+            amount: toMoney(dto.amount),
+            currency,
+            paymentMethod: dto.paymentMethod,
+            ...(dto.status !== undefined ? { status: dto.status } : {}),
+            ...(dto.donatedAt !== undefined ? { donatedAt: toInstant(dto.donatedAt) } : {}),
+            reference: dto.reference ?? null,
+            notes: dto.notes ?? null,
+          },
+          select: DONATION_SELECT,
+        });
+
+        // If donation is completed on creation, record the income ledger transaction atomically
+        if (donation.status === DonationStatus.completed) {
+          await tx.transaction.create({
+            data: {
+              mosqueId: actor.mosqueId,
+              type: TransactionType.income,
+              status: TransactionStatus.completed,
+              amount: donation.amount,
+              currency: donation.currency,
+              description: donation.notes || `Donation received (${donation.reference || donation.id})`,
+              category: 'Donation',
+              reference: donation.reference,
+              paymentMethod: donation.paymentMethod,
+              fundId: donation.fund.id,
+              donationId: donation.id,
+              transactedAt: donation.donatedAt,
+              createdById: actor.id,
+            },
+          });
+        }
+
+        return donation;
       });
 
       return DonationResponseDto.from(created);
@@ -177,12 +198,68 @@ export class DonationsService {
     if (dto.userId) await this.assertDonorOwned(actor.mosqueId, dto.userId);
 
     try {
-      const updated = await this.prisma.donation.update({
-        // `id` alone is safe only because `getOwned` has already established that it belongs to the
-        // caller's mosque.
-        where: { id },
-        data: this.toUpdateData(dto),
-        select: DONATION_SELECT,
+      const updated = await this.prisma.$transaction(async (tx) => {
+        const donation = await tx.donation.update({
+          where: { id },
+          data: this.toUpdateData(dto),
+          select: DONATION_SELECT,
+        });
+
+        // Synchronize corresponding ledger transaction
+        if (donation.status === DonationStatus.completed) {
+          const existingTx = await tx.transaction.findFirst({
+            where: { mosqueId: actor.mosqueId, donationId: donation.id },
+            select: { id: true },
+          });
+
+          if (existingTx) {
+            await tx.transaction.update({
+              where: { id: existingTx.id },
+              data: {
+                status: TransactionStatus.completed,
+                amount: donation.amount,
+                currency: donation.currency,
+                fundId: donation.fund.id,
+                paymentMethod: donation.paymentMethod,
+                transactedAt: donation.donatedAt,
+                reference: donation.reference,
+                description: donation.notes || `Donation received (${donation.reference || donation.id})`,
+              },
+            });
+          } else {
+            await tx.transaction.create({
+              data: {
+                mosqueId: actor.mosqueId,
+                type: TransactionType.income,
+                status: TransactionStatus.completed,
+                amount: donation.amount,
+                currency: donation.currency,
+                description: donation.notes || `Donation received (${donation.reference || donation.id})`,
+                category: 'Donation',
+                reference: donation.reference,
+                paymentMethod: donation.paymentMethod,
+                fundId: donation.fund.id,
+                donationId: donation.id,
+                transactedAt: donation.donatedAt,
+                createdById: actor.id,
+              },
+            });
+          }
+        } else if (donation.status === DonationStatus.cancelled || donation.status === DonationStatus.failed) {
+          const existingTx = await tx.transaction.findFirst({
+            where: { mosqueId: actor.mosqueId, donationId: donation.id },
+            select: { id: true },
+          });
+
+          if (existingTx) {
+            await tx.transaction.update({
+              where: { id: existingTx.id },
+              data: { status: TransactionStatus.cancelled },
+            });
+          }
+        }
+
+        return donation;
       });
 
       return DonationResponseDto.from(updated);

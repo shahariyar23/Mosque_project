@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useMemo, useState } from "react";
 import { IslamicTexture } from "@/components/islamic-texture";
 import { useLanguage } from "@/components/language-provider";
+import { siteConfig } from "@/config/site";
 import {
   eventCategories,
   formatEventDate,
@@ -197,11 +198,11 @@ export function EventsPage() {
         <div className="relative z-10 mx-auto max-w-7xl lg:px-8">
           <p className="text-xs font-bold tracking-[.22em] text-[#e0be79]">
             {bengali
-              ? "নূর কমিউনিটি মসজিদ · ঢাকা"
-              : "NOOR COMMUNITY MOSQUE · DHAKA"}
+              ? `${siteConfig.fullNameBn.toUpperCase()} · ${siteConfig.cityBn}`
+              : `${siteConfig.fullName.toUpperCase()} · ${siteConfig.city.toUpperCase()}`}
           </p>
           <h1 className="mt-4 max-w-4xl text-5xl font-semibold leading-tight sm:text-7xl">
-            {bengali ? "অনুষ্ঠান ও কার্যক্রম।" : "Events & Programs."}
+            {bengali ? "অনুষ্ঠান ও কার্যক্রম。" : "Events & Programs."}
           </h1>
           <p className="mt-6 max-w-xl text-lg leading-8 text-white/70">
             {bengali
@@ -370,8 +371,8 @@ export function EventsPage() {
         </p>
         <h2 className="mx-auto mt-4 max-w-2xl text-4xl font-semibold">
           {bengali
-            ? "নূরের সঙ্গে আপনার জায়গা আছে।"
-            : "There is a place for you at Noor."}
+            ? `${siteConfig.nameBn}ে আপনার জন্য একটি জায়গা রয়েছে।`
+            : `There is a place for you at ${siteConfig.name}.`}
         </h2>
         <Link
           href="/contact"

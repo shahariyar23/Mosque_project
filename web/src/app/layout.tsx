@@ -3,6 +3,7 @@ import "./globals.css";
 import { LanguageProvider } from "@/components/language-provider";
 import { hindSiliguri, inter, montserrat, playfair, notoSerifBengali } from "./fonts";
 import { AuthProvider } from "@/components/auth-provider";
+import { NoorLoader } from "@/components/loading/NoorLoader";
 
 export const metadata: Metadata = {
   title: "Noor Community Mosque | Faith, Knowledge, Community",
@@ -32,6 +33,7 @@ export default function RootLayout({
           the refresh cookie on mount — because a session handed in from the server would make every
           visitor read as signed in, which is exactly what the guards exist to distinguish.
         */}
+        <NoorLoader />
         <AuthProvider>
           <LanguageProvider>{children}</LanguageProvider>
         </AuthProvider>

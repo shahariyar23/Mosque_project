@@ -54,7 +54,10 @@ export const membershipTierTone: Record<MembershipTier, Tone> = {
   Founding: "gold",
 };
 
-export const volunteerStatusTone: Record<VolunteerStatus, Tone> = {
+export const volunteerStatusTone: Record<string, Tone> = {
+  active: "success",
+  inactive: "neutral",
+  on_leave: "pending",
   Active: "success",
   Inactive: "neutral",
   "On Leave": "pending",

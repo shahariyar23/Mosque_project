@@ -1,222 +1,213 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Chip } from "@/components/finance/ui/badge";
+import { useDashboardSession } from "@/components/dashboard/session-provider";
 import { Button, IconButton } from "@/components/finance/ui/button";
-import { DataTable, type Column } from "@/components/finance/ui/data-table";
+import { DataTable, Pagination, type Column } from "@/components/finance/ui/data-table";
+import { ConfirmDialog } from "@/components/finance/ui/dialogs";
 import { FinanceFilters, type SelectFilter } from "@/components/finance/ui/filters";
 import { SelectField, TextAreaField, TextField } from "@/components/finance/ui/form-field";
-import { Icon } from "@/components/finance/ui/icon";
 import { Modal } from "@/components/finance/ui/modal";
-import { Panel, PanelBody, PanelHeader } from "@/components/finance/ui/panel";
+import { Panel, PanelFooter, PanelHeader } from "@/components/finance/ui/panel";
 import { Can } from "@/components/finance/ui/permission-gate";
-import { ProgressBar } from "@/components/finance/ui/progress";
-import { FinanceEmptyState, InlineNotice } from "@/components/finance/ui/states";
+import { TableSkeleton } from "@/components/finance/ui/skeleton";
+import { FinanceEmptyState, FinanceErrorState, InlineNotice } from "@/components/finance/ui/states";
 import { PersonCell } from "@/components/ui/avatar";
-import { DetailDrawer, DetailField, DetailGrid, DetailSection, DetailStats } from "@/components/ui/detail-drawer";
+import { DetailDrawer, DetailField, DetailGrid, DetailSection } from "@/components/ui/detail-drawer";
 import { StatGrid } from "@/components/ui/stat-card";
 import { AvailabilityBadge, VolunteerStatusBadge } from "@/components/ui/status-badge";
-import { TabPanel, Tabs, useTabIds, type TabItem } from "@/components/ui/tabs";
 import { useToast } from "@/components/ui/toast";
+import { useApiList, useApiResource } from "@/hooks/use-api";
+import { formatCount, formatMonthYear } from "@/lib/mosque/format";
+import { type StatMetric } from "@/lib/mosque/types";
+import type { VolunteerStatus } from "@/services/enums";
+import { fetchUsers } from "@/services/userService";
 import {
-  teamFilterOptions,
-  volunteerTeams,
-  volunteerTotals,
-  volunteers as seedVolunteers,
-} from "@/data/volunteers";
-import { formatCount, formatLongDate, formatMonthYear, pluralise, REFERENCE_DATE } from "@/lib/mosque/format";
-import {
-  volunteerAvailabilities,
-  volunteerSchedules,
-  volunteerStatuses,
-  type StatMetric,
+  createVolunteer,
+  deleteVolunteer,
+  fetchVolunteers,
+  updateVolunteer,
+  updateVolunteerStatus,
+  type CreateVolunteerInput,
+  type UpdateVolunteerInput,
   type Volunteer,
-  type VolunteerDraft,
-  type VolunteerTeam,
-} from "@/lib/mosque/types";
+} from "@/services/volunteersService";
 
-/**
- * Volunteer coordination.
- *
- * Same shape as the members screen on purpose — summary strip, team cards, filtered table, detail
- * drawer — because they are the same job done to a different roster, and someone who has learned one
- * should not have to learn the other. Everything shared lives in the kit; what differs here is the
- * team grouping and the service-hours figures.
- */
-const metrics: StatMetric[] = [
-  {
-    id: "total",
-    label: "Total Volunteers",
-    value: formatCount(volunteerTotals.total),
-    hint: "Across every service team",
-    icon: "hands-heart",
-    tone: "neutral",
-  },
-  {
-    id: "active",
-    label: "Active",
-    value: formatCount(volunteerTotals.active),
-    hint: `${formatCount(volunteerTotals.total - volunteerTotals.active)} inactive or on leave`,
-    icon: "check-circle",
-    tone: "positive",
-  },
-  {
-    id: "available",
-    label: "Available Today",
-    value: formatCount(volunteerTotals.availableToday),
-    hint: "Marked available for the current rota",
-    icon: "clock",
-    tone: "gold",
-  },
-  {
-    id: "teams",
-    label: "Teams",
-    value: formatCount(volunteerTotals.teams),
-    hint: "Each with a named lead",
-    icon: "users",
-    tone: "neutral",
-  },
+const statusFilterOptions = [
+  { value: "all", label: "Any status" },
+  { value: "active", label: "Active" },
+  { value: "inactive", label: "Inactive" },
+  { value: "on_leave", label: "On Leave" },
 ];
 
-const emptyDraft: VolunteerDraft = {
-  name: "",
-  email: "",
-  phone: "",
-  teamId: volunteerTeams[0]?.id ?? "",
-  skills: "",
-  schedule: "Weekends",
-  availability: "Available",
-  status: "Active",
-  emergencyContactName: "",
-  emergencyContactPhone: "",
+const statusOptions = [
+  { value: "active", label: "Active" },
+  { value: "inactive", label: "Inactive" },
+  { value: "on_leave", label: "On Leave" },
+];
+
+type EnrolFormState = {
+  userId: string;
+  skills: string;
+  availability: string;
+  status: VolunteerStatus;
+  joinedAt: string;
+  notes: string;
 };
 
-export function VolunteersView({ openAddOnMount = false }: { openAddOnMount?: boolean }) {
-  const { notify } = useToast();
-  const [volunteers, setVolunteers] = useState<Volunteer[]>(seedVolunteers);
-  const [search, setSearch] = useState("");
-  const [team, setTeam] = useState("all");
-  const [status, setStatus] = useState("all");
-  const [availability, setAvailability] = useState("all");
-  const [selected, setSelected] = useState<Volunteer | null>(null);
-  const [adding, setAdding] = useState(openAddOnMount);
+const emptyEnrolForm: EnrolFormState = {
+  userId: "",
+  skills: "",
+  availability: "Weekends",
+  status: "active",
+  joinedAt: new Date().toISOString().slice(0, 10),
+  notes: "",
+};
 
-  const filtered = useMemo(() => {
-    const needle = search.trim().toLowerCase();
-    return volunteers.filter((volunteer) => {
-      if (needle) {
-        const haystack = `${volunteer.name} ${volunteer.email} ${volunteer.phone} ${volunteer.id} ${volunteer.teamName} ${volunteer.skills.join(" ")}`.toLowerCase();
-        if (!haystack.includes(needle)) return false;
-      }
-      if (team !== "all" && volunteer.teamId !== team) return false;
-      if (status !== "all" && volunteer.status !== status) return false;
-      if (availability !== "all" && volunteer.availability !== availability) return false;
-      return true;
-    });
-  }, [availability, search, status, team, volunteers]);
+export function VolunteersView() {
+  const { can } = useDashboardSession();
+  const { notify } = useToast();
+
+  const [page, setPage] = useState(1);
+  const [search, setSearch] = useState("");
+  const [status, setStatus] = useState("all");
+  const [selected, setSelected] = useState<Volunteer | null>(null);
+
+  // Enrol modal states
+  const [enrolOpen, setEnrolOpen] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [enrolForm, setEnrolForm] = useState<EnrolFormState>(emptyEnrolForm);
+  const [submitted, setSubmitted] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string[]> | undefined>(undefined);
+
+  // Edit modal states
+  const [editTarget, setEditTarget] = useState<Volunteer | null>(null);
+  const [editForm, setEditForm] = useState<UpdateVolunteerInput>({});
+  const [isUpdating, setIsUpdating] = useState(false);
+  const [editFormError, setEditFormError] = useState<string | null>(null);
+  const [editFieldErrors, setEditFieldErrors] = useState<Record<string, string[]> | undefined>(undefined);
+
+  // Delete/remove confirm state
+  const [deleteTarget, setDeleteTarget] = useState<Volunteer | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
+
+  // Users list for dropdown
+  const { data: usersData } = useApiResource(() => fetchUsers({ limit: 100 }), []);
+  const usersList = usersData?.rows || [];
+
+  const userOptions = useMemo(
+    () => [
+      ...usersList.map((u) => ({
+        value: u.id,
+        label: `${u.fullName} (${u.email || u.phone || u.role})`,
+      })),
+    ],
+    [usersList],
+  );
+
+  const query = useMemo(
+    () => ({
+      page,
+      limit: 10,
+      search: search.trim() || undefined,
+      status: status !== "all" ? (status as VolunteerStatus) : undefined,
+    }),
+    [page, search, status],
+  );
+
+  const { rows, meta, loading, error, refetch } = useApiList(fetchVolunteers, query, {
+    enabled: can("volunteer.view"),
+  });
 
   const filters: SelectFilter[] = [
-    { id: "team", label: "Team", value: team, onChange: setTeam, options: teamFilterOptions },
     {
       id: "status",
       label: "Status",
       value: status,
-      onChange: setStatus,
-      options: [{ value: "all", label: "Any status" }, ...volunteerStatuses.map((value) => ({ value, label: value }))],
-    },
-    {
-      id: "availability",
-      label: "Availability",
-      value: availability,
-      onChange: setAvailability,
-      options: [
-        { value: "all", label: "Any" },
-        ...volunteerAvailabilities.map((value) => ({ value, label: value })),
-      ],
+      onChange: (val) => {
+        setStatus(val);
+        setPage(1);
+      },
+      options: statusFilterOptions,
     },
   ];
 
-  const activeFilterCount =
-    (team !== "all" ? 1 : 0) + (status !== "all" ? 1 : 0) + (availability !== "all" ? 1 : 0);
+  const activeFilterCount = status !== "all" ? 1 : 0;
 
   const resetFilters = () => {
-    setTeam("all");
     setStatus("all");
-    setAvailability("all");
+    setSearch("");
+    setPage(1);
   };
 
-  const addVolunteer = (draft: VolunteerDraft) => {
-    const chosen = volunteerTeams.find((entry) => entry.id === draft.teamId);
-    const volunteer: Volunteer = {
-      id: `VOL-${String(volunteers.length + 1).padStart(3, "0")}`,
-      name: draft.name.trim(),
-      email: draft.email.trim(),
-      phone: draft.phone.trim(),
-      teamId: draft.teamId,
-      teamName: chosen?.name ?? "Unassigned",
-      schedule: draft.schedule,
-      availability: draft.availability,
-      joinedDate: REFERENCE_DATE,
-      status: draft.status,
-      skills: draft.skills
-        .split(",")
-        .map((skill) => skill.trim())
-        .filter(Boolean),
-      serviceHours: 0,
-      eventsParticipated: 0,
-      emergencyContactName: draft.emergencyContactName.trim(),
-      emergencyContactPhone: draft.emergencyContactPhone.trim(),
-    };
+  const metrics: StatMetric[] = [
+    {
+      id: "total",
+      label: "Total Volunteers",
+      value: formatCount(meta?.total ?? rows.length),
+      hint: "Enrolled in the roster",
+      icon: "hands-heart",
+      tone: "neutral",
+    },
+  ];
 
-    setVolunteers((current) => [volunteer, ...current]);
-    setAdding(false);
-    notify({
-      message: "Volunteer added successfully.",
-      description: `${volunteer.name} joined ${volunteer.teamName} — held in this browser only.`,
+  const openEditModal = (volunteer: Volunteer) => {
+    setEditTarget(volunteer);
+    setEditForm({
+      availability: volunteer.availability || "",
+      skills: volunteer.skills || "",
+      status: volunteer.status,
+      notes: volunteer.notes || "",
     });
+    setEditFormError(null);
+    setEditFieldErrors(undefined);
   };
 
   const columns: Column<Volunteer>[] = [
     {
       key: "volunteer",
       header: "Volunteer",
-      cell: (volunteer) => <PersonCell name={volunteer.name} meta={volunteer.id} />,
-      sortValue: (volunteer) => volunteer.name,
-    },
-    {
-      key: "team",
-      header: "Team",
-      cell: (volunteer) => <Chip>{volunteer.teamName}</Chip>,
-      sortValue: (volunteer) => volunteer.teamName,
+      cell: (volunteer) => (
+        <button
+          type="button"
+          onClick={() => setSelected(volunteer)}
+          className="text-left font-medium text-[#17211d] hover:text-[#0d4d3b] hover:underline"
+        >
+          <PersonCell name={volunteer.user.fullName} meta={volunteer.user.email || volunteer.id.slice(0, 8)} />
+        </button>
+      ),
     },
     {
       key: "phone",
       header: "Phone",
       secondary: true,
-      cell: (volunteer) => <span className="tabular-nums">{volunteer.phone}</span>,
+      cell: (volunteer) => <span className="tabular-nums">{volunteer.user.phone || "—"}</span>,
     },
     {
       key: "availability",
       header: "Availability",
       cell: (volunteer) => (
-        <span className="flex flex-col gap-1">
+        <div className="flex flex-col items-start gap-1">
           <AvailabilityBadge availability={volunteer.availability} />
-          <span className="text-[11.5px] text-[#8b938d]">{volunteer.schedule}</span>
-        </span>
+          {volunteer.skills ? (
+            <span className="inline-flex max-w-[240px] items-center gap-1 truncate text-[11px] text-[#6b736c]">
+              <span className="font-medium text-[#4a524b]">Skills:</span>
+              <span className="truncate">{volunteer.skills}</span>
+            </span>
+          ) : null}
+        </div>
       ),
-      sortValue: (volunteer) => volunteer.availability,
     },
     {
       key: "joined",
       header: "Joined",
-      cell: (volunteer) => <span className="tabular-nums">{formatMonthYear(volunteer.joinedDate)}</span>,
-      sortValue: (volunteer) => volunteer.joinedDate,
+      cell: (volunteer) => <span className="tabular-nums">{formatMonthYear(volunteer.joinedAt)}</span>,
     },
     {
       key: "status",
       header: "Status",
-      cell: (volunteer) => <VolunteerStatusBadge status={volunteer.status} />,
-      sortValue: (volunteer) => volunteer.status,
+      cell: (volunteer) => <VolunteerStatusBadge status={volunteer.status as any} />,
     },
     {
       key: "actions",
@@ -225,14 +216,164 @@ export function VolunteersView({ openAddOnMount = false }: { openAddOnMount?: bo
       align: "right",
       cell: (volunteer) => (
         <span className="flex items-center justify-end gap-1">
-          <IconButton icon="eye" label={`View ${volunteer.name}`} onClick={() => setSelected(volunteer)} />
+          <IconButton icon="eye" label={`View ${volunteer.user.fullName}`} onClick={() => setSelected(volunteer)} />
           <Can permission="volunteer.manage">
-            <IconButton icon="pencil" label={`Edit ${volunteer.name}`} onClick={() => setSelected(volunteer)} />
+            <IconButton icon="pencil" label={`Edit ${volunteer.user.fullName}`} onClick={() => openEditModal(volunteer)} />
+            <IconButton
+              icon="trash"
+              tone="danger"
+              label={`Remove ${volunteer.user.fullName} from roster`}
+              onClick={() => setDeleteTarget(volunteer)}
+            />
           </Can>
         </span>
       ),
     },
   ];
+
+  const enrolErrors = {
+    userId: (submitted && !enrolForm.userId ? "Choose a user to enrol." : undefined) || fieldErrors?.userId?.[0],
+    skills: fieldErrors?.skills?.[0],
+    availability: fieldErrors?.availability?.[0],
+    status: fieldErrors?.status?.[0],
+    notes: fieldErrors?.notes?.[0],
+  };
+
+  const handleEnrolSubmit = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setSubmitted(true);
+    setFormError(null);
+    setFieldErrors(undefined);
+
+    if (!enrolForm.userId) return;
+
+    try {
+      setIsSubmitting(true);
+      const input: CreateVolunteerInput = {
+        userId: enrolForm.userId,
+        skills: enrolForm.skills.trim() || null,
+        availability: enrolForm.availability.trim() || null,
+        status: enrolForm.status,
+        joinedAt: enrolForm.joinedAt ? new Date(enrolForm.joinedAt).toISOString() : undefined,
+        notes: enrolForm.notes.trim() || null,
+      };
+
+      const created = await createVolunteer(input);
+      notify({
+        message: "Volunteer enrolled",
+        description: `${created.user.fullName} has been enrolled in the roster.`,
+        tone: "success",
+      });
+
+      setEnrolOpen(false);
+      setSubmitted(false);
+      setEnrolForm(emptyEnrolForm);
+      setFieldErrors(undefined);
+      refetch();
+    } catch (err: any) {
+      const fErrors = err?.errors || err?.fieldErrors;
+      if (fErrors && typeof fErrors === "object") {
+        setFieldErrors(fErrors);
+      }
+      setFormError(err.message || "Failed to enrol volunteer.");
+      notify({
+        message: "Unable to enrol volunteer",
+        description: err.message || "Some of the details provided are not valid.",
+        tone: "danger",
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleEditSubmit = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!editTarget) return;
+
+    try {
+      setIsUpdating(true);
+      setEditFormError(null);
+      setEditFieldErrors(undefined);
+
+      const updated = await updateVolunteer(editTarget.id, {
+        availability: editForm.availability?.trim() || null,
+        skills: editForm.skills?.trim() || null,
+        status: editForm.status,
+        notes: editForm.notes?.trim() || null,
+      });
+
+      notify({
+        message: "Volunteer updated",
+        description: `${updated.user.fullName}'s entry has been updated.`,
+        tone: "success",
+      });
+
+      setEditTarget(null);
+      if (selected?.id === updated.id) {
+        setSelected(updated);
+      }
+      refetch();
+    } catch (err: any) {
+      const fErrors = err?.errors || err?.fieldErrors;
+      if (fErrors && typeof fErrors === "object") {
+        setEditFieldErrors(fErrors);
+      }
+      setEditFormError(err.message || "Failed to update volunteer.");
+      notify({
+        message: "Update failed",
+        description: err.message || "Some of the details provided are not valid.",
+        tone: "danger",
+      });
+    } finally {
+      setIsUpdating(false);
+    }
+  };
+
+  const handleRemoveVolunteer = async () => {
+    if (!deleteTarget) return;
+
+    try {
+      setIsDeleting(true);
+      await deleteVolunteer(deleteTarget.id);
+      notify({
+        message: "Volunteer removed",
+        description: `${deleteTarget.user.fullName} was removed from the roster.`,
+        tone: "info",
+      });
+      setDeleteTarget(null);
+      if (selected?.id === deleteTarget.id) setSelected(null);
+      refetch();
+    } catch (err: any) {
+      notify({
+        message: "Unable to remove volunteer",
+        description: err.message || "Could not remove roster entry.",
+        tone: "danger",
+      });
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
+  const handleStatusChange = async (volunteerId: string, newStatus: VolunteerStatus) => {
+    try {
+      const updated = await updateVolunteerStatus(volunteerId, newStatus);
+      notify({
+        message: "Status updated",
+        description: `${updated.user.fullName}'s status changed to ${newStatus}.`,
+        tone: "success",
+      });
+      if (selected?.id === volunteerId) {
+        setSelected(updated);
+      }
+      refetch();
+    } catch (err: any) {
+      notify({
+        message: "Failed to update status",
+        description: err.message || "Could not update roster status.",
+        tone: "danger",
+      });
+    }
+  };
 
   return (
     <div className="space-y-4">
@@ -240,499 +381,326 @@ export function VolunteersView({ openAddOnMount = false }: { openAddOnMount?: bo
 
       <Panel>
         <PanelHeader
-          title="Volunteer Teams"
-          description="Eight teams cover the mosque's week. Selecting one filters the roster below."
-          icon="hands-heart"
+          title="Volunteer Roster"
+          description="Who is enrolled, when they are free and their skills."
+          icon="list"
           actions={
             <Can permission="volunteer.manage">
-              <Button size="sm" icon="plus" onClick={() => setAdding(true)}>
-                Add Volunteer
+              <Button icon="plus" size="sm" onClick={() => setEnrolOpen(true)}>
+                Enrol volunteer
               </Button>
             </Can>
           }
-        />
-        <PanelBody>
-          <ul className="grid gap-2.5 sm:grid-cols-2 xl:grid-cols-4">
-            {volunteerTeams.map((entry) => (
-              <TeamCard
-                key={entry.id}
-                team={entry}
-                selected={team === entry.id}
-                onSelect={() => setTeam(team === entry.id ? "all" : entry.id)}
-              />
-            ))}
-          </ul>
-        </PanelBody>
-      </Panel>
-
-      <Panel>
-        <PanelHeader
-          title="Volunteer Roster"
-          description="Who is on which team, when they are free and how much they have given."
-          icon="list"
         />
 
         <FinanceFilters
           search={{
             value: search,
-            onChange: setSearch,
+            onChange: (val) => {
+              setSearch(val);
+              setPage(1);
+            },
             placeholder: "Search volunteers…",
-            label: "Search volunteers by name, team, skill or phone",
+            label: "Search volunteers by name, email or phone",
           }}
           filters={filters}
           activeCount={activeFilterCount}
           onReset={resetFilters}
         />
 
-        <DataTable
-          rows={filtered}
-          columns={columns}
-          getRowKey={(volunteer) => volunteer.id}
-          caption="Mosque volunteers with team, availability, join date and status"
-          initialSort={{ key: "volunteer", direction: "asc" }}
-          pageSize={10}
-          mobileTitle={(volunteer) => volunteer.name}
-          mobileSubtitle={(volunteer) => volunteer.teamName}
-          mobileTrailing={(volunteer) => <VolunteerStatusBadge status={volunteer.status} />}
-          mobileHiddenKeys={["volunteer", "status", "team"]}
-          footNote={`Sample of the roster — ${formatCount(seedVolunteers.length)} of ${formatCount(volunteerTotals.total)} volunteers loaded.`}
-          emptyState={
-            <FinanceEmptyState
-              icon="hands-heart"
-              title="No volunteers registered yet."
-              description={
-                activeFilterCount > 0 || search
-                  ? "Nothing matches the current search and filters. Try clearing them."
-                  : "Nobody has been placed on a team yet. Add the first volunteer to start a rota."
-              }
-              action={
-                activeFilterCount > 0 || search ? (
-                  <Button
-                    variant="secondary"
-                    icon="close"
-                    onClick={() => {
-                      resetFilters();
-                      setSearch("");
-                    }}
-                  >
-                    Clear search and filters
-                  </Button>
-                ) : (
-                  <Can permission="volunteer.manage">
-                    <Button icon="plus" onClick={() => setAdding(true)}>
-                      Add Volunteer
-                    </Button>
-                  </Can>
-                )
+        {loading && !rows.length ? (
+          <TableSkeleton rows={6} />
+        ) : error ? (
+          <FinanceErrorState
+            title="Failed to load volunteers"
+            description={typeof error === "string" ? error : "An unexpected error occurred."}
+            onRetry={refetch}
+          />
+        ) : (
+          <>
+            <DataTable
+              rows={rows}
+              columns={columns}
+              getRowKey={(volunteer) => volunteer.id}
+              caption="Mosque volunteers with availability, join date and status"
+              pageSize={10}
+              mobileTitle={(volunteer) => volunteer.user.fullName}
+              mobileSubtitle={(volunteer) => volunteer.skills || "—"}
+              mobileTrailing={(volunteer) => <VolunteerStatusBadge status={volunteer.status as any} />}
+              mobileHiddenKeys={["volunteer", "status"]}
+              emptyState={
+                <FinanceEmptyState
+                  icon="hands-heart"
+                  title="No volunteers registered yet."
+                  description={
+                    activeFilterCount > 0 || search
+                      ? "Nothing matches the current search and filters. Try clearing them."
+                      : "Nobody has been placed on the roster yet."
+                  }
+                  action={
+                    activeFilterCount > 0 || search ? (
+                      <Button variant="secondary" icon="close" onClick={resetFilters}>
+                        Clear search and filters
+                      </Button>
+                    ) : undefined
+                  }
+                />
               }
             />
-          }
-        />
+            {meta && meta.totalPages > 1 && (
+              <PanelFooter>
+                <Pagination page={meta.page} totalPages={meta.totalPages} onChange={setPage} />
+              </PanelFooter>
+            )}
+          </>
+        )}
       </Panel>
 
-      {selected ? <VolunteerDetailDrawer volunteer={selected} onClose={() => setSelected(null)} /> : null}
-      <AddVolunteerModal open={adding} onClose={() => setAdding(false)} onSave={addVolunteer} />
+      {/* ---- Volunteer Detail Drawer ---- */}
+      {selected ? (
+        <VolunteerDetailDrawer
+          volunteer={selected}
+          onClose={() => setSelected(null)}
+          onEdit={() => openEditModal(selected)}
+          onStatusChange={handleStatusChange}
+          onRemove={() => setDeleteTarget(selected)}
+        />
+      ) : null}
+
+      {/* ---- Enrol Volunteer Modal ---- */}
+      <Modal
+        open={enrolOpen}
+        onClose={() => setEnrolOpen(false)}
+        title="Enrol a volunteer"
+        description="Select an existing mosque member to add to the volunteer roster with their skills and availability."
+        size="lg"
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setEnrolOpen(false)} disabled={isSubmitting}>
+              Cancel
+            </Button>
+            <Button type="submit" form="enrol-volunteer-form" icon="check" disabled={isSubmitting}>
+              {isSubmitting ? "Enrolling…" : "Enrol volunteer"}
+            </Button>
+          </>
+        }
+      >
+        <form id="enrol-volunteer-form" onSubmit={handleEnrolSubmit} noValidate className="space-y-4">
+          {formError ? (
+            <InlineNotice tone="danger" icon="alert">
+              {formError}
+            </InlineNotice>
+          ) : null}
+
+          <SelectField
+            label="Member account"
+            required
+            placeholder="Choose a member from the directory"
+            options={userOptions}
+            value={enrolForm.userId}
+            error={enrolErrors.userId}
+            onChange={(event) => setEnrolForm({ ...enrolForm, userId: event.target.value })}
+          />
+
+          <div className="grid gap-4 sm:grid-cols-2">
+            <TextField
+              label="Availability"
+              placeholder="e.g. Weekends after Asr, Jumuah"
+              value={enrolForm.availability}
+              error={enrolErrors.availability}
+              onChange={(event) => setEnrolForm({ ...enrolForm, availability: event.target.value })}
+            />
+            <SelectField
+              label="Initial status"
+              required
+              options={statusOptions}
+              value={enrolForm.status}
+              error={enrolErrors.status}
+              onChange={(event) => setEnrolForm({ ...enrolForm, status: event.target.value as VolunteerStatus })}
+            />
+          </div>
+
+          <TextField
+            label="Skills & Expertise"
+            placeholder="e.g. First aid, crowd management, sound system, cleaning"
+            value={enrolForm.skills}
+            error={enrolErrors.skills}
+            onChange={(event) => setEnrolForm({ ...enrolForm, skills: event.target.value })}
+          />
+
+          <TextField
+            label="Joined date"
+            type="date"
+            value={enrolForm.joinedAt}
+            onChange={(event) => setEnrolForm({ ...enrolForm, joinedAt: event.target.value })}
+          />
+
+          <TextAreaField
+            label="Coordinator notes (Internal)"
+            placeholder="Internal coordination notes..."
+            value={enrolForm.notes}
+            error={enrolErrors.notes}
+            onChange={(event) => setEnrolForm({ ...enrolForm, notes: event.target.value })}
+          />
+
+          <InlineNotice icon="shield">
+            Enrolling adds a roster entry for this member without changing their account role or system access permissions.
+          </InlineNotice>
+        </form>
+      </Modal>
+
+      {/* ---- Edit Volunteer Modal ---- */}
+      <Modal
+        open={Boolean(editTarget)}
+        onClose={() => setEditTarget(null)}
+        title={editTarget ? `Edit volunteer: ${editTarget.user.fullName}` : "Edit volunteer"}
+        description="Update availability, skills, status, or coordinator notes for this roster entry."
+        size="lg"
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setEditTarget(null)} disabled={isUpdating}>
+              Cancel
+            </Button>
+            <Button type="submit" form="edit-volunteer-form" icon="check" disabled={isUpdating}>
+              {isUpdating ? "Saving changes…" : "Save changes"}
+            </Button>
+          </>
+        }
+      >
+        <form id="edit-volunteer-form" onSubmit={handleEditSubmit} noValidate className="space-y-4">
+          {editFormError ? (
+            <InlineNotice tone="danger" icon="alert">
+              {editFormError}
+            </InlineNotice>
+          ) : null}
+
+          <div className="grid gap-4 sm:grid-cols-2">
+            <TextField
+              label="Availability"
+              placeholder="e.g. Weekends, Jumuah only, Weekdays after Asr"
+              value={editForm.availability || ""}
+              error={editFieldErrors?.availability?.[0]}
+              onChange={(event) => setEditForm({ ...editForm, availability: event.target.value })}
+            />
+            <SelectField
+              label="Status"
+              required
+              options={statusOptions}
+              value={editForm.status || "active"}
+              error={editFieldErrors?.status?.[0]}
+              onChange={(event) => setEditForm({ ...editForm, status: event.target.value as VolunteerStatus })}
+            />
+          </div>
+
+          <TextField
+            label="Skills & Expertise"
+            placeholder="e.g. First aid, IT support, crowd control, sound system"
+            value={editForm.skills || ""}
+            error={editFieldErrors?.skills?.[0]}
+            onChange={(event) => setEditForm({ ...editForm, skills: event.target.value })}
+          />
+
+          <TextAreaField
+            label="Coordinator notes (Internal)"
+            placeholder="Internal coordination notes..."
+            value={editForm.notes || ""}
+            error={editFieldErrors?.notes?.[0]}
+            onChange={(event) => setEditForm({ ...editForm, notes: event.target.value })}
+          />
+
+          <InlineNotice icon="info">
+            Changing volunteer information updates this roster entry without modifying the user's login account or member profile.
+          </InlineNotice>
+        </form>
+      </Modal>
+
+      {/* ---- Remove Confirmation Dialog ---- */}
+      <ConfirmDialog
+        open={Boolean(deleteTarget)}
+        onClose={() => setDeleteTarget(null)}
+        title="Remove volunteer from roster"
+        description={`Are you sure you want to remove ${deleteTarget?.user.fullName} from the volunteer roster? Their member account and system access will remain untouched.`}
+        confirmLabel={isDeleting ? "Removing…" : "Remove volunteer"}
+        tone="danger"
+        onConfirm={handleRemoveVolunteer}
+      />
     </div>
   );
 }
 
 /* -------------------------------------------------------------------------- *
- * Team card
+ * Detail Drawer
  * -------------------------------------------------------------------------- */
 
-/**
- * A team card is a filter control, so it is a `<button>` with `aria-pressed` rather than a decorated
- * div with a click handler — that is what makes it reachable by keyboard and announced as a toggle.
- */
-function TeamCard({
-  team,
-  selected,
-  onSelect,
+function VolunteerDetailDrawer({
+  volunteer,
+  onClose,
+  onEdit,
+  onStatusChange,
+  onRemove,
 }: {
-  team: VolunteerTeam;
-  selected: boolean;
-  onSelect: () => void;
+  volunteer: Volunteer;
+  onClose: () => void;
+  onEdit: () => void;
+  onStatusChange: (id: string, newStatus: VolunteerStatus) => void;
+  onRemove: () => void;
 }) {
-  return (
-    <li>
-      <button
-        type="button"
-        aria-pressed={selected}
-        onClick={onSelect}
-        className={`h-full w-full rounded-lg border px-3.5 py-3.5 text-left transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#0d4d3b] ${
-          selected
-            ? "border-[#0d4d3b] bg-[#eef2ec]"
-            : "border-[#e2e1d6] bg-white hover:border-[#b9c2ba] hover:bg-[#fbfaf5]"
-        }`}
-      >
-        <div className="flex items-start gap-3">
-          <span
-            className={`grid h-9 w-9 shrink-0 place-items-center rounded-md border ${
-              selected ? "border-[#c2d8cb] bg-white text-[#0d4d3b]" : "border-[#e3ce9d] bg-[#f7f0df] text-[#a97b23]"
-            }`}
-          >
-            <Icon name={team.icon} size={17} />
-          </span>
-          <div className="min-w-0 flex-1">
-            <p className={`text-[13.5px] font-semibold ${selected ? "text-[#0b4634]" : "text-[#17211d]"}`}>
-              {team.name}
-            </p>
-            <p className="mt-0.5 text-[12px] tabular-nums text-[#69726d]">
-              {pluralise(team.volunteerCount, "volunteer")}
-            </p>
-          </div>
-        </div>
-
-        <p className="mt-2.5 text-[12px] leading-5 text-[#69726d]">{team.description}</p>
-
-        <div className="mt-3 border-t border-[#eceae0] pt-2.5">
-          <div className="flex items-baseline justify-between gap-2">
-            <p className="text-[11px] text-[#8b938d]">Active today</p>
-            <p className="text-[11.5px] font-semibold tabular-nums text-[#3d453f]">
-              {team.activeToday}/{team.volunteerCount}
-            </p>
-          </div>
-          <ProgressBar
-            className="mt-1.5"
-            value={team.activeToday}
-            max={team.volunteerCount}
-            tone={selected ? "success" : "gold"}
-            label={`${team.activeToday} of ${team.volunteerCount} ${team.name} volunteers active today`}
-          />
-          <p className="mt-2 truncate text-[11.5px] text-[#8b938d]">Lead: {team.lead}</p>
-        </div>
-      </button>
-    </li>
-  );
-}
-
-/* -------------------------------------------------------------------------- *
- * Detail drawer
- * -------------------------------------------------------------------------- */
-
-const detailTabs: ReadonlyArray<TabItem<"profile" | "team" | "service">> = [
-  { id: "profile", label: "Profile" },
-  { id: "team", label: "Team & skills" },
-  { id: "service", label: "Service" },
-];
-
-function VolunteerDetailDrawer({ volunteer, onClose }: { volunteer: Volunteer; onClose: () => void }) {
-  const [tab, setTab] = useState<(typeof detailTabs)[number]["id"]>("profile");
-  const idBase = useTabIds();
-  const team = volunteerTeams.find((entry) => entry.id === volunteer.teamId);
-
   return (
     <DetailDrawer
       open
       onClose={onClose}
-      eyebrow={volunteer.id}
-      title={volunteer.name}
-      subtitle={`${volunteer.teamName} · ${volunteer.schedule}`}
-      avatarName={volunteer.name}
-      badge={
-        <>
-          <VolunteerStatusBadge status={volunteer.status} />
-          <AvailabilityBadge availability={volunteer.availability} />
-        </>
-      }
-      tabs={
-        <Tabs items={detailTabs} active={tab} onChange={setTab} label={`${volunteer.name} details`} idBase={idBase} />
-      }
+      eyebrow={volunteer.id.slice(0, 8)}
+      title={volunteer.user.fullName}
+      subtitle={volunteer.user.email}
+      badge={<VolunteerStatusBadge status={volunteer.status as any} />}
       footer={
-        <>
+        <div className="flex w-full items-center justify-between">
           <Can permission="volunteer.manage">
-            <Button size="sm" icon="pencil">
-              Edit volunteer
+            <Button size="sm" variant="danger" icon="trash" onClick={onRemove}>
+              Remove from roster
             </Button>
           </Can>
-          <Button size="sm" variant="secondary" onClick={onClose} className="ml-auto">
-            Close
-          </Button>
-        </>
-      }
-    >
-      <TabPanel base={idBase} id="profile" active={tab === "profile"}>
-        <div className="space-y-5">
-          <DetailStats
-            items={[
-              { label: "Service hours", value: `${formatCount(volunteer.serviceHours)} hrs` },
-              { label: "Events", value: formatCount(volunteer.eventsParticipated) },
-              { label: "Joined", value: formatMonthYear(volunteer.joinedDate) },
-            ]}
-          />
-          <DetailSection title="Contact">
-            <DetailGrid>
-              <DetailField label="Phone" value={<span className="tabular-nums">{volunteer.phone}</span>} />
-              <DetailField label="Email" value={<span className="break-all">{volunteer.email}</span>} />
-            </DetailGrid>
-          </DetailSection>
-          <DetailSection title="Emergency contact">
-            <DetailGrid>
-              <DetailField label="Name" value={volunteer.emergencyContactName} />
-              <DetailField
-                label="Phone"
-                value={<span className="tabular-nums">{volunteer.emergencyContactPhone}</span>}
-              />
-            </DetailGrid>
-          </DetailSection>
-        </div>
-      </TabPanel>
-
-      <TabPanel base={idBase} id="team" active={tab === "team"}>
-        <div className="space-y-5">
-          <DetailSection title="Team">
-            <div className="rounded-lg border border-[#e7e6dc] bg-[#faf9f4] px-3.5 py-3">
-              <div className="flex items-start gap-3">
-                <span className="grid h-9 w-9 shrink-0 place-items-center rounded-md border border-[#e3ce9d] bg-[#f7f0df] text-[#a97b23]">
-                  <Icon name={team?.icon ?? "hands-heart"} size={17} />
-                </span>
-                <div className="min-w-0">
-                  <p className="text-[13.5px] font-semibold text-[#17211d]">{volunteer.teamName}</p>
-                  <p className="mt-0.5 text-[12px] leading-5 text-[#69726d]">{team?.description}</p>
-                  <p className="mt-1.5 text-[11.5px] text-[#8b938d]">Lead: {team?.lead ?? "Unassigned"}</p>
-                </div>
-              </div>
-            </div>
-          </DetailSection>
-
-          <DetailSection title={`Skills (${volunteer.skills.length})`}>
-            {volunteer.skills.length === 0 ? (
-              <p className="text-[13px] text-[#69726d]">No skills recorded yet.</p>
-            ) : (
-              <ul className="flex flex-wrap gap-1.5">
-                {volunteer.skills.map((skill) => (
-                  <li key={skill}>
-                    <Chip>{skill}</Chip>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </DetailSection>
-
-          <DetailSection title="Availability">
-            <DetailGrid>
-              <DetailField label="Usual schedule" value={volunteer.schedule} />
-              <DetailField
-                label="Right now"
-                value={<AvailabilityBadge availability={volunteer.availability} />}
-              />
-            </DetailGrid>
-          </DetailSection>
-        </div>
-      </TabPanel>
-
-      <TabPanel base={idBase} id="service" active={tab === "service"}>
-        <div className="space-y-5">
-          <DetailSection title="Service record">
-            <DetailStats
-              items={[
-                { label: "Service hours", value: `${formatCount(volunteer.serviceHours)} hrs`, hint: "Since joining" },
-                {
-                  label: "Events participated",
-                  value: formatCount(volunteer.eventsParticipated),
-                  hint: "Programmes worked",
-                },
-                {
-                  label: "Hours per event",
-                  value:
-                    volunteer.eventsParticipated > 0
-                      ? (volunteer.serviceHours / volunteer.eventsParticipated).toFixed(1)
-                      : "—",
-                  hint: "Average",
-                },
-              ]}
-            />
-          </DetailSection>
-
-          <DetailSection title="Contribution to the team">
-            <div className="rounded-lg border border-[#e7e6dc] bg-[#faf9f4] px-3.5 py-3.5">
-              <p className="text-[12.5px] text-[#69726d]">
-                {volunteer.name.split(" ")[0]} has given{" "}
-                <span className="font-semibold tabular-nums text-[#17211d]">
-                  {formatCount(volunteer.serviceHours)} hours
-                </span>{" "}
-                since {formatLongDate(volunteer.joinedDate)}.
-              </p>
-              <ProgressBar
-                className="mt-3"
-                value={volunteer.serviceHours}
-                max={220}
-                tone={volunteer.serviceHours >= 150 ? "success" : "gold"}
-                label={`${volunteer.serviceHours} hours of service`}
-                showValue
-              />
-              <p className="mt-1 text-[11.5px] text-[#8b938d]">
-                Measured against 220 hours, the highest on the roster.
-              </p>
-            </div>
-            <InlineNotice className="mt-3" icon="info">
-              Hours are submitted by the team lead after each rota and are not editable from this panel.
-            </InlineNotice>
-          </DetailSection>
-        </div>
-      </TabPanel>
-    </DetailDrawer>
-  );
-}
-
-/* -------------------------------------------------------------------------- *
- * Add volunteer
- * -------------------------------------------------------------------------- */
-
-function AddVolunteerModal({
-  open,
-  onClose,
-  onSave,
-}: {
-  open: boolean;
-  onClose: () => void;
-  onSave: (draft: VolunteerDraft) => void;
-}) {
-  const [draft, setDraft] = useState<VolunteerDraft>(emptyDraft);
-  const [submitted, setSubmitted] = useState(false);
-
-  const set = <Key extends keyof VolunteerDraft>(key: Key, value: VolunteerDraft[Key]) =>
-    setDraft((current) => ({ ...current, [key]: value }));
-
-  const errors = {
-    name: draft.name.trim().length === 0 ? "A volunteer needs a name." : undefined,
-    phone: draft.phone.trim().length < 6 ? "A contactable phone number is required." : undefined,
-    email:
-      draft.email.trim().length > 0 && !draft.email.includes("@")
-        ? "That does not look like an email address."
-        : undefined,
-    teamId: draft.teamId.length === 0 ? "Choose the team they will serve on." : undefined,
-    emergencyContactPhone:
-      draft.emergencyContactName.trim().length > 0 && draft.emergencyContactPhone.trim().length < 6
-        ? "Add a number for the emergency contact, or remove the name."
-        : undefined,
-  };
-  const valid = Object.values(errors).every((error) => error === undefined);
-  const show = (key: keyof typeof errors) => (submitted ? errors[key] : undefined);
-
-  const close = () => {
-    setDraft(emptyDraft);
-    setSubmitted(false);
-    onClose();
-  };
-
-  const submit = () => {
-    setSubmitted(true);
-    if (!valid) return;
-    onSave(draft);
-    setDraft(emptyDraft);
-    setSubmitted(false);
-  };
-
-  return (
-    <Modal
-      open={open}
-      onClose={close}
-      title="Add volunteer"
-      description="Places someone on a service team. An emergency contact is strongly recommended for anyone on the security or food teams."
-      footer={
-        <>
-          <Button variant="secondary" onClick={close}>
-            Cancel
-          </Button>
-          <Button icon="check" onClick={submit}>
-            Add Volunteer
-          </Button>
-        </>
-      }
-    >
-      <div className="grid gap-4 sm:grid-cols-2">
-        <TextField
-          label="Name"
-          required
-          value={draft.name}
-          onChange={(event) => set("name", event.target.value)}
-          error={show("name")}
-          containerClassName="sm:col-span-2"
-        />
-        <TextField
-          label="Phone"
-          type="tel"
-          required
-          placeholder="+880 1XXX-XXXXXX"
-          value={draft.phone}
-          onChange={(event) => set("phone", event.target.value)}
-          error={show("phone")}
-        />
-        <TextField
-          label="Email"
-          type="email"
-          value={draft.email}
-          onChange={(event) => set("email", event.target.value)}
-          error={show("email")}
-        />
-        <SelectField
-          label="Team"
-          required
-          value={draft.teamId}
-          options={volunteerTeams.map((team) => ({ value: team.id, label: team.name }))}
-          onChange={(event) => set("teamId", event.target.value)}
-          error={show("teamId")}
-        />
-        <SelectField
-          label="Usual schedule"
-          required
-          value={draft.schedule}
-          options={[...volunteerSchedules]}
-          onChange={(event) => set("schedule", event.target.value as VolunteerDraft["schedule"])}
-        />
-        <TextAreaField
-          label="Skills"
-          rows={2}
-          value={draft.skills}
-          onChange={(event) => set("skills", event.target.value)}
-          hint="Comma separated — First aid, Bulk cooking, Video editing."
-          containerClassName="sm:col-span-2"
-        />
-
-        <fieldset className="sm:col-span-2">
-          <legend className="text-[13px] font-semibold text-[#3d453f]">Emergency contact</legend>
-          <div className="mt-2 grid gap-4 sm:grid-cols-2">
-            <TextField
-              label="Name"
-              value={draft.emergencyContactName}
-              onChange={(event) => set("emergencyContactName", event.target.value)}
-            />
-            <TextField
-              label="Phone"
-              type="tel"
-              value={draft.emergencyContactPhone}
-              onChange={(event) => set("emergencyContactPhone", event.target.value)}
-              error={show("emergencyContactPhone")}
-            />
+          <div className="flex items-center gap-2">
+            <Can permission="volunteer.manage">
+              <Button size="sm" variant="secondary" icon="pencil" onClick={onEdit}>
+                Edit details
+              </Button>
+            </Can>
+            <Button size="sm" variant="secondary" onClick={onClose}>
+              Close
+            </Button>
           </div>
-        </fieldset>
+        </div>
+      }
+    >
+      <div className="space-y-5">
+        <DetailSection title="Roster Information">
+          <DetailGrid>
+            <DetailField label="Joined" value={formatMonthYear(volunteer.joinedAt)} />
+            <DetailField label="Phone" value={volunteer.user.phone || "—"} />
+            <DetailField label="Availability" value={volunteer.availability || "—"} full />
+            <DetailField label="Skills" value={volunteer.skills || "—"} full />
+            <DetailField label="Internal Notes" value={volunteer.notes || "—"} full />
+          </DetailGrid>
+        </DetailSection>
 
-        <SelectField
-          label="Availability"
-          required
-          value={draft.availability}
-          options={[...volunteerAvailabilities]}
-          onChange={(event) => set("availability", event.target.value as VolunteerDraft["availability"])}
-        />
-        <SelectField
-          label="Status"
-          required
-          value={draft.status}
-          options={[...volunteerStatuses]}
-          onChange={(event) => set("status", event.target.value as VolunteerDraft["status"])}
-        />
+        <Can permission="volunteer.manage">
+          <DetailSection title="Change Status">
+            <div className="flex flex-wrap gap-2">
+              {statusOptions.map((opt) => (
+                <Button
+                  key={opt.value}
+                  size="sm"
+                  variant={volunteer.status === opt.value ? "primary" : "secondary"}
+                  onClick={() => onStatusChange(volunteer.id, opt.value as VolunteerStatus)}
+                >
+                  Set as {opt.label}
+                </Button>
+              ))}
+            </div>
+          </DetailSection>
+        </Can>
       </div>
-
-      {submitted && !valid ? (
-        <InlineNotice className="mt-4" tone="neutral" icon="alert">
-          Some details still need attention — see the messages above.
-        </InlineNotice>
-      ) : (
-        <InlineNotice className="mt-4" tone="gold">
-          Front-end preview — the volunteer is added to this browser session only.
-        </InlineNotice>
-      )}
-    </Modal>
+    </DetailDrawer>
   );
 }

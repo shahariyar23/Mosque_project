@@ -1,7 +1,8 @@
 "use client";
 
-import { createContext, useContext, useEffect, useRef, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 import { fetchMe, logoutUser, refreshSession } from "@/services/authService";
+import { setAccessToken, setUnauthenticatedHandler } from "@/services/tokenStore";
 import type { Session } from "@/lib/session";
 
 /**
@@ -59,6 +60,36 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
    */
   const signedIn = useRef(false);
 
+  /**
+   * Sets the token in both places it has to live.
+   *
+   * React state is what re-renders the app; the module-level store in `tokenStore` is what `apiClient`
+   * reads on every request, since a plain function cannot call `useContext`. Two homes for one value is a
+   * hazard, so nothing in this file assigns `setToken` directly — they only ever move together.
+   */
+  const applyToken = useCallback((value: string | null) => {
+    setAccessToken(value);
+    setToken(value);
+  }, []);
+
+  /**
+   * What `apiClient` calls when a session cannot be recovered.
+   *
+   * Only clears state. Redirecting is left to the route guards, which are already watching for a null
+   * session and know which page the visitor is on — a redirect fired from here would also yank someone
+   * off a public page because a background request happened to expire.
+   */
+  useEffect(() => {
+    setUnauthenticatedHandler(() => {
+      signedIn.current = false;
+      applyToken(null);
+      setSession(null);
+      setLoading(false);
+    });
+
+    return () => setUnauthenticatedHandler(null);
+  }, [applyToken]);
+
   useEffect(() => {
     let cancelled = false;
 
@@ -67,7 +98,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     refreshSession()
       .then(({ token: fresh, session: recovered }) => {
         if (cancelled || signedIn.current) return;
-        setToken(fresh);
+        applyToken(fresh);
         setSession(recovered);
         signedIn.current = true;
       })
@@ -82,7 +113,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [applyToken]);
 
   /**
    * Records a completed sign-in.
@@ -93,7 +124,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
    */
   const login = (newToken: string, newSession?: Session | null) => {
     signedIn.current = true;
-    setToken(newToken);
+    applyToken(newToken);
     setLoading(false);
 
     if (newSession) {
@@ -116,7 +147,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // recovered on the next load.
     signedIn.current = false;
     const current = token;
-    setToken(null);
+    applyToken(null);
     setSession(null);
     void logoutUser(current);
   };

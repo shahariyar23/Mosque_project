@@ -1,66 +1,11 @@
 import type { ReportDefinition } from "@/lib/mosque/types";
 
 /**
- * The reporting hub's data — the catalogue of reports the mosque produces, plus the headline figures
- * those reports summarise.
+ * The reporting hub's data — the catalogue of official report definitions the mosque produces.
  *
- * This sits above the ledger-level statements in Finance → Financial reports. Here is the whole shelf
- * across every area (community, finance, operations, governance) and the year's figures at a glance;
- * there is the accountant's detail. Nothing is really computed or downloaded — a run only stamps the
- * report as generated in this preview. The chart series are exported as plain `{ label, value }`
- * arrays so this file stays free of any component import; the view builds the chart segments from
- * them. Shaped to sit behind a future `GET /reports`.
+ * All figures, headcounts, summaries, and chart data are populated live from the backend API
+ * (/api/v1/reports/*). No mock generation dates or mock scheduled runs are retained.
  */
-
-/* -------------------------------------------------------------------------- *
- * Headline figures — what the reports draw on
- * -------------------------------------------------------------------------- */
-
-/** Total received each month, year to date (৳). Sums to the year-to-date figure below. */
-export const receivedByMonth: Array<{ label: string; value: number }> = [
-  { label: "Jan", value: 382_000 },
-  { label: "Feb", value: 468_000 },
-  { label: "Mar", value: 842_000 },
-  { label: "Apr", value: 660_000 },
-  { label: "May", value: 486_000 },
-  { label: "Jun", value: 805_000 },
-  { label: "Jul", value: 464_000 },
-  { label: "Aug", value: 718_000 },
-];
-
-/** Income split by fund (৳). Sums to the same year-to-date total as the monthly series. */
-export const incomeByFund: Array<{ label: string; value: number }> = [
-  { label: "General Sadaqah", value: 1_685_000 },
-  { label: "Zakat", value: 1_240_000 },
-  { label: "Roof Fund", value: 960_000 },
-  { label: "Membership", value: 520_000 },
-  { label: "Other", value: 420_000 },
-];
-
-/** Members by tier. Sums to the member headcount. */
-export const membersByTier: Array<{ label: string; value: number }> = [
-  { label: "General", value: 812 },
-  { label: "Student", value: 236 },
-  { label: "Lifetime", value: 152 },
-  { label: "Founding", value: 84 },
-];
-
-/** Members by age band. Sums to the same headcount as the tier split. */
-export const membersByAge: Array<{ label: string; value: number }> = [
-  { label: "Under 18", value: 214 },
-  { label: "18–29", value: 342 },
-  { label: "30–44", value: 388 },
-  { label: "45–59", value: 236 },
-  { label: "60+", value: 104 },
-];
-
-/** The year's headline numbers, used in captions and the donut centre. */
-export const reportHeadline = {
-  members: membersByTier.reduce((sum, row) => sum + row.value, 0), // 1,284
-  receivedYtd: incomeByFund.reduce((sum, row) => sum + row.value, 0), // ৳4,825,000
-  eventsHeld: 62,
-  volunteerHours: 3_940,
-};
 
 /* -------------------------------------------------------------------------- *
  * Report catalogue
@@ -79,11 +24,11 @@ export const reportCatalogue: ReportDefinition[] = [
     includes: [
       "Active, pending and lapsed members",
       "New joins and leavers in the period",
-      "Breakdown by tier and age band",
+      "Breakdown by role and active status",
       "Outstanding membership fees",
     ],
-    lastGeneratedAt: "2026-08-03",
-    scheduled: true,
+    lastGeneratedAt: "",
+    scheduled: false,
   },
   {
     id: "RPT-002",
@@ -95,12 +40,12 @@ export const reportCatalogue: ReportDefinition[] = [
     owner: "Membership Office",
     includes: [
       "Every member who joined in the period",
-      "Contact details and chosen tier",
-      "How they first heard about the mosque",
-      "Welcome pack status",
+      "Contact details and role",
+      "Registration date",
+      "Account status",
     ],
-    lastGeneratedAt: "2026-08-03",
-    scheduled: true,
+    lastGeneratedAt: "",
+    scheduled: false,
   },
   {
     id: "RPT-003",
@@ -112,12 +57,11 @@ export const reportCatalogue: ReportDefinition[] = [
     owner: "Volunteer Coordinator",
     includes: [
       "Hours logged per volunteer",
-      "Hours by team and activity",
       "Active against inactive volunteers",
-      "Recognition thresholds reached",
+      "Volunteer roster by state",
     ],
-    lastGeneratedAt: "2026-07-05",
-    scheduled: true,
+    lastGeneratedAt: "",
+    scheduled: false,
   },
   {
     id: "RPT-004",
@@ -129,11 +73,10 @@ export const reportCatalogue: ReportDefinition[] = [
     owner: "Events Team",
     includes: [
       "Registrations against attendance per event",
-      "No-show and walk-in counts",
       "Capacity used at each venue",
       "Feedback scores where collected",
     ],
-    lastGeneratedAt: "2026-08-10",
+    lastGeneratedAt: "",
     scheduled: false,
   },
   /* Finance --------------------------------------------------------------- */
@@ -146,13 +89,13 @@ export const reportCatalogue: ReportDefinition[] = [
     frequency: "Monthly",
     owner: "Finance Team",
     includes: [
-      "Income and expenditure for the month",
-      "Balance held across every fund",
-      "Comparison against the same month last year",
-      "Notes on the restricted funds",
+      "Verified donations received in the month",
+      "Paid expenses and staff salaries",
+      "Net financial balance (Surplus / Deficit)",
+      "Active budget allocations and remaining headroom",
     ],
-    lastGeneratedAt: "2026-08-05",
-    scheduled: true,
+    lastGeneratedAt: "",
+    scheduled: false,
   },
   {
     id: "RPT-006",
@@ -164,12 +107,11 @@ export const reportCatalogue: ReportDefinition[] = [
     owner: "Finance Team",
     includes: [
       "Every donation received in the period",
-      "Fund and campaign each was given to",
-      "One-off against recurring gifts",
-      "Anonymous gifts kept separate",
+      "Fund and payment method each was given to",
+      "Breakdown by status",
     ],
-    lastGeneratedAt: "2026-08-05",
-    scheduled: true,
+    lastGeneratedAt: "",
+    scheduled: false,
   },
   {
     id: "RPT-007",
@@ -180,12 +122,11 @@ export const reportCatalogue: ReportDefinition[] = [
     frequency: "Annual",
     owner: "Finance Team",
     includes: [
-      "Zakat collected and distributed",
-      "Sadaqah and lillah received",
-      "Distribution across the eligible categories",
-      "Amount carried into the next year",
+      "Zakat and sadaqah collected",
+      "Eligible fund distributions",
+      "Amount carried forward",
     ],
-    lastGeneratedAt: "2026-04-15",
+    lastGeneratedAt: "",
     scheduled: false,
   },
   {
@@ -197,13 +138,12 @@ export const reportCatalogue: ReportDefinition[] = [
     frequency: "Quarterly",
     owner: "Finance Team",
     includes: [
-      "Receipts issued in the quarter",
+      "Verified donation receipts",
       "Donor name, amount and fund",
-      "Receipt number and date",
-      "Donations still needing a receipt",
+      "Payment method and verified date",
     ],
-    lastGeneratedAt: "2026-07-06",
-    scheduled: true,
+    lastGeneratedAt: "",
+    scheduled: false,
   },
   /* Operations ------------------------------------------------------------ */
   {
@@ -215,13 +155,12 @@ export const reportCatalogue: ReportDefinition[] = [
     frequency: "Monthly",
     owner: "Operations",
     includes: [
-      "Counts for the five daily congregations",
-      "Jumu'ah attendance across every session",
-      "Weekday against weekend patterns",
-      "Capacity used in each hall",
+      "Five daily congregation counts",
+      "Jumu'ah attendance across sessions",
+      "Capacity used in each prayer hall",
     ],
-    lastGeneratedAt: "2026-08-02",
-    scheduled: true,
+    lastGeneratedAt: "",
+    scheduled: false,
   },
   {
     id: "RPT-010",
@@ -234,11 +173,10 @@ export const reportCatalogue: ReportDefinition[] = [
     includes: [
       "Every booking in the period",
       "Room, purpose and organiser",
-      "Confirmed, pending and declined",
-      "Fees charged and fees waived",
+      "Confirmed and pending statuses",
     ],
-    lastGeneratedAt: "2026-08-04",
-    scheduled: true,
+    lastGeneratedAt: "",
+    scheduled: false,
   },
   {
     id: "RPT-011",
@@ -251,10 +189,9 @@ export const reportCatalogue: ReportDefinition[] = [
     includes: [
       "Enrolment per class and level",
       "Places filled against capacity",
-      "Waiting lists",
-      "Attendance and completion rates",
+      "Completion rates",
     ],
-    lastGeneratedAt: "2026-07-08",
+    lastGeneratedAt: "",
     scheduled: false,
   },
   /* Governance ------------------------------------------------------------ */
@@ -267,12 +204,11 @@ export const reportCatalogue: ReportDefinition[] = [
     frequency: "Annual",
     owner: "Trustees",
     includes: [
-      "The year in review across every area",
+      "Year in review across community and finance",
       "Financial summary and reserves",
-      "Membership and volunteer growth",
-      "Plans and priorities for the coming year",
+      "Membership and volunteer roster",
     ],
-    lastGeneratedAt: "2026-01-20",
+    lastGeneratedAt: "",
     scheduled: false,
   },
   {
@@ -286,8 +222,7 @@ export const reportCatalogue: ReportDefinition[] = [
     includes: [
       "Agenda and the previous minutes",
       "Trustees' and treasurer's reports",
-      "The audited accounts",
-      "Resolutions to be put to the members",
+      "The verified accounts",
     ],
     lastGeneratedAt: "",
     scheduled: false,
@@ -302,12 +237,11 @@ export const reportCatalogue: ReportDefinition[] = [
     owner: "Trustees",
     includes: [
       "Decisions taken since the last meeting",
-      "Risk register and safeguarding update",
-      "Progress against the strategic plan",
-      "Matters for the trustees' attention",
+      "Safeguarding and governance review",
+      "Progress against strategic objectives",
     ],
-    lastGeneratedAt: "2026-07-01",
-    scheduled: true,
+    lastGeneratedAt: "",
+    scheduled: false,
   },
 ];
 
@@ -317,7 +251,7 @@ export function reportById(id: string): ReportDefinition | undefined {
 
 export const reportStats = {
   total: reportCatalogue.length,
-  scheduled: reportCatalogue.filter((report) => report.scheduled).length,
-  runThisMonth: reportCatalogue.filter((report) => report.lastGeneratedAt.startsWith("2026-08")).length,
+  scheduled: 0,
+  runThisMonth: 0,
   categories: new Set(reportCatalogue.map((report) => report.category)).size,
 };

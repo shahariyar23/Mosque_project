@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import {
+  budgetStatusTone,
   contributionPlanStatusTone,
   contributionStatusTone,
   donationStatusTone,
@@ -43,20 +44,59 @@ export function Badge({ tone, children, dot = true, className = "" }: BadgeProps
   );
 }
 
-export function TransactionStatusBadge({ status }: { status: TransactionStatus }) {
-  return <Badge tone={transactionStatusTone[status]}>{status}</Badge>;
+const transactionStatusLabels: Record<string, string> = {
+  pending: "Pending",
+  completed: "Completed",
+  approved: "Approved",
+  rejected: "Rejected",
+  cancelled: "Cancelled",
+  voided: "Voided",
+  Pending: "Pending",
+  Completed: "Completed",
+  Approved: "Approved",
+  Rejected: "Rejected",
+  Cancelled: "Cancelled",
+};
+
+export function TransactionStatusBadge({ status }: { status: any }) {
+  const tone = transactionStatusTone[status] ?? "neutral";
+  const label = transactionStatusLabels[status] ?? status;
+  return <Badge tone={tone}>{label}</Badge>;
 }
 
-export function TransactionTypeBadge({ type }: { type: TransactionType }) {
+const transactionTypeLabels: Record<string, string> = {
+  income: "Income",
+  expense: "Expense",
+  transfer: "Transfer",
+  Income: "Income",
+  Expense: "Expense",
+  Transfer: "Transfer",
+};
+
+export function TransactionTypeBadge({ type }: { type: any }) {
+  const tone = transactionTypeTone[type] ?? "neutral";
+  const label = transactionTypeLabels[type] ?? type;
   return (
-    <Badge tone={transactionTypeTone[type]} dot={false}>
-      {type}
+    <Badge tone={tone} dot={false}>
+      {label}
     </Badge>
   );
 }
 
-export function DonationStatusBadge({ status }: { status: DonationStatus }) {
-  return <Badge tone={donationStatusTone[status]}>{status}</Badge>;
+const donationStatusLabels: Record<string, string> = {
+  pending: "Pending",
+  completed: "Completed",
+  cancelled: "Cancelled",
+  failed: "Failed",
+  Recorded: "Recorded",
+  Verified: "Verified",
+  Voided: "Voided",
+};
+
+export function DonationStatusBadge({ status }: { status: any }) {
+  const tone = donationStatusTone[status] ?? "neutral";
+  const label = donationStatusLabels[status] ?? status;
+  return <Badge tone={tone}>{label}</Badge>;
 }
 
 export function ContributionStatusBadge({ status }: { status: ContributionStatus }) {
@@ -67,28 +107,73 @@ export function ContributionPlanStatusBadge({ status }: { status: ContributionPl
   return <Badge tone={contributionPlanStatusTone[status]}>{status}</Badge>;
 }
 
-export function ExpenseStatusBadge({ status }: { status: ExpenseStatus }) {
-  return <Badge tone={expenseStatusTone[status]}>{status}</Badge>;
+const fundStatusLabels: Record<string, string> = {
+  active: "Active",
+  inactive: "Inactive",
+  completed: "Completed",
+  archived: "Archived",
+};
+
+export function FundStatusBadge({ status }: { status: any }) {
+  const tone = fundStatusTone[status] ?? "neutral";
+  const label = fundStatusLabels[status] ?? status;
+  return <Badge tone={tone}>{label}</Badge>;
 }
 
-export function SalaryStatusBadge({ status }: { status: SalaryStatus }) {
-  return <Badge tone={salaryStatusTone[status]}>{status}</Badge>;
+const expenseStatusLabels: Record<string, string> = {
+  pending: "Pending Approval",
+  approved: "Approved",
+  paid: "Paid",
+  cancelled: "Cancelled",
+  draft: "Draft",
+};
+
+export function ExpenseStatusBadge({ status }: { status: any }) {
+  const tone = expenseStatusTone[status] ?? "neutral";
+  const label = expenseStatusLabels[status] ?? status;
+  return <Badge tone={tone}>{label}</Badge>;
 }
 
-export function StaffStatusBadge({ status }: { status: StaffStatus }) {
-  return <Badge tone={staffStatusTone[status]}>{status}</Badge>;
-}
+const salaryStatusLabels: Record<string, string> = {
+  pending: "Pending",
+  paid: "Paid",
+  cancelled: "Cancelled",
+};
 
-export function FundStatusBadge({ status }: { status: FundStatus }) {
-  return <Badge tone={fundStatusTone[status]}>{status}</Badge>;
+export function SalaryStatusBadge({ status }: { status: any }) {
+  const tone = salaryStatusTone[status] ?? "neutral";
+  const label = salaryStatusLabels[status] ?? status;
+  return <Badge tone={tone}>{label}</Badge>;
 }
 
 export function RecurringStatusBadge({ status }: { status: RecurringStatus }) {
   return <Badge tone={recurringStatusTone[status]}>{status}</Badge>;
 }
 
-export function ReceiptStatusBadge({ status }: { status: ReceiptStatus }) {
-  return <Badge tone={receiptStatusTone[status]}>{status}</Badge>;
+const budgetStatusLabels: Record<string, string> = {
+  draft: "Draft",
+  active: "Active",
+  closed: "Closed",
+  cancelled: "Cancelled",
+};
+
+export function BudgetStatusBadge({ status }: { status: any }) {
+  const tone = budgetStatusTone[status] ?? "neutral";
+  const label = budgetStatusLabels[status] ?? status;
+  return <Badge tone={tone}>{label}</Badge>;
+}
+
+const receiptStatusLabels: Record<string, string> = {
+  issued: "Issued",
+  voided: "Voided",
+  Issued: "Issued",
+  Void: "Voided",
+};
+
+export function ReceiptStatusBadge({ status }: { status: any }) {
+  const tone = receiptStatusTone[status] ?? "neutral";
+  const label = receiptStatusLabels[status] ?? status;
+  return <Badge tone={tone}>{label}</Badge>;
 }
 
 /** Neutral chip for categories, funds, payment methods — anything that is not a status. */

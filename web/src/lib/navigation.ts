@@ -243,6 +243,13 @@ export const NAVIGATION: NavGroup[] = [
         permission: "fund.view",
       },
       {
+        label: "Campaigns",
+        labelBn: "ক্যাম্পেইন",
+        href: "/dashboard/finance/campaigns",
+        icon: "megaphone",
+        permission: "campaign.view",
+      },
+      {
         label: "Expenses",
         labelBn: "ব্যয়",
         href: "/dashboard/finance/expenses",

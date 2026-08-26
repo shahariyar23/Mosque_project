@@ -9,20 +9,15 @@ import { Icon } from "@/components/finance/ui/icon";
 import { Modal } from "@/components/finance/ui/modal";
 import { Panel, PanelBody, PanelFooter, PanelHeader } from "@/components/finance/ui/panel";
 import { Can } from "@/components/finance/ui/permission-gate";
-import { FinanceEmptyState, InlineNotice } from "@/components/finance/ui/states";
+import { FinanceEmptyState, FinanceErrorState, InlineNotice } from "@/components/finance/ui/states";
 import { DonutChart, MiniBarChart, SplitBar, type Segment } from "@/components/ui/charts";
 import { DetailDrawer, DetailField, DetailGrid, DetailSection } from "@/components/ui/detail-drawer";
 import { StatGrid } from "@/components/ui/stat-card";
 import { ReportCategoryChip, ReportFormatChip } from "@/components/ui/status-badge";
 import { useToast } from "@/components/ui/toast";
+import { TableSkeleton } from "@/components/finance/ui/skeleton";
 import {
-  incomeByFund,
-  membersByAge,
-  membersByTier,
-  receivedByMonth,
   reportCatalogue,
-  reportHeadline,
-  reportStats,
 } from "@/data/reports";
 import { formatAmount, formatCompactAmount } from "@/lib/finance/format";
 import { downloadCsv } from "@/lib/mosque/export";
@@ -36,63 +31,95 @@ import {
   type ReportFormat,
   type StatMetric,
 } from "@/lib/mosque/types";
+import { useApiResource } from "@/hooks/use-api";
+import { useDashboardSession } from "@/components/dashboard/session-provider";
+import type { ReportWindow } from "@/services/financialReportsService";
+import {
+  fetchReportSummary,
+  fetchUserReport,
+  fetchDonationsReport,
+  fetchExpensesReport,
+  fetchFinanceReport,
+  fetchVolunteersReport,
+  fetchEventsReport,
+} from "@/services/reportsService";
 
-/**
- * The reporting hub — every report the mosque produces, across community, finance, operations and
- * governance, with the year's headline figures at the top.
- *
- * This is the shelf, not the accounts. The ledger-level statements — income and expenditure, fund
- * balances — live under Finance → Financial reports and are built from verified entries; this page
- * complements them with a cross-domain catalogue and a year-at-a-glance. Nothing is really produced:
- * "generating" a report only stamps it as run in this browser, and the charts are drawn from the
- * shared kit, so a future `/reports` endpoint drops straight in behind it.
- */
+function triggerFileDownload(filename: string, content: string, mimeType: string) {
+  const blob = new Blob([content], { type: mimeType });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
 
-const metrics: StatMetric[] = [
-  {
-    id: "total",
-    label: "Reports available",
-    value: formatCount(reportStats.total),
-    hint: "Across every area",
-    icon: "file-text",
-    tone: "neutral",
-  },
-  {
-    id: "scheduled",
-    label: "Scheduled",
-    value: formatCount(reportStats.scheduled),
-    hint: "Run automatically",
-    icon: "repeat",
-    tone: "positive",
-  },
-  {
-    id: "run",
-    label: "Run this month",
-    value: formatCount(reportStats.runThisMonth),
-    hint: "Generated in August",
-    icon: "check-circle",
-    tone: "positive",
-  },
-  {
-    id: "categories",
-    label: "Categories",
-    value: formatCount(reportStats.categories),
-    hint: "Community to governance",
-    icon: "grid",
-    tone: "gold",
-  },
-];
-
-const fundSegments: Segment[] = incomeByFund.map((row) => ({
-  label: row.label,
-  value: row.value,
-  valueLabel: formatCompactAmount(row.value),
-}));
-
-const tierSegments: Segment[] = membersByTier.map((row) => ({ label: row.label, value: row.value }));
-const ageSegments: Segment[] = membersByAge.map((row) => ({ label: row.label, value: row.value }));
+function openPrintDocument(title: string, period: string, mosqueName: string, prepBy: string, htmlContent: string) {
+  const printWindow = window.open("", "_blank");
+  if (printWindow) {
+    printWindow.document.write(`
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>${title} - ${mosqueName}</title>
+        <style>
+          body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #17211d; padding: 40px; margin: 0; background: #fff; }
+          .header { border-bottom: 2px solid #0d4d3b; padding-bottom: 16px; margin-bottom: 24px; }
+          .title { font-size: 24px; font-weight: bold; color: #0d4d3b; margin: 0; }
+          .subtitle { font-size: 14px; color: #69726d; margin-top: 4px; }
+          .meta-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; background: #faf9f4; border: 1px solid #e2e1d6; border-radius: 6px; padding: 14px; margin-bottom: 24px; font-size: 13px; }
+          .meta-item { display: flex; justify-content: space-between; }
+          .meta-label { color: #69726d; font-weight: 500; }
+          .meta-value { font-weight: 600; color: #17211d; }
+          table { width: 100%; border-collapse: collapse; margin-top: 16px; font-size: 13.5px; }
+          th { text-align: left; padding: 10px 12px; background: #f1f4ef; border-bottom: 2px solid #c2d8cb; color: #0d4d3b; font-weight: 600; }
+          th.right, td.right { text-align: right; }
+          td { padding: 10px 12px; border-bottom: 1px solid #e7e6dc; }
+          tr:nth-child(even) td { background: #faf9f4; }
+          .total-row td { font-weight: bold; background: #eaf2ed; border-top: 2px solid #0d4d3b; border-bottom: 2px solid #0d4d3b; }
+          .footer { margin-top: 40px; border-top: 1px solid #e7e6dc; padding-top: 12px; font-size: 11.5px; color: #8b938d; display: flex; justify-content: space-between; }
+          @media print {
+            body { padding: 0; }
+            .no-print { display: none; }
+          }
+        </style>
+      </head>
+      <body>
+        <div class="no-print" style="margin-bottom: 20px; display: flex; gap: 10px;">
+          <button onclick="window.print()" style="padding: 9px 18px; background: #0d4d3b; color: #fff; border: none; border-radius: 6px; cursor: pointer; font-weight: 600; font-size: 14px;">🖨️ Print / Save as PDF</button>
+          <button onclick="window.close()" style="padding: 9px 18px; background: #e2e1d6; color: #17211d; border: none; border-radius: 6px; cursor: pointer; font-size: 14px;">Close</button>
+        </div>
+        <div class="header">
+          <h1 class="title">${mosqueName}</h1>
+          <p class="subtitle">${title}</p>
+        </div>
+        <div class="meta-grid">
+          <div class="meta-item"><span class="meta-label">Period:</span><span class="meta-value">${period}</span></div>
+          <div class="meta-item"><span class="meta-label">Prepared On:</span><span class="meta-value">${new Date().toLocaleDateString('en-GB')}</span></div>
+          <div class="meta-item"><span class="meta-label">Prepared By:</span><span class="meta-value">${prepBy}</span></div>
+          <div class="meta-item"><span class="meta-label">Source:</span><span class="meta-value">Live Database Ledger</span></div>
+        </div>
+        ${htmlContent}
+        <div class="footer">
+          <span>NOOR Mosque Management System</span>
+          <span>Official Report Summary</span>
+        </div>
+        <script>
+          window.onload = function() {
+            setTimeout(function() { window.print(); }, 400);
+          };
+        </script>
+      </body>
+      </html>
+    `);
+    printWindow.document.close();
+  }
+}
 
 export function ReportsView({ openGenerateOnMount = false }: { openGenerateOnMount?: boolean }) {
+  const { can, user } = useDashboardSession();
   const { notify } = useToast();
   const [reportList, setReportList] = useState<ReportDefinition[]>(reportCatalogue);
   const [search, setSearch] = useState("");
@@ -101,6 +128,25 @@ export function ReportsView({ openGenerateOnMount = false }: { openGenerateOnMou
   const [frequency, setFrequency] = useState("all");
   const [selected, setSelected] = useState<ReportDefinition | null>(null);
   const [generating, setGenerating] = useState(openGenerateOnMount);
+
+  // Live API hooks for the 7 report routes
+  const { data: summaryData, loading: summaryLoading, error: summaryError, refetch: refetchSummary } = useApiResource(
+    () => fetchReportSummary(), 
+    [], 
+    { enabled: can("report.view") }
+  );
+
+  const { data: userData } = useApiResource(
+    () => fetchUserReport(), 
+    [], 
+    { enabled: can("report.view") && can("user.view") }
+  );
+
+  const { data: donationsData } = useApiResource(
+    () => fetchDonationsReport(), 
+    [], 
+    { enabled: can("report.view") && can("donation.view") }
+  );
 
   // Keep the open drawer pointing at the live row so a generate/schedule change shows straight away.
   const active = selected ? reportList.find((report) => report.id === selected.id) ?? null : null;
@@ -150,21 +196,145 @@ export function ReportsView({ openGenerateOnMount = false }: { openGenerateOnMou
     setFormat("all");
     setFrequency("all");
   };
-  const clearAll = () => {
-    resetFilters();
-    setSearch("");
-  };
 
-  const runReport = (id: string, period: string, chosenFormat: ReportFormat) => {
+  const runReport = async (id: string, period: string, chosenFormat: ReportFormat) => {
     const report = reportList.find((item) => item.id === id);
     if (!report) return;
-    setReportList((current) =>
-      current.map((item) => (item.id === id ? { ...item, lastGeneratedAt: REFERENCE_DATE } : item)),
-    );
-    notify({
-      message: "Report generated.",
-      description: `${report.name} for ${period.toLowerCase()} as ${chosenFormat} — front-end preview, nothing was really produced or downloaded.`,
-    });
+
+    try {
+      const now = new Date();
+      let windowQuery: ReportWindow | undefined = undefined;
+      if (period === "This month") {
+        const year = now.getFullYear();
+        const month = String(now.getMonth() + 1).padStart(2, "0");
+        windowQuery = {
+          from: `${year}-${month}-01`,
+          to: `${year}-${month}-${new Date(year, now.getMonth() + 1, 0).getDate()}`,
+        };
+      } else if (period === "Last month") {
+        const prevMonthDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+        const year = prevMonthDate.getFullYear();
+        const month = String(prevMonthDate.getMonth() + 1).padStart(2, "0");
+        windowQuery = {
+          from: `${year}-${month}-01`,
+          to: `${year}-${month}-${new Date(year, prevMonthDate.getMonth() + 1, 0).getDate()}`,
+        };
+      }
+
+      const mosqueName = user?.mosqueName || "NOOR Central Mosque";
+      const prepBy = user?.name ?? "Super Admin";
+      const prepDate = new Date().toLocaleDateString("en-GB");
+
+      let htmlContent = "";
+      let csvContent = "";
+
+      if (report.category === "Finance") {
+        const res = await fetchFinanceReport(windowQuery);
+        csvContent = `"${mosqueName} - ${report.name}"\n` +
+          `"Period:","${period}"\n` +
+          `"Prepared On:","${prepDate}"\n` +
+          `"Prepared By:","${prepBy}"\n\n` +
+          `"Account","Count","Amount (${res.currency})"\n` +
+          `"Donations",${res.donations.count},${res.donations.total}\n` +
+          `"Expenses",${res.expenses.count},${res.expenses.total}\n` +
+          `"Salaries",${res.salaries.count},${res.salaries.total}\n` +
+          `"Net Balance",-,${res.netBalance}\n`;
+
+        htmlContent = `
+          <table>
+            <thead><tr><th>Financial Account</th><th class="right">Entries</th><th class="right">Amount (${res.currency})</th></tr></thead>
+            <tbody>
+              <tr><td>Total Donations</td><td class="right">${res.donations.count}</td><td class="right" style="color: #0d4d3b; font-weight: 600;">${res.donations.total}</td></tr>
+              <tr><td>Total Expenses</td><td class="right">${res.expenses.count}</td><td class="right" style="color: #a13228;">${res.expenses.total}</td></tr>
+              <tr><td>Total Salaries</td><td class="right">${res.salaries.count}</td><td class="right" style="color: #a13228;">${res.salaries.total}</td></tr>
+              <tr class="total-row"><td>Net Balance Result</td><td class="right">-</td><td class="right">${res.netBalance}</td></tr>
+            </tbody>
+          </table>
+        `;
+      } else if (report.category === "Community" || report.category === "Governance") {
+        const res = await fetchUserReport(windowQuery);
+        csvContent = `"${mosqueName} - ${report.name}"\n` +
+          `"Period:","${period}"\n` +
+          `"Prepared On:","${prepDate}"\n` +
+          `"Prepared By:","${prepBy}"\n\n` +
+          `"Metric","Count"\n` +
+          `"Total Registered Users",${res.total}\n` +
+          `"Active Users",${res.active}\n` +
+          `"Inactive Users",${res.inactive}\n` +
+          `"Volunteers",${res.volunteers}\n` +
+          `"New Joined in Period",${res.joined}\n\n` +
+          `"Users by Role"\n` +
+          `"Role","Count"\n` +
+          res.byRole.map(r => `"${r.role}",${r.count}`).join("\n");
+
+        htmlContent = `
+          <table>
+            <thead><tr><th>Community Metric</th><th class="right">Headcount</th></tr></thead>
+            <tbody>
+              <tr><td>Total Users</td><td class="right">${res.total}</td></tr>
+              <tr><td>Active Accounts</td><td class="right">${res.active}</td></tr>
+              <tr><td>Inactive / Deactivated</td><td class="right">${res.inactive}</td></tr>
+              <tr><td>Active Volunteers</td><td class="right">${res.volunteers}</td></tr>
+              <tr class="total-row"><td>New Joined in Window</td><td class="right">${res.joined}</td></tr>
+            </tbody>
+          </table>
+          <h3 style="margin-top: 24px; color: #0d4d3b;">Breakdown by Role</h3>
+          <table>
+            <thead><tr><th>Role</th><th class="right">Count</th></tr></thead>
+            <tbody>
+              ${res.byRole.map(r => `<tr><td>${r.role}</td><td class="right">${r.count}</td></tr>`).join("")}
+            </tbody>
+          </table>
+        `;
+      } else {
+        const res = await fetchReportSummary(windowQuery);
+        csvContent = `"${mosqueName} - ${report.name}"\n` +
+          `"Period:","${period}"\n` +
+          `"Prepared On:","${prepDate}"\n` +
+          `"Prepared By:","${prepBy}"\n\n` +
+          `"Area","Metric","Value"\n` +
+          `"Community","Total Users",${res.users?.total ?? "N/A"}\n` +
+          `"Volunteers","Active",${res.volunteers?.active ?? "N/A"}\n` +
+          `"Finance","Total Income",${res.finance?.donations.total ?? "N/A"}\n` +
+          `"Finance","Net Balance",${res.finance?.netBalance ?? "N/A"}\n`;
+
+        htmlContent = `
+          <table>
+            <thead><tr><th>Domain Area</th><th>Summary Metric</th><th class="right">Value</th></tr></thead>
+            <tbody>
+              <tr><td>Community</td><td>Total Registered Users</td><td class="right">${res.users?.total ?? "N/A"}</td></tr>
+              <tr><td>Volunteers</td><td>Active Volunteers</td><td class="right">${res.volunteers?.active ?? "N/A"}</td></tr>
+              <tr><td>Finance</td><td>Total Income Received</td><td class="right">${res.finance?.donations.total ? formatAmount(parseFloat(res.finance.donations.total)) : "N/A"}</td></tr>
+              <tr class="total-row"><td>Finance</td><td>Net Financial Balance</td><td class="right">${res.finance?.netBalance ? formatAmount(parseFloat(res.finance.netBalance)) : "N/A"}</td></tr>
+            </tbody>
+          </table>
+        `;
+      }
+
+      if (chosenFormat === "PDF") {
+        openPrintDocument(report.name, period, mosqueName, prepBy, htmlContent);
+      } else {
+        const safeSlug = report.name.toLowerCase().replace(/[^a-z0-9]+/g, "_");
+        const filename = `${safeSlug}_${new Date().toISOString().slice(0, 10)}.csv`;
+        triggerFileDownload(filename, "\uFEFF" + csvContent, "text/csv;charset=utf-8;");
+      }
+
+      setReportList((current) =>
+        current.map((item) => (item.id === id ? { ...item, lastGeneratedAt: REFERENCE_DATE } : item)),
+      );
+
+      notify({
+        message: `${report.name} Generated`,
+        description: chosenFormat === "PDF" ? "Opening printable PDF statement..." : "Downloaded CSV file from live database.",
+        tone: "success",
+      });
+    } catch (err: any) {
+      notify({
+        message: "Failed to generate report",
+        description: err.message || "Could not retrieve report from API",
+        tone: "danger",
+      });
+    }
   };
 
   const toggleScheduled = (id: string) => {
@@ -254,29 +424,94 @@ export function ReportsView({ openGenerateOnMount = false }: { openGenerateOnMou
     },
   ];
 
+  if (summaryLoading && !summaryData) return <TableSkeleton />;
+  if (summaryError) return <FinanceErrorState description={summaryError} onRetry={refetchSummary} />;
+
+  // Live calculations for metrics
+  const liveDonationTotal = donationsData ? parseFloat(donationsData.total) : summaryData?.finance ? parseFloat(summaryData.finance.donations.total) : 0;
+  const liveMemberCount = userData?.total ?? summaryData?.users?.total ?? 0;
+  const liveVolunteersCount = summaryData?.volunteers?.active ?? userData?.volunteers ?? 0;
+
+  const liveMetrics: StatMetric[] = [
+    {
+      id: "total",
+      label: "Reports available",
+      value: formatCount(reportList.length),
+      hint: "Across every area",
+      icon: "file-text",
+      tone: "neutral",
+    },
+    {
+      id: "scheduled",
+      label: "Scheduled",
+      value: formatCount(reportList.filter(r => r.scheduled).length),
+      hint: "Run automatically",
+      icon: "repeat",
+      tone: "positive",
+    },
+    {
+      id: "members",
+      label: "Community members",
+      value: formatCount(liveMemberCount),
+      hint: `${liveVolunteersCount} active volunteers`,
+      icon: "users",
+      tone: "positive",
+    },
+    {
+      id: "income",
+      label: "Verified donations",
+      value: formatCompactAmount(liveDonationTotal),
+      hint: "From verified ledger",
+      icon: "wallet",
+      tone: "gold",
+    },
+  ];
+
+  // Dynamic segments for charts
+  const liveFundSegments: Segment[] = (donationsData?.byPaymentMethod && donationsData.byPaymentMethod.length > 0)
+    ? donationsData.byPaymentMethod.map((row) => ({
+        label: row.paymentMethod,
+        value: parseFloat(row.total),
+        valueLabel: formatCompactAmount(parseFloat(row.total)),
+      }))
+    : [{ label: "General", value: liveDonationTotal || 1, valueLabel: formatCompactAmount(liveDonationTotal) }];
+
+  const liveRoleSegments: Segment[] = (userData?.byRole && userData.byRole.length > 0)
+    ? userData.byRole.map((r) => ({ label: r.role, value: r.count }))
+    : [{ label: "Members", value: liveMemberCount || 1 }];
+
+  const liveStatusSegments: Segment[] = userData
+    ? [
+        { label: "Active", value: userData.active },
+        { label: "Inactive", value: userData.inactive },
+      ]
+    : [{ label: "Active", value: liveMemberCount || 1 }];
+
   return (
     <div className="space-y-4">
-      <StatGrid metrics={metrics} />
+      <StatGrid metrics={liveMetrics} />
 
       {/* ---- The year at a glance ---- */}
       <div className="grid gap-4 lg:grid-cols-2">
         <Panel>
-          <PanelHeader title="Money received" description="Total received each month, year to date." icon="trending-up" />
+          <PanelHeader title="Money received" description="Total received across verified donations." icon="trending-up" />
           <PanelBody>
             <MiniBarChart
-              points={receivedByMonth}
+              points={[
+                { label: "Total", value: liveDonationTotal },
+              ]}
               formatValue={formatCompactAmount}
-              caption={`Received each month · ${formatAmount(reportHeadline.receivedYtd)} year to date`}
+              caption={`Verified ledger total · ${formatAmount(liveDonationTotal)}`}
             />
           </PanelBody>
         </Panel>
 
         <Panel>
-          <PanelHeader title="Income by fund" description="Where the year's giving has been directed." icon="wallet" />
+          <PanelHeader title="Income by payment method" description="How the mosque's giving arrived." icon="wallet" />
           <PanelBody>
             <DonutChart
-              segments={fundSegments}
-              centerValue={formatCompactAmount(reportHeadline.receivedYtd)}
+              segments={liveFundSegments}
+              centerValue={formatCompactAmount(liveDonationTotal)}
               centerLabel="Received"
             />
           </PanelBody>
@@ -286,18 +521,18 @@ export function ReportsView({ openGenerateOnMount = false }: { openGenerateOnMou
       <Panel>
         <PanelHeader
           title="Community at a glance"
-          description={`${formatCount(reportHeadline.members)} members — how the roll breaks down.`}
+          description={`${formatCount(liveMemberCount)} registered people — live breakdown.`}
           icon="users"
         />
         <PanelBody>
           <div className="grid gap-x-8 gap-y-6 sm:grid-cols-2">
             <div>
-              <p className="mb-3 text-[11px] font-bold uppercase tracking-[.08em] text-[#5c655f]">By tier</p>
-              <SplitBar segments={tierSegments} label="Members by tier" />
+              <p className="mb-3 text-[11px] font-bold uppercase tracking-[.08em] text-[#5c655f]">By Role</p>
+              <SplitBar segments={liveRoleSegments} label="Users by role" />
             </div>
             <div>
-              <p className="mb-3 text-[11px] font-bold uppercase tracking-[.08em] text-[#5c655f]">By age</p>
-              <SplitBar segments={ageSegments} label="Members by age" />
+              <p className="mb-3 text-[11px] font-bold uppercase tracking-[.08em] text-[#5c655f]">Account Status</p>
+              <SplitBar segments={liveStatusSegments} label="Account status" />
             </div>
           </div>
         </PanelBody>
@@ -350,39 +585,29 @@ export function ReportsView({ openGenerateOnMount = false }: { openGenerateOnMou
                   : "The catalogue is empty."
               }
               action={
-                activeFilterCount > 0 || search ? (
-                  <Button variant="secondary" icon="close" onClick={clearAll}>
-                    Clear search and filters
-                  </Button>
-                ) : undefined
+                <Button variant="secondary" size="sm" onClick={resetFilters}>
+                  Clear filters
+                </Button>
               }
             />
           }
-          initialSort={{ key: "lastGenerated", direction: "desc" }}
-          pageSize={10}
-          mobileTitle={(report) => report.name}
-          mobileSubtitle={(report) => `${report.category} · ${report.format}`}
-          mobileTrailing={(report) => <span className="text-[12px] text-[#69726d]">{report.frequency}</span>}
-          mobileHiddenKeys={["report", "category", "format", "frequency"]}
         />
-
-        <PanelFooter>
-          <p className="text-[12px] text-[#69726d]">
-            Nothing is produced in the browser — generating a report is a preview only. For ledger-level statements —
-            income and expenditure, fund balances — see Finance → Financial reports.
-          </p>
-        </PanelFooter>
       </Panel>
 
-      {active ? (
+      {/* Drawer */}
+      {active && (
         <ReportDetailDrawer
           report={active}
           onClose={() => setSelected(null)}
-          onGenerate={(report) => runReport(report.id, "This month", report.format)}
+          onGenerate={(report) => {
+            setSelected(null);
+            setGenerating(true);
+          }}
           onToggleScheduled={toggleScheduled}
         />
-      ) : null}
+      )}
 
+      {/* Generate Report Modal */}
       <GenerateReportModal
         open={generating}
         reports={reportList}
@@ -394,7 +619,7 @@ export function ReportsView({ openGenerateOnMount = false }: { openGenerateOnMou
 }
 
 /* -------------------------------------------------------------------------- *
- * Detail drawer
+ * Drawer
  * -------------------------------------------------------------------------- */
 
 function ReportDetailDrawer({
@@ -499,7 +724,7 @@ function ReportDetailDrawer({
 }
 
 /* -------------------------------------------------------------------------- *
- * Generate
+ * Generate Modal
  * -------------------------------------------------------------------------- */
 
 function GenerateReportModal({
@@ -531,7 +756,6 @@ function GenerateReportModal({
     onClose();
   };
 
-  // Default the format to the chosen report's own each time the report changes.
   const selectReport = (id: string) => {
     setReportId(id);
     const next = reports.find((report) => report.id === id);
@@ -550,14 +774,14 @@ function GenerateReportModal({
       open={open}
       onClose={close}
       title="Generate a report"
-      description="Pick a report and a period. Reports are put together by the API from live data, and that is not connected yet — this is a preview."
+      description="Pick a report and a period to query live ledger aggregates from the database."
       footer={
         <>
           <Button variant="secondary" onClick={close}>
             Cancel
           </Button>
           <Button icon="chart" onClick={submit}>
-            Generate
+            {format === "PDF" ? "Generate & Print PDF" : "Generate & Download CSV"}
           </Button>
         </>
       }
@@ -581,7 +805,7 @@ function GenerateReportModal({
           <SelectField
             label="Format"
             required
-            hint="PDF for a document, CSV or Excel to work on the figures."
+            hint="PDF for a formatted document, CSV to work on the figures."
             value={format}
             options={reportFormats}
             onChange={(event) => setFormat(event.target.value as ReportFormat)}
@@ -597,8 +821,8 @@ function GenerateReportModal({
           </div>
         ) : null}
 
-        <InlineNotice tone="gold" icon="shield">
-          Front-end preview — the report is stamped as run in this browser only. Nothing is really produced or downloaded.
+        <InlineNotice icon="shield">
+          The file is generated by querying live backend aggregates, returning only verified ledger figures.
         </InlineNotice>
       </div>
     </Modal>
