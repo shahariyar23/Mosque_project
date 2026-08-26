@@ -101,6 +101,8 @@ model Mosque {
   campaigns        Campaign[]
   donations        Donation[]
   expenses         Expense[]
+  budgets          Budget[]
+  salaryRecords    SalaryRecord[]
   users     User[]
   auditLogs AuditLog[]
 
@@ -227,6 +229,11 @@ model User {
   /// Expenses this person entered. The entry keeps their id, which is one of the reasons a user row is
   /// soft-deleted rather than removed.
   expenses      Expense[]
+  /// Budgets this person drew up. Same reason: the plan keeps the name of whoever set it.
+  budgets       Budget[]
+  /// Salary this person is paid. A staff member is an ordinary user with rows here — there is no separate
+  /// imam or employee record anywhere in this schema.
+  salaryRecords SalaryRecord[]
   /// At most one: volunteering is something a person either does or does not, not a list of
   /// enrolments. Optional because most members never volunteer.
   volunteer     Volunteer?
@@ -752,6 +759,135 @@ model Expense {
   @@index([mosqueId, category])
   @@index([mosqueId, createdById])
   @@map("expenses")
+}
+
+// ---------------------------------------------------------------------------
+// Money that is planned, and money owed to people
+//
+// A budget is an intention; a salary record is an obligation. Neither is a transaction, and neither is
+// wired to one: booking an expense against a category does not draw down a budget with the same name, and
+// marking a salary `paid` does not write an expense. Nothing in this schema moves a figure from one table
+// to another, because the moment it did, the two would be able to disagree.
+//
+// `amount` is `Decimal(14, 2)` on both, as everywhere else money appears.
+//
+// There is no payroll here. No tax, no deduction, no allowance, no net-versus-gross: `amount` is the one
+// figure the mosque agreed to pay, and a system that computed a second one would be claiming an authority
+// over someone's pay that this application does not have.
+// ---------------------------------------------------------------------------
+
+enum BudgetStatus {
+  /// Being drawn up. Not yet the figure anyone is working to.
+  draft
+  /// In force for its period. This is the only state a remaining-budget figure means anything in.
+  active
+  /// The period is over and the line is settled.
+  closed
+  /// Abandoned. Kept, rather than deleted, so the record of what was once planned survives.
+  cancelled
+}
+
+enum SalaryStatus {
+  /// Owed, not yet paid.
+  pending
+  /// Paid. Only this state should be counted as money that left.
+  paid
+  /// Will not be paid. The reversible alternative to deleting a record someone may have seen.
+  cancelled
+}
+
+/// What a mosque intends to spend on something over a period.
+///
+/// `category` is free text, matching `Expense.category`, and the match is by convention rather than by
+/// constraint: a report can total expenses whose category equals a budget's, but nothing forces an expense
+/// to name a budget that exists, and creating a budget does not restrict what may be spent. A foreign key
+/// here would mean every expense had to wait for a budget line, which is not how a mosque works.
+///
+/// `periodStart` and `periodEnd` are calendar dates, not instants. A budget covers days.
+///
+/// Overlapping budgets are permitted. A mosque may hold a draft alongside the active line it is meant to
+/// replace, and may budget the same category over both a month and the year containing it. Deciding which
+/// of those overlaps is a mistake is a judgement, and the database is not where judgements belong.
+model Budget {
+  id       String @id @default(uuid()) @db.Uuid
+  mosqueId String @db.Uuid
+  mosque   Mosque @relation(fields: [mosqueId], references: [id], onDelete: Cascade)
+
+  /// What this line is called on the paper it came from, e.g. "Q3 Utilities".
+  name     String @db.VarChar(160)
+  /// The spending category this budget governs. Compared against `Expense.category`.
+  category String @db.VarChar(120)
+
+  amount   Decimal @db.Decimal(14, 2)
+  currency String  @db.VarChar(8)
+
+  periodStart DateTime @db.Date
+  periodEnd   DateTime @db.Date
+
+  status BudgetStatus @default(draft)
+
+  notes String? @db.Text
+
+  createdById String @db.Uuid
+  createdBy   User   @relation(fields: [createdById], references: [id], onDelete: Restrict)
+
+  createdAt DateTime @default(now()) @db.Timestamptz
+  updatedAt DateTime @updatedAt @db.Timestamptz
+
+  // Every index leads with `mosqueId`, for the reason given on the donation indexes: no read of this table
+  // is ever unscoped, so an index that does not start there cannot serve one.
+  @@index([mosqueId, status])
+  @@index([mosqueId, category])
+  @@index([mosqueId, periodStart])
+  @@index([mosqueId, createdAt])
+  @@index([mosqueId, createdById])
+  @@map("budgets")
+}
+
+/// One period's pay for one person.
+///
+/// The person is an ordinary `User`. There is no imam table and no staff table: whether someone is paid is
+/// a fact about rows here, not a fact about which table their name sits in, and a second account for the
+/// same human being would be one more thing to keep in step.
+///
+/// `userId` is required and is not nullable — a payment with nobody to pay is not a salary record. It is
+/// `Restrict` rather than `SetNull` for the reason `User.deletedAt` exists: pay history has to keep naming
+/// the person it was paid to.
+///
+/// `paymentDate` is when the money is due or was handed over, a calendar date. `payPeriod` is the month the
+/// pay is *for*, which is a different fact — August's salary is routinely paid in September.
+model SalaryRecord {
+  id       String @id @default(uuid()) @db.Uuid
+  mosqueId String @db.Uuid
+  mosque   Mosque @relation(fields: [mosqueId], references: [id], onDelete: Cascade)
+
+  /// Who is paid. Always in the same mosque as the record; the service checks it, because a foreign key
+  /// cannot express "and their `mosqueId` must equal mine".
+  userId String @db.Uuid
+  user   User   @relation(fields: [userId], references: [id], onDelete: Restrict)
+
+  amount   Decimal @db.Decimal(14, 2)
+  currency String  @db.VarChar(8)
+
+  /// The month this pay is for, as `YYYY-MM`. A fixed shape rather than free text, so that "2026-08" and
+  /// "August 2026" cannot both exist and be counted as two periods.
+  payPeriod String @db.VarChar(7)
+
+  paymentDate DateTime @db.Date
+
+  status SalaryStatus @default(pending)
+
+  notes String? @db.Text
+
+  createdAt DateTime @default(now()) @db.Timestamptz
+  updatedAt DateTime @updatedAt @db.Timestamptz
+
+  @@index([mosqueId, status])
+  @@index([mosqueId, userId])
+  @@index([mosqueId, payPeriod])
+  @@index([mosqueId, paymentDate])
+  @@index([mosqueId, createdAt])
+  @@map("salary_records")
 }
 
 // ---------------------------------------------------------------------------

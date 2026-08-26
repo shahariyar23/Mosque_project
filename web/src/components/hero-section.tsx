@@ -39,68 +39,68 @@ export function HeroSection() {
         <div className="max-w-2xl pointer-events-auto flex flex-col items-center lg:items-start">
           
           {/* Top Arabic Text */}
-          <div className="flex items-center justify-center lg:justify-start gap-3 text-[#dca74e] mb-4 lg:mb-6">
+          <div className="flex items-center justify-center lg:justify-start gap-2.5 sm:gap-3 text-[#dca74e] mb-3 sm:mb-4 lg:mb-6">
             <span className="text-[10px]">❖</span>
-            <span className="font-arabic text-lg sm:text-xl tracking-wider">بِسْمِ ٱللَّٰهِ ٱلرَّحْمَٰنِ ٱلرَّحِيمِ</span>
+            <span className="font-arabic text-base sm:text-xl tracking-wider">بِسْمِ ٱللَّٰهِ ٱلرَّحْمَٰنِ ٱلرَّحِيمِ</span>
             <span className="text-[10px]">❖</span>
           </div>
 
           {/* Main Heading */}
-          <h1 className="text-[38px] sm:text-6xl lg:text-[72px] font-serif text-[#f2e6ce] leading-[1.1] tracking-wide mb-4 lg:mb-6">
+          <h1 className="text-[30px] xs:text-[38px] sm:text-6xl lg:text-[72px] font-serif text-[#f2e6ce] leading-[1.1] tracking-wide mb-3 sm:mb-4 lg:mb-6">
             DISCOVER THE<br />
             BEAUTY OF FAITH
           </h1>
 
           {/* Subheading */}
-          <p className="text-[#b0beba] text-sm sm:text-lg max-w-[300px] sm:max-w-[450px] leading-relaxed mb-8 lg:mb-10">
+          <p className="text-[#b0beba] text-xs sm:text-base lg:text-lg max-w-[280px] xs:max-w-[340px] sm:max-w-[450px] leading-relaxed mb-6 sm:mb-8 lg:mb-10">
             NOOR is your digital companion for a stronger connection with Allah and your community.
           </p>
 
-          {/* Buttons - Side by side even on mobile to match image 1 */}
-          <div className="flex flex-row justify-center lg:justify-start gap-3 sm:gap-5">
+          {/* Buttons */}
+          <div className="flex flex-row justify-center lg:justify-start gap-2.5 sm:gap-4">
             <a
               href="#explore"
-              className="bg-gradient-to-r from-[#e7b864] to-[#c18931] text-[#13231c] px-4 sm:px-7 py-2.5 sm:py-3.5 rounded-full text-sm sm:text-base font-medium flex items-center gap-1.5 sm:gap-2 hover:opacity-90 transition-opacity"
+              className="bg-gradient-to-r from-[#e7b864] to-[#c18931] text-[#13231c] px-4 sm:px-6 py-2.5 sm:py-3 rounded-lg text-xs sm:text-base font-semibold flex items-center gap-1.5 sm:gap-2 hover:opacity-90 transition-opacity shadow-md"
             >
-              Explore Now <ArrowRight size={16} />
+              Explore Now <ArrowRight className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
             </a>
             <a
               href="#learn"
-              className="border border-[#dca74e]/50 text-[#dca74e] px-4 sm:px-7 py-2.5 sm:py-3.5 rounded-full text-sm sm:text-base font-medium flex items-center gap-1.5 sm:gap-2 hover:bg-[#dca74e]/10 transition-colors"
+              className="border border-[#dca74e]/50 text-[#dca74e] px-4 sm:px-6 py-2.5 sm:py-3 rounded-lg text-xs sm:text-base font-semibold flex items-center gap-1.5 sm:gap-2 hover:bg-[#dca74e]/10 transition-colors shadow-sm"
             >
-              Learn More <ArrowRight size={16} />
+              Learn More <ArrowRight className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
             </a>
           </div>
 
           {/* Features Grid */}
-          <div className="mt-16 lg:mt-20">
-            <p className="text-[#7d8c83] text-[10px] sm:text-xs tracking-[0.2em] font-semibold mb-6">
+          <div className="mt-10 sm:mt-16 lg:mt-20">
+            <p className="text-[#7d8c83] text-[10px] sm:text-xs tracking-[0.2em] font-semibold mb-4 sm:mb-6">
               FEATURES
             </p>
-            <div className="flex flex-wrap justify-center lg:justify-start gap-6 sm:gap-12">
-              <a href="#prayer" className="flex flex-col items-center gap-3 group">
+            <div className="flex flex-wrap justify-center lg:justify-start gap-4 sm:gap-8 lg:gap-12">
+              <a href="#prayer" className="flex flex-col items-center gap-2 sm:gap-3 group">
                 <div className="text-[#dca74e] group-hover:scale-110 transition-transform">
-                  <Moon size={28} className="sm:w-8 sm:h-8" strokeWidth={1.5} />
+                  <Moon className="w-6 h-6 sm:w-8 sm:h-8" strokeWidth={1.5} />
                 </div>
-                <span className="text-xs sm:text-sm text-[#b0beba]">Prayer Times</span>
+                <span className="text-[11px] sm:text-xs text-[#b0beba]">Prayer Times</span>
               </a>
-              <a href="#quran" className="flex flex-col items-center gap-3 group">
+              <a href="#quran" className="flex flex-col items-center gap-2 sm:gap-3 group">
                 <div className="text-[#dca74e] group-hover:scale-110 transition-transform">
-                  <BookOpen size={28} className="sm:w-8 sm:h-8" strokeWidth={1.5} />
+                  <BookOpen className="w-6 h-6 sm:w-8 sm:h-8" strokeWidth={1.5} />
                 </div>
-                <span className="text-xs sm:text-sm text-[#b0beba]">Quran</span>
+                <span className="text-[11px] sm:text-xs text-[#b0beba]">Quran</span>
               </a>
-              <a href="#events" className="flex flex-col items-center gap-3 group">
+              <a href="#events" className="flex flex-col items-center gap-2 sm:gap-3 group">
                 <div className="text-[#dca74e] group-hover:scale-110 transition-transform">
-                  <CalendarDays size={28} className="sm:w-8 sm:h-8" strokeWidth={1.5} />
+                  <CalendarDays className="w-6 h-6 sm:w-8 sm:h-8" strokeWidth={1.5} />
                 </div>
-                <span className="text-xs sm:text-sm text-[#b0beba]">Events</span>
+                <span className="text-[11px] sm:text-xs text-[#b0beba]">Events</span>
               </a>
-              <a href="#donate" className="flex flex-col items-center gap-3 group">
+              <a href="#donate" className="flex flex-col items-center gap-2 sm:gap-3 group">
                 <div className="text-[#dca74e] group-hover:scale-110 transition-transform">
-                  <Heart size={28} className="sm:w-8 sm:h-8" strokeWidth={1.5} />
+                  <Heart className="w-6 h-6 sm:w-8 sm:h-8" strokeWidth={1.5} />
                 </div>
-                <span className="text-xs sm:text-sm text-[#b0beba]">Donate</span>
+                <span className="text-[11px] sm:text-xs text-[#b0beba]">Donate</span>
               </a>
             </div>
           </div>

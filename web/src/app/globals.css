@@ -1,5 +1,11 @@
 @import "tailwindcss";
 
+@theme {
+  --font-serif: var(--font-heading-en), 'Playfair Display', Georgia, serif;
+  --font-sans: var(--font-body-en), 'Inter', system-ui, sans-serif;
+  --font-montserrat: var(--font-montserrat), 'Montserrat', sans-serif;
+}
+
 :root {
   --ink: #17211d;
   --green: #0d4d3b;
@@ -7,8 +13,9 @@
   --gold: #c79a45;
   --ivory: #f8f6ef;
   --muted: #69726d;
-  --font-body-current: var(--font-body-en), sans-serif;
-  --font-heading-current: var(--font-heading-en), serif;
+  --font-body-current: var(--font-body-en), 'Inter', sans-serif;
+  --font-heading-current: var(--font-heading-en), 'Playfair Display', serif;
+  --font-montserrat-current: var(--font-montserrat), 'Montserrat', sans-serif;
 }
 html[data-language="bn"] {
   --font-body-current: var(--font-body-bn), sans-serif;
@@ -42,16 +49,25 @@ h1,
 h2,
 h3,
 h4 {
-  font-family: var(--font-heading-current);
-  font-weight: 600;
-  line-height: 1.25;
+  font-family: var(--font-heading-current), 'Playfair Display', serif;
+  font-weight: 700;
+  line-height: 1.2;
 }
+.font-sans,
+.font-inter,
 .font-body {
-  font-family: var(--font-body-current);
+  font-family: var(--font-body-en), 'Inter', system-ui, sans-serif !important;
 }
+.font-serif,
+.font-playfair,
 .font-heading,
 .font-display {
-  font-family: var(--font-heading-current);
+  font-family: var(--font-heading-en), 'Playfair Display', Georgia, serif !important;
+}
+.font-montserrat,
+.font-label,
+.font-stat {
+  font-family: var(--font-montserrat), 'Montserrat', sans-serif !important;
 }
 .font-bengali {
   font-family: var(--font-body-bn), sans-serif;
