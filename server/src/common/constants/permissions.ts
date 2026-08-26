@@ -84,6 +84,11 @@ export const PERMISSION_GROUPS = {
     'finance.manage',
     'expense.manage',
     'budget.manage',
+    // Reading budgets is split from managing them for the same reason `expense.view` is split from
+    // `expense.manage`: someone may need to see what was planned for a category without being trusted to
+    // change the plan. `finance.view` is not a substitute — it is held only by people who already hold
+    // `budget.manage`, so gating budget reads on it would make the read grant unassignable on its own.
+    'budget.view',
     'transaction.view',
     'receipt.issue',
     'expense.view',

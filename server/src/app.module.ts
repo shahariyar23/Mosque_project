@@ -23,6 +23,8 @@ import { JumuahModule } from './jumuah/jumuah.module';
 import { RamadanModule } from './ramadan/ramadan.module';
 import { DonationFundsModule } from './donation-funds/donation-funds.module';
 import { DonationCampaignsModule } from './donation-campaigns/donation-campaigns.module';
+import { DonationsModule } from './donations/donations.module';
+import { ExpensesModule } from './expenses/expenses.module';
 
 /**
  * The composition root.
@@ -86,9 +88,12 @@ import { DonationCampaignsModule } from './donation-campaigns/donation-campaigns
     JumuahModule,
     RamadanModule,
     // Funds first, then campaigns: a campaign is filed under a fund, and reading them in that order is
-    // the same order the two tables relate in.
+    // the same order the two tables relate in. Donations come after both, because a donation names one of
+    // each. Expenses last — money out reads after money in, and it references neither of the others.
     DonationFundsModule,
     DonationCampaignsModule,
+    DonationsModule,
+    ExpensesModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: ThrottlerGuard },

@@ -78,6 +78,9 @@ export const PERMISSION_GROUPS = {
     "finance.manage",
     "expense.manage",
     "budget.manage",
+    // EXT — reading a budget is split from changing it, the same way `expense.view` is split from
+    // `expense.manage` below. The spec has no read-only budget grant and the finance screens need one.
+    "budget.view",
     "transaction.view",
     "receipt.issue",
     // EXT — the spec's six finance permissions cannot express the read-only finance views this
@@ -221,6 +224,7 @@ export const rolePermissions: Record<Role, Permission[]> = {
     "finance.manage",
     "expense.view",
     "expense.manage",
+    "budget.view",
     "budget.manage",
     "transaction.view",
     "transaction.record",

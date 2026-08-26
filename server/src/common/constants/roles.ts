@@ -55,6 +55,7 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
     'finance.manage',
     'expense.view',
     'expense.manage',
+    'budget.view',
     'budget.manage',
     'transaction.view',
     'transaction.record',

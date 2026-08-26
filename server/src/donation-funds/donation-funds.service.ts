@@ -184,13 +184,15 @@ export class DonationFundsService {
    *
    * A fund is what donations get filed under, so removing one that has been used would leave records
    * filed under nothing. Two things prevent that. This method refuses with a 409 while the fund still has
-   * campaigns, naming the reversible alternative; and the foreign key is `ON DELETE RESTRICT`, so the
-   * database refuses too if a campaign is created between the check and the delete.
+   * campaigns or donations, naming the reversible alternative; and both foreign keys are
+   * `ON DELETE RESTRICT`, so the database refuses too if one is created between the check and the delete.
    *
    * `PATCH { "status": "archived" }` is that alternative, and it is the normal way to retire a fund that
-   * has history: nothing is lost, the fund stops being offered, and the decision can be undone. Part 20
-   * will add donations, which reference a fund directly — that check belongs with them, and the
-   * `RESTRICT` constraint on their foreign key will be what actually holds the line.
+   * has history: nothing is lost, the fund stops being offered, and the decision can be undone.
+   *
+   * The donation count is a separate query rather than another `_count` on `DONATION_FUND_SELECT`, because
+   * it is only ever needed here. Adding it to the select would read it on every list and every patch to
+   * answer a question only a delete asks.
    */
   async remove(actor: AuthenticatedUser, id: string): Promise<DeletedDonationFundDto> {
     const fund = await this.getOwned(actor.mosqueId, id);
@@ -201,6 +203,18 @@ export class DonationFundsService {
         message:
           `This fund has ${fund._count.campaigns} campaign(s) and cannot be deleted. ` +
           'Set its status to `archived` instead — that retires the fund without losing anything.',
+      });
+    }
+
+    const donations = await this.prisma.donation.count({ where: { fundId: id } });
+
+    if (donations > 0) {
+      throw new ConflictException({
+        code: 'FUND_IN_USE',
+        message:
+          `This fund has ${donations} donation(s) and cannot be deleted. ` +
+          'Set its status to `archived` instead — that retires the fund without losing the record of ' +
+          'what was given to it.',
       });
     }
 

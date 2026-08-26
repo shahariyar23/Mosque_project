@@ -99,6 +99,10 @@ model Mosque {
   ramadanSchedules RamadanSchedule[]
   donationFunds    DonationFund[]
   campaigns        Campaign[]
+  donations        Donation[]
+  expenses         Expense[]
+  budgets          Budget[]
+  salaryRecords    SalaryRecord[]
   users     User[]
   auditLogs AuditLog[]
 
@@ -220,6 +224,16 @@ model User {
 
   refreshTokens RefreshToken[]
   auditLogs     AuditLog[]
+  /// Donations this person gave. Anonymous donations have no `userId` at all, so they are not here.
+  donations     Donation[]
+  /// Expenses this person entered. The entry keeps their id, which is one of the reasons a user row is
+  /// soft-deleted rather than removed.
+  expenses      Expense[]
+  /// Budgets this person drew up. Same reason: the plan keeps the name of whoever set it.
+  budgets       Budget[]
+  /// Salary this person is paid. A staff member is an ordinary user with rows here — there is no separate
+  /// imam or employee record anywhere in this schema.
+  salaryRecords SalaryRecord[]
   /// At most one: volunteering is something a person either does or does not, not a list of
   /// enrolments. Optional because most members never volunteer.
   volunteer     Volunteer?
@@ -460,8 +474,9 @@ model RamadanSchedule {
 // Giving: where money may be directed
 //
 // These two tables hold no money. A fund is the standing purpose a donation can be allocated to, a
-// campaign is a time-boxed appeal within one; both are categories, and the donations, receipts and
-// balances that reference them arrive in a later part. Nothing here sums anything.
+// campaign is a time-boxed appeal within one; both are categories. The donations that reference them
+// are in the section below, and neither table carries a copy of what has come in — no column here is
+// written when a donation is recorded, and nothing here sums anything.
 //
 // `targetAmount` is `Decimal(14, 2)` for the reason at the top of this file. It is a goal rather than
 // a balance, but it is displayed next to real totals on a progress bar, and a goal that arrives as
@@ -515,6 +530,7 @@ model DonationFund {
   updatedAt DateTime @updatedAt @db.Timestamptz
 
   campaigns Campaign[]
+  donations Donation[]
 
   // One slug per mosque, not one globally: the slug appears in a public URL, and two mosques are
   // each entitled to a "zakat".
@@ -568,11 +584,310 @@ model Campaign {
   createdAt DateTime @default(now()) @db.Timestamptz
   updatedAt DateTime @updatedAt @db.Timestamptz
 
+  donations Donation[]
+
   @@unique([mosqueId, slug])
   @@index([mosqueId, status])
   @@index([mosqueId, createdAt])
   @@index([fundId])
   @@map("campaigns")
+}
+
+// ---------------------------------------------------------------------------
+// Money that moved
+//
+// The two tables above are categories; these two are events. A donation is money the mosque received,
+// an expense is money it paid out, and each row is a record of something that happened rather than a
+// plan for something that might.
+//
+// `amount` is `Decimal(14, 2)` on both, for the reason at the top of this file: these are the figures a
+// treasurer reconciles against a bank statement, and a binary float cannot hold 0.10.
+//
+// Neither table is a ledger. There is no running balance, no `total`, no double entry, and nothing here
+// is updated when a row is written — a fund does not carry what it has received, and a campaign does not
+// carry what it has raised. Those totals are derived when reports arrive in a later part, from these rows,
+// which are the only place the figures live.
+//
+// `currency` is stored per row rather than read from the mosque's settings at display time. A mosque that
+// changes its default currency must not silently restate what a donor gave three years ago.
+// ---------------------------------------------------------------------------
+
+/// How money changed hands. Shared by donations and expenses, because "paid in cash" and "paid out in
+/// cash" are the same fact about the transaction from either side.
+///
+/// `online` and `card` are recorded, not processed: nothing in this application talks to a payment
+/// gateway. A row marked `online` is somebody writing down what a gateway elsewhere already did.
+enum PaymentMethod {
+  cash
+  bank_transfer
+  card
+  online
+  other
+}
+
+enum DonationStatus {
+  /// Promised, or entered but not yet confirmed against the bank.
+  pending
+  /// The money is in. Only this state should be counted as received.
+  completed
+  /// The transfer or card was declined, or the pledge was never honoured.
+  failed
+  /// Withdrawn before it completed. Kept, rather than deleted, so the record of the attempt survives.
+  cancelled
+}
+
+enum ExpenseStatus {
+  pending
+  approved
+  paid
+  /// The expense will not be paid. This is the reversible alternative to deleting a record that has
+  /// been through any part of the process.
+  cancelled
+}
+
+/// Money the mosque received, filed under the fund it was given to.
+///
+/// A donation may come from a registered user or from an anonymous donor, and the schema allows both
+/// rather than inventing a placeholder account for the second. `userId` is null for a walk-in, a cash
+/// box collection or a donor who asked not to be named; `donorName` and `donorEmail` are what a receipt
+/// can be addressed to when there is no account behind it, and are also null for a genuinely anonymous
+/// gift. A donation with neither a `userId` nor a `donorName` is ordinary — the Friday collection box is
+/// exactly that.
+model Donation {
+  id       String @id @default(uuid()) @db.Uuid
+  mosqueId String @db.Uuid
+  mosque   Mosque @relation(fields: [mosqueId], references: [id], onDelete: Cascade)
+
+  /// The donor, when the donor has an account.
+  ///
+  /// `Restrict` rather than `SetNull`: losing the link would turn an attributed donation into an
+  /// anonymous one, which is a different fact. It never fires in practice — a user row is soft-deleted,
+  /// as the comment on `User.deletedAt` says, precisely so references like this keep resolving.
+  userId String? @db.Uuid
+  donor  User?   @relation(fields: [userId], references: [id], onDelete: Restrict)
+
+  /// Which fund the money was given to. Required: money the mosque cannot say the purpose of is not
+  /// something this table is willing to record.
+  ///
+  /// `Restrict` is what actually stops a fund with history from being deleted. `DonationFundsService`
+  /// refuses first with a clearer message; this is the same refusal to anything that bypasses it.
+  fundId String       @db.Uuid
+  fund   DonationFund @relation(fields: [fundId], references: [id], onDelete: Restrict)
+
+  /// The appeal this donation answered, when it answered one. Null for a gift straight to a fund.
+  /// When both are set, the campaign must be one that collects into `fundId`; the service enforces
+  /// that, because a foreign key cannot express agreement between two columns.
+  campaignId String?   @db.Uuid
+  campaign   Campaign? @relation(fields: [campaignId], references: [id], onDelete: Restrict)
+
+  /// Who to make the receipt out to, when there is no account to read it from.
+  donorName  String? @db.VarChar(160)
+  donorEmail String? @db.VarChar(160)
+
+  amount   Decimal @db.Decimal(14, 2)
+  /// ISO 4217, held per row. Defaults from the mosque's settings when the caller does not say, but is
+  /// stored rather than referenced — see the section comment.
+  currency String  @db.VarChar(8)
+
+  paymentMethod PaymentMethod
+  status        DonationStatus @default(pending)
+
+  /// When the money was given, which is not when the row was written: a cash collection entered on
+  /// Monday was given on Friday. A timestamp rather than a date, because a bank transfer's time of day
+  /// is what reconciles it against a statement line.
+  donatedAt DateTime @default(now()) @db.Timestamptz
+
+  /// The mosque's own handle on the transaction: a bank reference, a receipt book number, a gateway id.
+  /// Not unique — two mosques keep their own numbering, and a cash donation often has none at all.
+  reference String? @db.VarChar(120)
+  notes     String? @db.Text
+
+  createdAt DateTime @default(now()) @db.Timestamptz
+  updatedAt DateTime @updatedAt @db.Timestamptz
+
+  // Every index leads with `mosqueId`, because every query does: no read of this table is ever
+  // unscoped, so an index that does not start there cannot serve one.
+  @@index([mosqueId, status])
+  @@index([mosqueId, donatedAt])
+  @@index([mosqueId, createdAt])
+  // Serves a member reading their own giving history, which is the one read a non-administrator makes.
+  @@index([mosqueId, userId])
+  @@index([mosqueId, fundId])
+  @@index([mosqueId, campaignId])
+  @@index([mosqueId, paymentMethod])
+  @@map("donations")
+}
+
+/// Money the mosque paid out: a utility bill, a repair, an imam's honorarium, sacks of rice for iftar.
+///
+/// `category` is free text, per mosque, for the same reason fund names are: the way one mosque splits
+/// "Utilities" from "Maintenance" is not the way the next one does, and an enum here would be a
+/// permanent argument about whose chart of accounts is the real one.
+model Expense {
+  id       String @id @default(uuid()) @db.Uuid
+  mosqueId String @db.Uuid
+  mosque   Mosque @relation(fields: [mosqueId], references: [id], onDelete: Cascade)
+
+  category    String @db.VarChar(120)
+  description String @db.VarChar(500)
+
+  amount   Decimal @db.Decimal(14, 2)
+  currency String  @db.VarChar(8)
+
+  paymentMethod PaymentMethod
+
+  /// The day the money was spent, as a calendar date. Unlike a donation, an expense is booked to a day
+  /// — an electricity bill has no time of day — and a date column cannot pick up a timezone.
+  expenseDate DateTime @db.Date
+
+  /// Invoice number, cheque number, voucher reference. Not unique, for the same reason as a donation's.
+  reference String? @db.VarChar(120)
+  notes     String? @db.Text
+
+  /// Who entered it. Required, and `Restrict`, so an expense always says who is answerable for it.
+  createdById String @db.Uuid
+  createdBy   User   @relation(fields: [createdById], references: [id], onDelete: Restrict)
+
+  status ExpenseStatus @default(pending)
+
+  createdAt DateTime @default(now()) @db.Timestamptz
+  updatedAt DateTime @updatedAt @db.Timestamptz
+
+  @@index([mosqueId, status])
+  @@index([mosqueId, expenseDate])
+  @@index([mosqueId, createdAt])
+  @@index([mosqueId, category])
+  @@index([mosqueId, createdById])
+  @@map("expenses")
+}
+
+// ---------------------------------------------------------------------------
+// Money that is planned, and money owed to people
+//
+// A budget is an intention; a salary record is an obligation. Neither is a transaction, and neither is
+// wired to one: booking an expense against a category does not draw down a budget with the same name, and
+// marking a salary `paid` does not write an expense. Nothing in this schema moves a figure from one table
+// to another, because the moment it did, the two would be able to disagree.
+//
+// `amount` is `Decimal(14, 2)` on both, as everywhere else money appears.
+//
+// There is no payroll here. No tax, no deduction, no allowance, no net-versus-gross: `amount` is the one
+// figure the mosque agreed to pay, and a system that computed a second one would be claiming an authority
+// over someone's pay that this application does not have.
+// ---------------------------------------------------------------------------
+
+enum BudgetStatus {
+  /// Being drawn up. Not yet the figure anyone is working to.
+  draft
+  /// In force for its period. This is the only state a remaining-budget figure means anything in.
+  active
+  /// The period is over and the line is settled.
+  closed
+  /// Abandoned. Kept, rather than deleted, so the record of what was once planned survives.
+  cancelled
+}
+
+enum SalaryStatus {
+  /// Owed, not yet paid.
+  pending
+  /// Paid. Only this state should be counted as money that left.
+  paid
+  /// Will not be paid. The reversible alternative to deleting a record someone may have seen.
+  cancelled
+}
+
+/// What a mosque intends to spend on something over a period.
+///
+/// `category` is free text, matching `Expense.category`, and the match is by convention rather than by
+/// constraint: a report can total expenses whose category equals a budget's, but nothing forces an expense
+/// to name a budget that exists, and creating a budget does not restrict what may be spent. A foreign key
+/// here would mean every expense had to wait for a budget line, which is not how a mosque works.
+///
+/// `periodStart` and `periodEnd` are calendar dates, not instants. A budget covers days.
+///
+/// Overlapping budgets are permitted. A mosque may hold a draft alongside the active line it is meant to
+/// replace, and may budget the same category over both a month and the year containing it. Deciding which
+/// of those overlaps is a mistake is a judgement, and the database is not where judgements belong.
+model Budget {
+  id       String @id @default(uuid()) @db.Uuid
+  mosqueId String @db.Uuid
+  mosque   Mosque @relation(fields: [mosqueId], references: [id], onDelete: Cascade)
+
+  /// What this line is called on the paper it came from, e.g. "Q3 Utilities".
+  name     String @db.VarChar(160)
+  /// The spending category this budget governs. Compared against `Expense.category`.
+  category String @db.VarChar(120)
+
+  amount   Decimal @db.Decimal(14, 2)
+  currency String  @db.VarChar(8)
+
+  periodStart DateTime @db.Date
+  periodEnd   DateTime @db.Date
+
+  status BudgetStatus @default(draft)
+
+  notes String? @db.Text
+
+  createdById String @db.Uuid
+  createdBy   User   @relation(fields: [createdById], references: [id], onDelete: Restrict)
+
+  createdAt DateTime @default(now()) @db.Timestamptz
+  updatedAt DateTime @updatedAt @db.Timestamptz
+
+  // Every index leads with `mosqueId`, for the reason given on the donation indexes: no read of this table
+  // is ever unscoped, so an index that does not start there cannot serve one.
+  @@index([mosqueId, status])
+  @@index([mosqueId, category])
+  @@index([mosqueId, periodStart])
+  @@index([mosqueId, createdAt])
+  @@index([mosqueId, createdById])
+  @@map("budgets")
+}
+
+/// One period's pay for one person.
+///
+/// The person is an ordinary `User`. There is no imam table and no staff table: whether someone is paid is
+/// a fact about rows here, not a fact about which table their name sits in, and a second account for the
+/// same human being would be one more thing to keep in step.
+///
+/// `userId` is required and is not nullable — a payment with nobody to pay is not a salary record. It is
+/// `Restrict` rather than `SetNull` for the reason `User.deletedAt` exists: pay history has to keep naming
+/// the person it was paid to.
+///
+/// `paymentDate` is when the money is due or was handed over, a calendar date. `payPeriod` is the month the
+/// pay is *for*, which is a different fact — August's salary is routinely paid in September.
+model SalaryRecord {
+  id       String @id @default(uuid()) @db.Uuid
+  mosqueId String @db.Uuid
+  mosque   Mosque @relation(fields: [mosqueId], references: [id], onDelete: Cascade)
+
+  /// Who is paid. Always in the same mosque as the record; the service checks it, because a foreign key
+  /// cannot express "and their `mosqueId` must equal mine".
+  userId String @db.Uuid
+  user   User   @relation(fields: [userId], references: [id], onDelete: Restrict)
+
+  amount   Decimal @db.Decimal(14, 2)
+  currency String  @db.VarChar(8)
+
+  /// The month this pay is for, as `YYYY-MM`. A fixed shape rather than free text, so that "2026-08" and
+  /// "August 2026" cannot both exist and be counted as two periods.
+  payPeriod String @db.VarChar(7)
+
+  paymentDate DateTime @db.Date
+
+  status SalaryStatus @default(pending)
+
+  notes String? @db.Text
+
+  createdAt DateTime @default(now()) @db.Timestamptz
+  updatedAt DateTime @updatedAt @db.Timestamptz
+
+  @@index([mosqueId, status])
+  @@index([mosqueId, userId])
+  @@index([mosqueId, payPeriod])
+  @@index([mosqueId, paymentDate])
+  @@index([mosqueId, createdAt])
+  @@map("salary_records")
 }
 
 // ---------------------------------------------------------------------------

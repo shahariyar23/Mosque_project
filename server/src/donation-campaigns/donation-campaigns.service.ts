@@ -168,22 +168,47 @@ export class DonationCampaignsService {
   }
 
   /**
-   * Deletes a campaign.
+   * Deletes a campaign, but only while nothing points at it.
    *
-   * Unlike a fund, a campaign has nothing pointing at it yet, so this deletes. That changes in Part 20:
-   * once donations reference a campaign, deleting one that has received money would orphan those records,
-   * and this method will need the same in-use pre-check `DonationFundsService.remove` already has —
-   * backed, as there, by a `RESTRICT` foreign key so the database refuses even under a race.
+   * Donations reference a campaign, so removing one that has received money would leave those records filed
+   * against nothing. Two things prevent that, the same pair the funds service uses: this method refuses with
+   * a 409 while the campaign still has donations, naming the reversible alternative; and the foreign key is
+   * `ON DELETE RESTRICT`, so the database refuses too if a donation is recorded between the check and the
+   * delete.
    *
-   * `PATCH { "status": "archived" }` is the reversible alternative and the better answer for a campaign
-   * with any history: it stops appearing, nothing is lost, and the decision can be undone.
+   * `PATCH { "status": "archived" }` is that alternative and the better answer for a campaign with any
+   * history: it stops appearing, nothing is lost, and the decision can be undone.
    */
   async remove(actor: AuthenticatedUser, id: string): Promise<DeletedCampaignDto> {
     const campaign = await this.getOwned(actor.mosqueId, id);
 
+    const donations = await this.prisma.donation.count({ where: { campaignId: id } });
+
+    if (donations > 0) {
+      throw new ConflictException({
+        code: 'CAMPAIGN_IN_USE',
+        message:
+          `This campaign has ${donations} donation(s) and cannot be deleted. ` +
+          'Set its status to `archived` instead — that closes the appeal without losing the record of ' +
+          'what was given to it.',
+      });
+    }
+
     try {
       await this.prisma.campaign.delete({ where: { id } });
     } catch (error) {
+      // `translate` reads a P2003 as a bad `fundId`, which is what it means on a create or a patch. On a
+      // delete it means the opposite direction — a donation still points here — so it is answered before
+      // the shared translation gets a chance to mislabel it.
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2003') {
+        throw new ConflictException({
+          code: 'CAMPAIGN_IN_USE',
+          message:
+            'This campaign is referenced by other records and cannot be deleted. Set its status to ' +
+            '`archived` instead.',
+        });
+      }
+
       throw this.translate(error);
     }
 
