@@ -4,6 +4,7 @@ import { useState, useRef, useEffect } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useAuth } from "@/components/auth-provider";
+import { roleLabels } from "@/lib/permissions";
 import {
   UserRound,
   Heart,
@@ -23,7 +24,7 @@ import {
 } from "lucide-react";
 
 export function UserMenu() {
-  const { session } = useAuth();
+  const { session, logout } = useAuth();
   const [isOpen, setIsOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const pathname = usePathname();
@@ -55,6 +56,8 @@ export function UserMenu() {
   if (!session?.user) return null;
 
   const user = session.user;
+  // Already resolved server-side — base ∪ role ∪ granted − denied, and empty for an inactive account.
+  const canSeeDashboard = session.permissions.includes("dashboard.view");
   // Fallback initials
   const initials = user.name
     ? user.name
@@ -86,7 +89,7 @@ export function UserMenu() {
           <span className="text-sm font-medium text-white">
             {user.name.split(" ")[0]}
           </span>
-          <span className="text-[10px] text-white/70">Member</span>
+          <span className="text-[10px] text-white/70">{roleLabels[user.role]}</span>
         </div>
         <ChevronDown
           className={`h-4 w-4 text-white/70 transition-transform duration-200 ${
@@ -109,10 +112,9 @@ export function UserMenu() {
               </div>
               <div>
                 <h3 className="font-semibold">{user.name}</h3>
-                <p className="text-sm text-white/60">+880 1XXX XXXXXX</p>
                 <div className="mt-1 flex items-center gap-2">
                   <span className="rounded bg-white/10 px-2 py-0.5 text-xs font-medium text-[#e0be79]">
-                    Member
+                    {roleLabels[user.role]}
                   </span>
                   {user.role === "super_admin" || user.role === "mosque_admin" ? (
                     <span className="rounded bg-red-900/40 px-2 py-0.5 text-xs font-medium text-red-200">
@@ -125,8 +127,10 @@ export function UserMenu() {
           </div>
 
           <div className="max-h-[calc(100vh-240px)] overflow-y-auto">
-            {/* Admin Action */}
-            {(user.role === "super_admin" || user.role === "mosque_admin") && (
+            {/* Admin Action — gated on the same permission the dashboard itself checks, so the link
+                appears exactly when following it would work. Role is the wrong test: a treasurer and a
+                secretary both hold `dashboard.view` and neither is an admin. */}
+            {canSeeDashboard && (
               <div className="border-b border-white/10 p-2">
                 <Link
                   href="/dashboard"
@@ -204,7 +208,15 @@ export function UserMenu() {
 
             {/* Sign Out */}
             <div className="border-t border-white/10 bg-black/20 p-2">
-              <button className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm text-red-400 transition-colors hover:bg-white/10 hover:text-red-300" role="menuitem">
+              <button
+                type="button"
+                onClick={() => {
+                  setIsOpen(false);
+                  logout();
+                }}
+                className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm text-red-400 transition-colors hover:bg-white/10 hover:text-red-300"
+                role="menuitem"
+              >
                 <LogOut className="h-4 w-4" /> Sign Out
               </button>
             </div>

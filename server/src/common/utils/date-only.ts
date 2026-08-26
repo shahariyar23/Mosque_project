@@ -30,3 +30,20 @@ export function fromDateOnly(date: Date): string {
 export function dayOfWeekUtc(isoDate: string): number {
   return toDateOnly(isoDate).getUTCDay();
 }
+
+const MS_PER_DAY = 86_400_000;
+
+/**
+ * Midnight UTC on the day *after* `isoDate` — the exclusive upper bound for an inclusive day.
+ *
+ * For filtering a `Timestamptz` column by calendar day. `createdAt <= toDateOnly(to)` means "at or
+ * before midnight", which silently drops everything written during the final day of the window; the
+ * correct filter is `< dayAfter(to)`. Columns that are genuinely `@db.Date` need no such thing, since
+ * their values *are* midnight.
+ *
+ * Adding a day in milliseconds is safe because `toDateOnly` produces midnight UTC, which has no
+ * daylight-saving transition to step over.
+ */
+export function dayAfter(isoDate: string): Date {
+  return new Date(toDateOnly(isoDate).getTime() + MS_PER_DAY);
+}

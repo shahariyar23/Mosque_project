@@ -25,6 +25,13 @@ import { DonationFundsModule } from './donation-funds/donation-funds.module';
 import { DonationCampaignsModule } from './donation-campaigns/donation-campaigns.module';
 import { DonationsModule } from './donations/donations.module';
 import { ExpensesModule } from './expenses/expenses.module';
+import { BudgetsModule } from './budgets/budgets.module';
+import { SalariesModule } from './salaries/salaries.module';
+import { FinancialReportsModule } from './financial-reports/financial-reports.module';
+import { ApprovalsModule } from './approvals/approvals.module';
+import { ReportsModule } from './reports/reports.module';
+import { DashboardModule } from './dashboard/dashboard.module';
+import { AuditModule } from './audit/audit.module';
 
 /**
  * The composition root.
@@ -77,6 +84,9 @@ import { ExpensesModule } from './expenses/expenses.module';
     }),
 
     PrismaModule,
+    // Global, like `PrismaModule`, and registered beside it for the same reason: every module after this
+    // line is a potential writer to the audit trail, and none of them should have to remember to ask.
+    AuditModule,
     HealthModule,
     AuthModule,
     UsersModule,
@@ -89,11 +99,24 @@ import { ExpensesModule } from './expenses/expenses.module';
     RamadanModule,
     // Funds first, then campaigns: a campaign is filed under a fund, and reading them in that order is
     // the same order the two tables relate in. Donations come after both, because a donation names one of
-    // each. Expenses last — money out reads after money in, and it references neither of the others.
+    // each. Expenses next — money out reads after money in, and it references neither of the others.
     DonationFundsModule,
     DonationCampaignsModule,
     DonationsModule,
     ExpensesModule,
+    // Then what the money was meant for and who it went to. Budgets and salaries are independent of each
+    // other and of the three above; reports come last because they read all four tables and nothing reads
+    // them. Registration order does not affect resolution — Nest builds the graph from the dependencies —
+    // so this ordering is for whoever reads the list.
+    BudgetsModule,
+    SalariesModule,
+    FinancialReportsModule,
+    // Approvals is a peer of the business modules, not a layer over them: it records that a decision was asked for
+    // and made, and holds no reference to any of the tables above. Reports and the dashboard come last because they
+    // read everything and nothing reads them.
+    ApprovalsModule,
+    ReportsModule,
+    DashboardModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: ThrottlerGuard },

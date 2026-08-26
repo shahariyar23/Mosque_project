@@ -2,7 +2,6 @@ import type { Metadata } from "next";
 import "./globals.css";
 import { LanguageProvider } from "@/components/language-provider";
 import { hindSiliguri, inter, montserrat, playfair, notoSerifBengali } from "./fonts";
-import { getSession } from "@/lib/session";
 import { AuthProvider } from "@/components/auth-provider";
 
 export const metadata: Metadata = {
@@ -17,8 +16,6 @@ export default function RootLayout({
     .map((font) => font.variable)
     .join(" ");
 
-  const session = getSession();
-
   return (
     <html lang="en">
       <head>
@@ -30,7 +27,12 @@ export default function RootLayout({
         />
       </head>
       <body className={fontVariables}>
-        <AuthProvider session={session}>
+        {/*
+          No session is seeded here. The signed-in state is whatever the API says it is — recovered from
+          the refresh cookie on mount — because a session handed in from the server would make every
+          visitor read as signed in, which is exactly what the guards exist to distinguish.
+        */}
+        <AuthProvider>
           <LanguageProvider>{children}</LanguageProvider>
         </AuthProvider>
       </body>

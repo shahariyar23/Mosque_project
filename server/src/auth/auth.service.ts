@@ -8,10 +8,11 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService, type JwtSignOptions } from '@nestjs/jwt';
-import type { Prisma } from '@prisma/client';
+import type { Prisma, Role } from '@prisma/client';
 import * as argon2 from 'argon2';
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 
+import { AuditLogService } from '../audit/audit-log.service';
 import { unauthenticated } from '../common/guards/authorization';
 import type { AuthenticatedUser } from '../common/types/authenticated-user';
 import { env, type AppConfig } from '../config/app.config';
@@ -52,7 +53,7 @@ interface SessionOptions {
 /**
  * Everything the auth endpoints do.
  *
- * Five rules run through the whole file.
+ * Six rules run through the whole file.
  *
  * A password is verified here and nowhere else. This is the only class in the project that reads
  * `passwordHash` — through `CREDENTIAL_SELECT`, because the users module's `USER_SELECT` deliberately
@@ -73,6 +74,12 @@ interface SessionOptions {
  * Authorization is not this class's business. There is no permission check anywhere in it — that lives
  * in `RolesGuard` and `PermissionsGuard`, and the one place a permission set is computed for a response
  * is `AuthProfileDto.of`.
+ *
+ * A security event leaves a trace. Sign-ins, refused sign-ins against a known account, and both ways a
+ * password can change are recorded through `AuditLogService`. What is recorded is who and when, never
+ * what: no method below puts a password, a token or a hash into an audit entry, and the writer redacts
+ * anything so named as a second line. The one event that cannot be recorded is a sign-in attempt against
+ * an address with no account, which has no mosque to file it under — see `login`.
  */
 @Injectable()
 export class AuthService {
@@ -85,6 +92,7 @@ export class AuthService {
     private readonly prisma: PrismaService,
     private readonly jwt: JwtService,
     private readonly users: UsersService,
+    private readonly audit: AuditLogService,
   ) {}
 
   /**
@@ -136,16 +144,24 @@ export class AuthService {
       // Burn the CPU a verification would have cost. Argon2id takes tens of milliseconds by design, so
       // without this the endpoint answers "no such account" visibly faster than "wrong password" and a
       // stopwatch reads what the response body refuses to say.
+      //
+      // Not audited, and it is the schema that decides so: `AuditLog.mosqueId` is non-null, and an
+      // address with no account belongs to no mosque. Filing these under a guessed mosque would put
+      // one mosque's trail at the mercy of anyone who can type an email address into a form.
       await argon2.hash(dto.password, { type: argon2.argon2id });
       throw invalidCredentials();
     }
 
-    if (!credentials.isActive) throw invalidCredentials();
+    if (!credentials.isActive) {
+      await this.recordLoginFailure(credentials, origin, 'Account is not active.');
+      throw invalidCredentials();
+    }
 
     if (!(await verifyPassword(credentials.passwordHash, dto.password))) {
       // The id, so a real lock-out investigation has something to go on. Not the address, not the
       // attempted password, not the hash.
       this.logger.warn(`failed sign-in for ${credentials.id}`);
+      await this.recordLoginFailure(credentials, origin, 'Incorrect password.');
       throw invalidCredentials();
     }
 
@@ -153,6 +169,18 @@ export class AuthService {
     const result = await this.startSession(profile, origin, { remember: dto.remember === true });
 
     this.logger.log(`signed in ${credentials.id}`);
+
+    await this.audit.record({
+      mosqueId: profile.mosqueId,
+      action: 'LOGIN_SUCCESS',
+      resource: 'auth',
+      resourceId: profile.id,
+      actorId: profile.id,
+      actorName: profile.fullName,
+      actorRole: profile.role,
+      ipAddress: origin.ipAddress,
+      userAgent: origin.userAgent,
+    });
 
     return result;
   }
@@ -185,6 +213,10 @@ export class AuthService {
     const tokenHash = hashToken(dto.token);
     const now = new Date();
 
+    // Declared out here so the audit entry can be written once the transaction has committed. Recording
+    // inside it would file an entry for a reset that a later statement in the same transaction rolls back.
+    let subject: { id: string; mosqueId: string; fullName: string; role: Role } | undefined;
+
     await this.prisma.$transaction(async (tx) => {
       const user = await tx.user.findFirst({
         where: {
@@ -193,7 +225,10 @@ export class AuthService {
           deletedAt: null,
           isActive: true,
         },
-        select: { id: true },
+        // Four columns rather than one, and the extra three are all for the trail: a reset is done by
+        // someone holding a link rather than a token, so this row is the only description of them there
+        // will ever be. `passwordResetTokenHash` is not among them and must not be.
+        select: { id: true, mosqueId: true, fullName: true, role: true },
       });
 
       if (!user) throw invalidResetToken();
@@ -215,6 +250,23 @@ export class AuthService {
         where: { userId: user.id, revokedAt: null },
         data: { revokedAt: now },
       });
+
+      subject = user;
+    });
+
+    if (!subject) return;
+
+    await this.audit.record({
+      mosqueId: subject.mosqueId,
+      action: 'PASSWORD_RESET',
+      resource: 'auth',
+      resourceId: subject.id,
+      actorId: subject.id,
+      actorName: subject.fullName,
+      actorRole: subject.role,
+      // What happened, in the two facts worth keeping. Neither password and neither token is one of them.
+      changes: { passwordChangedAt: now.toISOString(), sessionsRevoked: true },
+      note: 'Reset with a recovery link; all sessions revoked.',
     });
   }
 
@@ -261,6 +313,19 @@ export class AuthService {
         where: { userId: user.id, revokedAt: null },
         data: { revokedAt: now },
       });
+    });
+
+    await this.audit.record({
+      mosqueId: user.mosqueId,
+      action: 'PASSWORD_CHANGED',
+      resource: 'auth',
+      resourceId: user.id,
+      actorId: user.id,
+      // The token carries an address and not a name, so the address is what names the actor here. It is
+      // already in the entry's own subject, which is the point: this action is always self-inflicted.
+      actorName: user.email,
+      actorRole: user.role,
+      changes: { passwordChangedAt: now.toISOString(), sessionsRevoked: true },
     });
   }
 
@@ -321,7 +386,7 @@ export class AuthService {
     // came from this server.
     const remember = this.jwt.decode<RefreshTokenPayload | null>(presented)?.remember === true;
 
-    const profile = await this.users.findOne(user.id);
+    const profile = await this.users.findOne(user.id, user);
 
     return this.startSession(profile, origin, { remember, replaces: stored.id });
   }
@@ -358,9 +423,12 @@ export class AuthService {
    * Read fresh through `UsersService.findOne` rather than assembled from the guard's subject: the
    * strategy reads the seven columns needed to make an authorization decision, and a profile is more
    * than that. It is also the same method `GET /users/:id` uses, so the two cannot disagree.
+   *
+   * Passing the caller as their own actor scopes the read to their mosque, which for their own row can
+   * never exclude it — a token names one mosque and the row it names is in it.
    */
   async me(user: AuthenticatedUser): Promise<AuthProfileDto> {
-    return AuthProfileDto.of(await this.users.findOne(user.id));
+    return AuthProfileDto.of(await this.users.findOne(user.id, user));
   }
 
   // ---------------------------------------------------------------------------
@@ -502,6 +570,36 @@ export class AuthService {
     });
 
     return UserResponseDto.from(user);
+  }
+
+  /**
+   * Records a refused sign-in against an account that exists.
+   *
+   * `actorName` is the address the attempt was made against, because that is all a failure has: nobody
+   * signed in, so there is no session and no profile row to name. `actorId` is still filled in — the
+   * account is known, and the whole point of the entry is to make repeated attempts against one account
+   * findable.
+   *
+   * The reason lives in `note`, not in `changes`. Nothing changed, and the difference between "wrong
+   * password" and "account suspended" is exactly what the 401 refuses to tell the caller and exactly what
+   * an administrator reading the trail needs. The submitted password appears nowhere.
+   */
+  private async recordLoginFailure(
+    credentials: CredentialRow,
+    origin: SessionOrigin,
+    note: string,
+  ): Promise<void> {
+    await this.audit.record({
+      mosqueId: credentials.mosqueId,
+      action: 'LOGIN_FAILED',
+      resource: 'auth',
+      resourceId: credentials.id,
+      actorId: credentials.id,
+      actorName: credentials.email,
+      note,
+      ipAddress: origin.ipAddress,
+      userAgent: origin.userAgent,
+    });
   }
 
   // ---------------------------------------------------------------------------

@@ -72,6 +72,12 @@ import { UsersService } from './users.service';
  * their own phone number without being able to edit everyone's. It admits `user.manage` or the base
  * `profile.manageOwn` and the service settles which record the caller reached — ownership is a query
  * concern, not a permission, so `@AnyPermission` opens the door and `scopeFor` decides how far in.
+ *
+ * Every route passes `@CurrentUser()` to the service, and the reason is the same in every case: the
+ * mosque a caller may reach comes from their token and from nowhere else. There is no `mosqueId` query
+ * parameter and no `mosqueId` on any update DTO, so no route here has a mosque for a client to substitute
+ * — a caller confined to one mosque cannot even ask about another. The single exception is `POST /users`,
+ * whose body does name a mosque; the service refuses one that is not the caller's.
  */
 @ApiTags('Users')
 @ApiBearerAuth('access-token')
@@ -95,11 +101,14 @@ export class UsersController {
   })
   @ApiForbiddenResponse({ description: 'Authenticated, but without `user.manage`.' })
   @ApiConflictResponse({ description: 'The email or phone is already in use within this mosque.' })
-  async create(@Body() dto: CreateUserDto): Promise<UserEnvelopeDto> {
+  async create(
+    @Body() dto: CreateUserDto,
+    @CurrentUser() actor: AuthenticatedUser,
+  ): Promise<UserEnvelopeDto> {
     return {
       success: true,
       message: 'User created successfully',
-      data: await this.users.create(dto),
+      data: await this.users.create(dto, actor),
     };
   }
 
@@ -109,15 +118,20 @@ export class UsersController {
     summary: 'List users.',
     description:
       'Requires `user.view`. Paginated, newest first, capped at 100 rows per page. Soft-deleted ' +
-      'accounts are never listed. `search` matches name, email and phone; `status` filters on ' +
+      'accounts are excluded by default. Pass `deleted=true` to list only soft-deleted accounts; ' +
+      'this requires the `user.viewDeleted` permission and is silently ignored without it. ' +
+      '`search` matches name, email and phone; `status` filters on ' +
       '`isActive`; `role` matches the single role an account holds; `position` matches anyone whose ' +
       'committee posts include the one named. This is also the Members list — a member is a user.',
   })
   @ApiOkResponse({ description: 'A page of users.', type: UserListEnvelopeDto })
   @ApiBadRequestResponse({ description: 'A query parameter failed validation.' })
   @ApiForbiddenResponse({ description: 'Authenticated, but without `user.view`.' })
-  async findAll(@Query() query: UserQueryDto): Promise<UserListEnvelopeDto> {
-    const { rows, meta } = await this.users.findMany(query);
+  async findAll(
+    @Query() query: UserQueryDto,
+    @CurrentUser() actor: AuthenticatedUser,
+  ): Promise<UserListEnvelopeDto> {
+    const { rows, meta } = await this.users.findMany(query, actor);
 
     return {
       success: true,
@@ -139,11 +153,14 @@ export class UsersController {
   @ApiOkResponse({ description: 'The user.', type: UserEnvelopeDto })
   @ApiForbiddenResponse({ description: 'Authenticated, but without `user.view`.' })
   @ApiNotFoundResponse({ description: 'No such user, or the account has been deleted.' })
-  async findOne(@Param('id', ParseUUIDPipe) id: string): Promise<UserEnvelopeDto> {
+  async findOne(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() actor: AuthenticatedUser,
+  ): Promise<UserEnvelopeDto> {
     return {
       success: true,
       message: 'User retrieved successfully',
-      data: await this.users.findOne(id),
+      data: await this.users.findOne(id, actor),
     };
   }
 
@@ -191,14 +208,18 @@ export class UsersController {
   @ApiBadRequestResponse({ description: 'The status is not one of active, inactive.' })
   @ApiForbiddenResponse({ description: 'Authenticated, but without `user.manage`.' })
   @ApiNotFoundResponse({ description: 'No such user, or the account has been deleted.' })
+  @ApiConflictResponse({
+    description: 'Suspending this account would leave the platform with no active super admin.',
+  })
   async setStatus(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: UpdateUserStatusDto,
+    @CurrentUser() actor: AuthenticatedUser,
   ): Promise<UserEnvelopeDto> {
     return {
       success: true,
       message: 'User status updated successfully',
-      data: await this.users.setStatus(id, dto),
+      data: await this.users.setStatus(id, dto, actor),
     };
   }
 
@@ -219,6 +240,9 @@ export class UsersController {
     description: 'Without `role.assign`, changing your own role, or reaching above your authority.',
   })
   @ApiNotFoundResponse({ description: 'No such user, or the account has been deleted.' })
+  @ApiConflictResponse({
+    description: 'Demoting this account would leave the platform with no active super admin.',
+  })
   async setRole(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: UpdateUserRoleDto,
@@ -307,11 +331,17 @@ export class UsersController {
   @ApiOkResponse({ description: 'The user was deleted.', type: DeletedUserEnvelopeDto })
   @ApiForbiddenResponse({ description: 'Authenticated, but without `user.manage`.' })
   @ApiNotFoundResponse({ description: 'No such user, or the account was already deleted.' })
-  async remove(@Param('id', ParseUUIDPipe) id: string): Promise<DeletedUserEnvelopeDto> {
+  @ApiConflictResponse({
+    description: 'Deleting this account would leave the platform with no active super admin.',
+  })
+  async remove(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() actor: AuthenticatedUser,
+  ): Promise<DeletedUserEnvelopeDto> {
     return {
       success: true,
       message: 'User deleted successfully',
-      data: await this.users.remove(id),
+      data: await this.users.remove(id, actor),
     };
   }
 }

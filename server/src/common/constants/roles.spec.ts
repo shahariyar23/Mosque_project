@@ -105,6 +105,16 @@ describe('effectivePermissions', () => {
   it('withholds dashboard access from a plain member', () => {
     expect(effectivePermissions(subject({ role: Role.member }))).not.toContain('dashboard.view');
   });
+
+  it('grants user.viewDeleted to super_admin', () => {
+    const granted = effectivePermissions(subject({ role: Role.super_admin }));
+    expect(granted).toContain('user.viewDeleted');
+  });
+
+  it('withholds user.viewDeleted from mosque_admin', () => {
+    const granted = effectivePermissions(subject({ role: Role.mosque_admin }));
+    expect(granted).not.toContain('user.viewDeleted');
+  });
 });
 
 describe('the registry', () => {

@@ -1,7 +1,11 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Position, Role } from '@prisma/client';
 
-import { USER_STATUSES, type SelectedUser } from '../types/user.types';
+import {
+  USER_STATUSES,
+  type SelectedUser,
+  type SelectedUserWithDeleted,
+} from '../types/user.types';
 
 /**
  * The user, as the API returns it.
@@ -92,9 +96,16 @@ export class UserResponseDto {
   @ApiProperty({ format: 'date-time' })
   updatedAt!: string;
 
+  @ApiPropertyOptional({
+    nullable: true,
+    format: 'date-time',
+    description: 'Present only when listing deleted users with `user.viewDeleted`.',
+  })
+  deletedAt?: string | null;
+
   /** Builds the response from a row read with `USER_SELECT`. The only way one of these is made. */
-  static from(user: SelectedUser): UserResponseDto {
-    return {
+  static from(user: SelectedUser | SelectedUserWithDeleted): UserResponseDto {
+    const dto: UserResponseDto = {
       id: user.id,
       mosqueId: user.mosqueId,
       fullName: user.fullName,
@@ -116,6 +127,15 @@ export class UserResponseDto {
       createdAt: new Date(user.createdAt).toISOString(),
       updatedAt: new Date(user.updatedAt).toISOString(),
     };
+
+    // Only include deletedAt when the row was read with USER_SELECT_WITH_DELETED and the
+    // user is actually deleted (deletedAt is a non-null Date). For normal reads, or for rows
+    // where deletedAt is null, the field is omitted entirely.
+    if ('deletedAt' in user && user.deletedAt != null) {
+      dto.deletedAt = toInstant(user.deletedAt as Date);
+    }
+
+    return dto;
   }
 }
 

@@ -1095,6 +1095,17 @@ export type AdminUser = SessionUser & {
   joinedAt: IsoDate;
   /** ISO date of the last sign-in; empty string if the account has never signed in. */
   lastActiveAt: IsoDate;
+  fullName?: string;
+  status?: string;
+  dateOfBirth?: string | null;
+  gender?: string | null;
+  city?: string | null;
+  avatarUrl?: string | null;
+  newsletter?: boolean;
+  emailVerifiedAt?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
+  deletedAt?: string | null;
 };
 
 /** What the "Invite user" form collects. Role and positions are chosen; the rest defaults. */

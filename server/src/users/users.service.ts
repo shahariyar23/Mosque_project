@@ -6,9 +6,11 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import { Prisma, type Role } from '@prisma/client';
 import * as argon2 from 'argon2';
 
+import { AuditLogService } from '../audit/audit-log.service';
+import { definedChanges, type AuditEntry } from '../audit/types/audit-log.types';
 import type { Permission } from '../common/constants/permissions';
 import { effectivePermissions, hasPermission, scopeFor } from '../common/constants/roles';
 import { forbidden } from '../common/guards/authorization';
@@ -27,6 +29,7 @@ import { DeletedUserDto, UserListMetaDto, UserResponseDto } from './dto/user-res
 import {
   DEFAULT_USER_PAGE_SIZE,
   USER_SELECT,
+  USER_SELECT_WITH_DELETED,
   isActiveFor,
   type SelectedUser,
 } from './types/user.types';
@@ -34,7 +37,7 @@ import {
 /**
  * Everything the users endpoints do.
  *
- * Four rules run through the whole file.
+ * Seven rules run through the whole file.
  *
  * A password only ever exists here as an argon2id hash. `USER_SELECT` never reads the column back, so
  * no method in this service is in a position to leak it even by accident.
@@ -51,14 +54,42 @@ import {
  * reach, which is a question about the actor and the target together and so cannot live in a guard.
  * `update` answers the same shape of question for ownership — whether the record being edited is the
  * caller's own — which a permission cannot express either.
+ *
+ * Nobody reaches another mosque. Every read and every write resolves the target through `mosqueScope`,
+ * which pins the query to the mosque on the caller's token and never to anything in the request. The one
+ * exception is a holder of `platform.manage`, who administers the platform itself. A target outside the
+ * caller's mosque answers 404 rather than 403, matching every other module here: a 403 would confirm the
+ * account exists, which for a directory of members is the disclosure worth avoiding.
+ *
+ * The platform never runs out of super admins. `setRole`, `setStatus` and `remove` each refuse the change
+ * that would take the last active one away — a demotion, a suspension and a deletion are three different
+ * requests with the same consequence, so the guard sits in all three rather than in one of them.
+ *
+ * Every change to who someone is or what they may do is recorded. `AuditLogService` is best-effort by
+ * design and called after the write commits, so the trail can never turn a legitimate administrative
+ * action into a failure. What goes into an entry is named field by field; no password, hash or token is
+ * ever among the names, and `redactSecrets` removes one anyway if a later edit adds it by mistake.
  */
 @Injectable()
 export class UsersService {
   private readonly logger = new Logger(UsersService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly audit: AuditLogService,
+  ) {}
 
-  async create(dto: CreateUserDto): Promise<UserResponseDto> {
+  /**
+   * Creates a user.
+   *
+   * The actor is optional because two very different callers arrive here. An administrator holding
+   * `user.manage` creates an account for somebody else, and their token decides which mosque it may
+   * belong to. `AuthService.register` creates an account for the person asking, has no token to offer,
+   * and has already resolved the mosque from a slug on the server — so there is nothing there for a
+   * caller to substitute either.
+   */
+  async create(dto: CreateUserDto, actor?: AuthenticatedUser): Promise<UserResponseDto> {
+    this.assertMayReachMosque(dto.mosqueId, actor);
     await this.assertMosqueExists(dto.mosqueId);
     await this.assertContactIsFree(dto.mosqueId, { email: dto.email, phone: dto.phone });
 
@@ -66,8 +97,10 @@ export class UsersService {
     // The plaintext is not logged, not stored and goes out of scope with this method.
     const passwordHash = await argon2.hash(dto.password, { type: argon2.argon2id });
 
+    let created: SelectedUser;
+
     try {
-      const created = await this.prisma.user.create({
+      created = await this.prisma.user.create({
         // Written field by field rather than spread from the DTO: a field added to the DTO later
         // cannot reach the database until someone names it here.
         data: {
@@ -87,19 +120,44 @@ export class UsersService {
         },
         select: USER_SELECT,
       });
-
-      return UserResponseDto.from(created);
     } catch (error) {
       // The pre-check above gives a field-specific message; this catches the race between the two
       // statements, where two requests for the same address arrive at once.
       throw this.translate(error);
     }
+
+    // `dto.password` is deliberately not among these names, and never will be.
+    await this.audit.record({
+      // A self-registration has no actor but still has a subject, and recording the new account as its
+      // own actor is truer than recording none: somebody did do this, and it was them.
+      ...(actor
+        ? this.actorOf(actor)
+        : { actorId: created.id, actorName: created.email, actorRole: created.role }),
+      mosqueId: created.mosqueId,
+      action: 'USER_CREATED',
+      resource: 'user',
+      resourceId: created.id,
+      changes: {
+        fullName: created.fullName,
+        email: created.email,
+        phone: created.phone,
+        isActive: created.isActive,
+      },
+      ...(actor ? {} : { note: 'Self-registration.' }),
+    });
+
+    return UserResponseDto.from(created);
   }
 
-  async findMany(query: UserQueryDto): Promise<{ rows: UserResponseDto[]; meta: UserListMetaDto }> {
+  async findMany(
+    query: UserQueryDto,
+    actor: AuthenticatedUser,
+  ): Promise<{ rows: UserResponseDto[]; meta: UserListMetaDto }> {
     const page = Math.max(1, query.page ?? 1);
     const limit = Math.min(Math.max(1, query.limit ?? DEFAULT_USER_PAGE_SIZE), MAX_PAGE_SIZE);
-    const where = this.buildWhere(query);
+    const where = this.buildWhere(query, actor);
+    const showDeleted = this.canViewDeleted(query, actor);
+    const select = showDeleted ? USER_SELECT_WITH_DELETED : USER_SELECT;
 
     // One transaction so the count and the page describe the same set of rows. Counting separately
     // means a concurrent insert can produce a total that does not match the rows returned.
@@ -107,7 +165,7 @@ export class UsersService {
       this.prisma.user.count({ where }),
       this.prisma.user.findMany({
         where,
-        select: USER_SELECT,
+        select,
         // `id` breaks ties so a row cannot appear on two pages, or on none, when several users share
         // a creation timestamp — which seeding and bulk import both produce.
         orderBy: [{ createdAt: 'desc' }, { id: 'asc' }],
@@ -122,9 +180,9 @@ export class UsersService {
     };
   }
 
-  async findOne(id: string): Promise<UserResponseDto> {
+  async findOne(id: string, actor: AuthenticatedUser): Promise<UserResponseDto> {
     const user = await this.prisma.user.findFirst({
-      where: { id, deletedAt: null },
+      where: { id, deletedAt: null, ...this.mosqueScope(actor) },
       select: USER_SELECT,
     });
 
@@ -151,7 +209,7 @@ export class UsersService {
   async update(id: string, dto: UpdateUserDto, actor: AuthenticatedUser): Promise<UserResponseDto> {
     this.assertMayEditProfile(id, actor);
 
-    const existing = await this.load(id);
+    const existing = await this.load(id, actor);
 
     // Only checked when the address actually changes, so re-submitting an unchanged form is not a
     // conflict with the user's own row.
@@ -162,8 +220,10 @@ export class UsersService {
       id,
     );
 
+    let updated: SelectedUser;
+
     try {
-      const updated = await this.prisma.user.update({
+      updated = await this.prisma.user.update({
         where: { id },
         data: {
           fullName: dto.fullName,
@@ -180,11 +240,33 @@ export class UsersService {
         },
         select: USER_SELECT,
       });
-
-      return UserResponseDto.from(updated);
     } catch (error) {
       throw this.translate(error);
     }
+
+    // Only what was actually sent. An absent field is not a change, and recording it as one would make
+    // every entry look like a rewrite of the whole profile.
+    await this.audit.record({
+      ...this.actorOf(actor),
+      mosqueId: existing.mosqueId,
+      action: 'USER_UPDATED',
+      resource: 'user',
+      resourceId: id,
+      changes: definedChanges({
+        fullName: dto.fullName,
+        email: dto.email,
+        phone: dto.phone,
+        dateOfBirth: dto.dateOfBirth,
+        gender: dto.gender,
+        city: dto.city,
+        avatarUrl: dto.avatarUrl,
+        newsletter: dto.newsletter,
+        ...(emailChanged ? { emailVerifiedAt: null } : {}),
+      }),
+      ...(id === actor.id ? { note: 'Self-service profile edit.' } : {}),
+    });
+
+    return UserResponseDto.from(updated);
   }
 
   /**
@@ -195,14 +277,34 @@ export class UsersService {
    * so flipping this column is a complete revocation. Existing refresh tokens are left alone
    * deliberately — a session belonging to a suspended account already resolves no permissions, and
    * reactivating should not force everyone to sign in again.
+   *
+   * Being a complete revocation is also why the last-super-admin guard applies here and not only to
+   * `setRole`. Suspending the last super admin leaves an account that still *says* `super_admin` and can
+   * do nothing, which is the same outcome as demoting them and harder to notice.
    */
-  async setStatus(id: string, dto: UpdateUserStatusDto): Promise<UserResponseDto> {
-    await this.load(id);
+  async setStatus(
+    id: string,
+    dto: UpdateUserStatusDto,
+    actor: AuthenticatedUser,
+  ): Promise<UserResponseDto> {
+    const target = await this.load(id, actor);
+    const isActive = isActiveFor(dto.status);
+
+    if (!isActive) await this.assertNotLastSuperAdmin(target);
 
     const updated = await this.prisma.user.update({
       where: { id },
-      data: { isActive: isActiveFor(dto.status) },
+      data: { isActive },
       select: USER_SELECT,
+    });
+
+    await this.audit.record({
+      ...this.actorOf(actor),
+      mosqueId: target.mosqueId,
+      action: 'USER_STATUS_CHANGED',
+      resource: 'user',
+      resourceId: id,
+      changes: { isActive: { from: target.isActive, to: isActive } },
     });
 
     return UserResponseDto.from(updated);
@@ -224,6 +326,9 @@ export class UsersService {
    * locking the platform's owner out of it with one request, and it removes any path where the actor
    * and the target are the same row and the checks above compare a subject to itself.
    *
+   * And the platform keeps at least one active super admin. That is a different rule from the one above
+   * — it catches two administrators demoting each other, which no self-edit ban can see.
+   *
    * `dto.role` has already been validated against the Prisma enum, so a request carrying
    * `"SUPER_ADMIN"` or `"president"` was rejected as malformed before reaching this method. What the
    * body *claims* about the caller's own role is never read here at all — the actor comes from the
@@ -235,7 +340,7 @@ export class UsersService {
     dto: UpdateUserRoleDto,
     actor: AuthenticatedUser,
   ): Promise<UserResponseDto> {
-    const target = await this.loadForAssignment(id);
+    const target = await this.loadForAssignment(id, actor);
 
     if (target.id === actor.id) {
       throw new ForbiddenException({
@@ -251,10 +356,22 @@ export class UsersService {
       this.refuse(actor.id, target.id, `role ${dto.role} needs platform.manage`);
     }
 
+    // Only a change *away* from the role can cost the platform its last holder of it.
+    if (dto.role !== 'super_admin') await this.assertNotLastSuperAdmin(target);
+
     const updated = await this.prisma.user.update({
       where: { id },
       data: { role: dto.role },
       select: USER_SELECT,
+    });
+
+    await this.audit.record({
+      ...this.actorOf(actor),
+      mosqueId: target.mosqueId,
+      action: 'ROLE_ASSIGNED',
+      resource: 'user',
+      resourceId: id,
+      changes: { role: { from: target.role, to: dto.role } },
     });
 
     return UserResponseDto.from(updated);
@@ -289,7 +406,7 @@ export class UsersService {
       });
     }
 
-    const target = await this.loadForAssignment(id);
+    const target = await this.loadForAssignment(id, actor);
     const granted = effectivePermissions(actor);
     const isPlatformActor = hasPermission(granted, 'platform.manage');
 
@@ -324,6 +441,22 @@ export class UsersService {
       select: USER_SELECT,
     });
 
+    // `added` and `lifted` are recorded alongside the new arrays because they are the part a reviewer
+    // actually wants: the two lists say what the target now has, these two say what changed.
+    await this.audit.record({
+      ...this.actorOf(actor),
+      mosqueId: target.mosqueId,
+      action: 'PERMISSION_CHANGED',
+      resource: 'user',
+      resourceId: id,
+      changes: definedChanges({
+        permissions: dto.permissions,
+        deniedPermissions: dto.deniedPermissions,
+        added,
+        lifted,
+      }),
+    });
+
     return UserResponseDto.from(updated);
   }
 
@@ -346,16 +479,21 @@ export class UsersService {
     dto: UpdateUserPositionsDto,
     actor: AuthenticatedUser,
   ): Promise<UserResponseDto> {
-    const target = await this.load(id);
-
-    this.logger.debug(
-      `positions set: ${actor.id} -> ${target.id} (${dto.positions.join(', ') || 'none'})`,
-    );
+    const target = await this.load(id, actor);
 
     const updated = await this.prisma.user.update({
       where: { id },
       data: { positions: dto.positions },
       select: USER_SELECT,
+    });
+
+    await this.audit.record({
+      ...this.actorOf(actor),
+      mosqueId: target.mosqueId,
+      action: 'POSITIONS_ASSIGNED',
+      resource: 'user',
+      resourceId: id,
+      changes: { positions: dto.positions },
     });
 
     return UserResponseDto.from(updated);
@@ -372,8 +510,10 @@ export class UsersService {
    * The account is deactivated in the same breath, which revokes its permissions, and its live
    * sessions are revoked so a token issued minutes ago cannot outlive the account.
    */
-  async remove(id: string): Promise<DeletedUserDto> {
-    await this.load(id);
+  async remove(id: string, actor: AuthenticatedUser): Promise<DeletedUserDto> {
+    const target = await this.load(id, actor);
+
+    await this.assertNotLastSuperAdmin(target);
 
     const deletedAt = new Date();
 
@@ -388,6 +528,16 @@ export class UsersService {
         data: { revokedAt: deletedAt },
       }),
     ]);
+
+    await this.audit.record({
+      ...this.actorOf(actor),
+      mosqueId: target.mosqueId,
+      action: 'USER_DELETED',
+      resource: 'user',
+      resourceId: id,
+      changes: { deletedAt: deletedAt.toISOString(), isActive: false },
+      note: 'Soft delete; account deactivated and live sessions revoked.',
+    });
 
     return { id: user.id, deletedAt: (user.deletedAt ?? deletedAt).toISOString() };
   }
@@ -417,12 +567,101 @@ export class UsersService {
     throw forbidden();
   }
 
-  private buildWhere(query: UserQueryDto): Prisma.UserWhereInput {
+  /**
+   * The mosque filter every read and write goes through, or nothing at all for a platform
+   * administrator.
+   *
+   * Read from `effectivePermissions` rather than from the role name, so it answers the same question the
+   * guard does. Two consequences worth stating: a deactivated account resolves to no permissions and so
+   * is confined rather than unleashed, and a `platform.manage` denial layered onto an individual account
+   * confines that account too, without anybody having to remember this method exists.
+   *
+   * The mosque comes from the token. There is no parameter, anywhere in this service, through which a
+   * caller could offer a different one.
+   */
+  private mosqueScope(actor: AuthenticatedUser): { mosqueId?: string } {
+    return hasPermission(effectivePermissions(actor), 'platform.manage')
+      ? {}
+      : { mosqueId: actor.mosqueId };
+  }
+
+  /**
+   * Refuses a create aimed at a mosque the caller does not administer.
+   *
+   * A 403 here, where every read gives a 404, and the difference is deliberate: a 404 hides whether a
+   * *record* exists, which is the thing worth hiding. The mosque id in a create came from the caller and
+   * `GET /mosques` lists them all, so there is nothing left to conceal — and answering "no such mosque"
+   * about one the caller can see listed would be a lie that costs an administrator an afternoon.
+   *
+   * No actor means `AuthService.register`, which resolved the mosque from a slug on the server. There is
+   * no client-supplied id on that path for this method to check.
+   */
+  private assertMayReachMosque(mosqueId: string, actor: AuthenticatedUser | undefined): void {
+    if (!actor) return;
+    if (this.mosqueScope(actor).mosqueId === undefined) return;
+    if (mosqueId === actor.mosqueId) return;
+
+    this.logger.debug(`cross-mosque create refused: ${actor.id} -> mosque ${mosqueId}`);
+
+    throw new ForbiddenException({
+      code: 'CROSS_MOSQUE_DENIED',
+      message: 'You can only manage users at your own mosque.',
+    });
+  }
+
+  /**
+   * Refuses a change that would leave the platform with no active super admin.
+   *
+   * Counted platform-wide, not within the caller's mosque: `super_admin` is a platform role, so the last
+   * one anywhere is the last one. Counted at the moment of the change rather than cached, because two
+   * administrators demoting each other is exactly the race this exists to lose safely.
+   *
+   * A target who is not an active super admin cannot be the last one, so those calls cost nothing and
+   * return before the query. And a 409 rather than a 403: the caller has the authority, the platform just
+   * cannot be left in that state, and the message says which so they can fix it.
+   */
+  private async assertNotLastSuperAdmin(target: {
+    id: string;
+    role: Role;
+    isActive: boolean;
+  }): Promise<void> {
+    if (target.role !== 'super_admin' || !target.isActive) return;
+
+    const others = await this.prisma.user.count({
+      where: { role: 'super_admin', isActive: true, deletedAt: null, id: { not: target.id } },
+    });
+
+    if (others > 0) return;
+
+    throw new ConflictException({
+      code: 'LAST_SUPER_ADMIN',
+      message:
+        'This is the last active super admin. Appoint another one before changing this account.',
+    });
+  }
+
+  /**
+   * The actor half of an audit entry.
+   *
+   * `AuthenticatedUser` carries no display name, so the email is what identifies the caller. That is a
+   * deliberate limit rather than an omission: a name is a mutable profile field, and putting one in a
+   * signed token would mean the trail recorded whatever it said when the token was issued.
+   */
+  private actorOf(
+    actor: AuthenticatedUser,
+  ): Pick<AuditEntry, 'actorId' | 'actorName' | 'actorRole'> {
+    return { actorId: actor.id, actorName: actor.email, actorRole: actor.role };
+  }
+
+  private buildWhere(query: UserQueryDto, actor: AuthenticatedUser): Prisma.UserWhereInput {
     const search = query.search?.trim();
 
     return {
-      // Soft-deleted users are gone as far as every read is concerned.
-      deletedAt: null,
+      // Permission-gated soft-delete filter: only actors with `user.viewDeleted` who explicitly
+      // request `deleted=true` see soft-deleted accounts. Everyone else unconditionally sees
+      // `deletedAt: null`.
+      ...this.deletedFilter(query, actor),
+      ...this.mosqueScope(actor),
       ...(query.status ? { isActive: isActiveFor(query.status) } : {}),
       // An exact match on an indexed column — `@@index([mosqueId, role])` — not a text comparison.
       ...(query.role ? { role: query.role } : {}),
@@ -443,11 +682,49 @@ export class UsersService {
     };
   }
 
-  /** Reads the few columns the write paths need, and refuses if the user is absent or soft-deleted. */
-  private async load(id: string): Promise<Pick<SelectedUser, 'id' | 'mosqueId' | 'email'>> {
+  /**
+   * Whether the actor is both asking for deleted users and authorised to see them.
+   *
+   * Read from `effectivePermissions` so a suspended super admin is refused, and so a `user.viewDeleted`
+   * denial on an individual account works without anyone having to remember this method exists.
+   */
+  private canViewDeleted(query: UserQueryDto, actor: AuthenticatedUser): boolean {
+    return query.deleted === true && hasPermission(effectivePermissions(actor), 'user.viewDeleted');
+  }
+
+  /**
+   * The Prisma `deletedAt` condition to spread into a `where` clause.
+   *
+   * When the actor holds `user.viewDeleted` and explicitly asks for deleted users, the filter flips
+   * to `{ not: null }` — returning only soft-deleted rows. In every other case the filter is
+   * `{ deletedAt: null }`, which is the same hardcoded default the service had before this feature.
+   */
+  private deletedFilter(
+    query: UserQueryDto,
+    actor: AuthenticatedUser,
+  ): { deletedAt: null } | { deletedAt: { not: null } } {
+    return this.canViewDeleted(query, actor) ? { deletedAt: { not: null } } : { deletedAt: null };
+  }
+
+  /**
+   * Reads the few columns the write paths need, and refuses if the user is absent, soft-deleted or at
+   * another mosque.
+   *
+   * The three cases answer alike on purpose. Whether a caller is looking at a record that does not exist,
+   * one that was deleted, or one belonging to a mosque they have no business in, the only thing they
+   * learn is that they cannot have it.
+   *
+   * `role` and `isActive` are here for `assertNotLastSuperAdmin`, and `mosqueId` for the audit entry —
+   * which is the *target's* mosque, so a platform administrator's cross-mosque action is filed where it
+   * happened rather than where they happen to be.
+   */
+  private async load(
+    id: string,
+    actor: AuthenticatedUser,
+  ): Promise<Pick<SelectedUser, 'id' | 'mosqueId' | 'email' | 'role' | 'isActive'>> {
     const user = await this.prisma.user.findFirst({
-      where: { id, deletedAt: null },
-      select: { id: true, mosqueId: true, email: true },
+      where: { id, deletedAt: null, ...this.mosqueScope(actor) },
+      select: { id: true, mosqueId: true, email: true, role: true, isActive: true },
     });
 
     if (!user) throw notFound();
@@ -464,10 +741,23 @@ export class UsersService {
    */
   private async loadForAssignment(
     id: string,
-  ): Promise<Pick<SelectedUser, 'id' | 'role' | 'permissions' | 'deniedPermissions'>> {
+    actor: AuthenticatedUser,
+  ): Promise<
+    Pick<
+      SelectedUser,
+      'id' | 'mosqueId' | 'role' | 'isActive' | 'permissions' | 'deniedPermissions'
+    >
+  > {
     const user = await this.prisma.user.findFirst({
-      where: { id, deletedAt: null },
-      select: { id: true, role: true, permissions: true, deniedPermissions: true },
+      where: { id, deletedAt: null, ...this.mosqueScope(actor) },
+      select: {
+        id: true,
+        mosqueId: true,
+        role: true,
+        isActive: true,
+        permissions: true,
+        deniedPermissions: true,
+      },
     });
 
     if (!user) throw notFound();

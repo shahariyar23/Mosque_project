@@ -99,9 +99,9 @@ describe('UsersController', () => {
       password: 'Str0ngPassphrase!',
     };
 
-    const response = await controller.create(dto);
+    const response = await controller.create(dto, ACTOR);
 
-    expect(users.create).toHaveBeenCalledWith(dto);
+    expect(users.create).toHaveBeenCalledWith(dto, ACTOR);
     expect(response).toEqual({
       success: true,
       message: 'User created successfully',
@@ -110,7 +110,7 @@ describe('UsersController', () => {
   });
 
   it('returns a list as data plus paging meta', async () => {
-    const response = await controller.findAll({ page: 1, limit: 20 });
+    const response = await controller.findAll({ page: 1, limit: 20 }, ACTOR);
 
     // The shape every client reads. Asserted literally because changing it silently breaks them.
     expect(response).toEqual({
@@ -131,17 +131,19 @@ describe('UsersController', () => {
       position: Position.president,
     };
 
-    await controller.findAll(query);
+    await controller.findAll(query, ACTOR);
 
     // Including the filters that make this the Members list: the route hands them over verbatim and
     // the service turns them into a `where`. A filter interpreted in two places drifts in one of them.
-    expect(users.findMany).toHaveBeenCalledWith(query);
+    // The caller rides along unchanged: the mosque the query runs against comes from their token, and
+    // there is no `mosqueId` in the query object above for a client to substitute one.
+    expect(users.findMany).toHaveBeenCalledWith(query, ACTOR);
   });
 
   it('returns one user', async () => {
-    const response = await controller.findOne(SAMPLE.id);
+    const response = await controller.findOne(SAMPLE.id, ACTOR);
 
-    expect(users.findOne).toHaveBeenCalledWith(SAMPLE.id);
+    expect(users.findOne).toHaveBeenCalledWith(SAMPLE.id, ACTOR);
     expect(response.message).toBe('User retrieved successfully');
     expect(response.data).toEqual(SAMPLE);
   });
@@ -157,9 +159,9 @@ describe('UsersController', () => {
   });
 
   it('returns the user with its new status', async () => {
-    const response = await controller.setStatus(SAMPLE.id, { status: 'inactive' });
+    const response = await controller.setStatus(SAMPLE.id, { status: 'inactive' }, ACTOR);
 
-    expect(users.setStatus).toHaveBeenCalledWith(SAMPLE.id, { status: 'inactive' });
+    expect(users.setStatus).toHaveBeenCalledWith(SAMPLE.id, { status: 'inactive' }, ACTOR);
     expect(response.message).toBe('User status updated successfully');
     expect(response.data.status).toBe('inactive');
   });
@@ -199,9 +201,9 @@ describe('UsersController', () => {
   });
 
   it('confirms a delete with the id and the time it happened', async () => {
-    const response = await controller.remove(SAMPLE.id);
+    const response = await controller.remove(SAMPLE.id, ACTOR);
 
-    expect(users.remove).toHaveBeenCalledWith(SAMPLE.id);
+    expect(users.remove).toHaveBeenCalledWith(SAMPLE.id, ACTOR);
     expect(response).toEqual({
       success: true,
       message: 'User deleted successfully',
@@ -212,7 +214,7 @@ describe('UsersController', () => {
   it('adds nothing of its own to what the service returns', async () => {
     // Sanitisation happens where the row is read, in the service, so the route must pass the object
     // through untouched — a route that reshaped it would be a second place for a leak to appear.
-    const response = await controller.findOne(SAMPLE.id);
+    const response = await controller.findOne(SAMPLE.id, ACTOR);
 
     expect(response.data).toBe(SAMPLE);
     expect(Object.keys(response)).toEqual(['success', 'message', 'data']);

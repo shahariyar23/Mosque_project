@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
 import { Badge } from "@/components/finance/ui/badge";
 import { Button, IconButton } from "@/components/finance/ui/button";
 import { DataTable, type Column } from "@/components/finance/ui/data-table";
@@ -18,7 +18,10 @@ import { StatGrid } from "@/components/ui/stat-card";
 import { RoleBadge } from "@/components/ui/status-badge";
 import { useToast } from "@/components/ui/toast";
 import { adminUsers as seedUsers, userStats } from "@/data/users";
+import { useAuth } from "@/components/auth-provider";
+import { fetchUsers } from "@/services/userService";
 import { groupPermissions } from "@/lib/mosque/access";
+import { SpinnerIcon } from "@/components/signup/icons";
 import { downloadCsv } from "@/lib/mosque/export";
 import { formatCount, formatLongDate, REFERENCE_DATE } from "@/lib/mosque/format";
 import type { AdminUser, AdminUserDraft, StatMetric } from "@/lib/mosque/types";
@@ -44,41 +47,6 @@ import {
  * exceptions — each gated with `Can`, so previewing as a secretary shows the read-only directory the
  * secretary role actually grants (`user.view`) and none of the controls.
  */
-const metrics: StatMetric[] = [
-  {
-    id: "total",
-    label: "Accounts",
-    value: formatCount(userStats.total),
-    hint: "With back-office access",
-    icon: "users",
-    tone: "neutral",
-  },
-  {
-    id: "active",
-    label: "Active",
-    value: formatCount(userStats.active),
-    hint: "Able to sign in",
-    icon: "check-circle",
-    tone: "positive",
-  },
-  {
-    id: "admins",
-    label: "Administrators",
-    value: formatCount(userStats.admins),
-    hint: "Super & mosque admins",
-    icon: "shield",
-    tone: "gold",
-  },
-  {
-    id: "suspended",
-    label: "Suspended",
-    value: formatCount(userStats.suspended),
-    hint: "No access until restored",
-    icon: "lock",
-    tone: userStats.suspended > 0 ? "warning" : "neutral",
-  },
-];
-
 const positionList = Object.keys(positionLabels) as Position[];
 const roleOptions = roles.map((role) => ({ value: role, label: roleLabels[role] }));
 
@@ -100,7 +68,7 @@ function nextUserId(users: AdminUser[]): string {
 }
 
 function positionsLabel(positions: Position[]): string {
-  return positions.length ? positions.map((position) => positionLabels[position].en).join(", ") : "—";
+  return positions.length ? positions.map((position) => positionLabels[position]?.en ?? position).join(", ") : "—";
 }
 
 /* -------------------------------------------------------------------------- *
@@ -177,14 +145,82 @@ function EffectivePermissions({ user }: { user: AdminUser }) {
 
 export function UsersView({ openAddOnMount = false }: { openAddOnMount?: boolean }) {
   const { notify } = useToast();
-  const [userList, setUserList] = useState<AdminUser[]>(seedUsers);
+  const { token, session, loading: authLoading } = useAuth();
+  const canViewDeleted = session?.permissions.includes("user.viewDeleted") ?? false;
+  const [userList, setUserList] = useState<AdminUser[]>([]);
   const [search, setSearch] = useState("");
   const [role, setRole] = useState("all");
   const [status, setStatus] = useState("all");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [adding, setAdding] = useState(openAddOnMount);
   const [editing, setEditing] = useState<AdminUser | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [suspendTarget, setSuspendTarget] = useState<AdminUser | null>(null);
+
+  const isDeletedFilter = status === "deleted";
+
+  const loadUsers = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const data = await fetchUsers(token, { deleted: isDeletedFilter });
+      setUserList(data);
+    } catch (e) {
+      console.error(e);
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (authLoading) return;
+    loadUsers();
+  }, [token, authLoading, isDeletedFilter]);
+
+  const userMetrics: StatMetric[] = useMemo(() => {
+    const adminRoles = new Set(["super_admin", "mosque_admin"]);
+    const total = userList.length;
+    const active = userList.filter((u) => u.isActive).length;
+    const admins = userList.filter((u) => adminRoles.has(u.role)).length;
+    const suspended = userList.filter((u) => !u.isActive).length;
+
+    return [
+      {
+        id: "total",
+        label: "Accounts",
+        value: formatCount(total),
+        hint: "With back-office access",
+        icon: "users",
+        tone: "neutral",
+      },
+      {
+        id: "active",
+        label: "Active",
+        value: formatCount(active),
+        hint: "Able to sign in",
+        icon: "check-circle",
+        tone: "positive",
+      },
+      {
+        id: "admins",
+        label: "Administrators",
+        value: formatCount(admins),
+        hint: "Super & mosque admins",
+        icon: "shield",
+        tone: "gold",
+      },
+      {
+        id: "suspended",
+        label: "Suspended",
+        value: formatCount(suspended),
+        hint: "No access until restored",
+        icon: "lock",
+        tone: suspended > 0 ? "warning" : "neutral",
+      },
+    ];
+  }, [userList]);
 
   // Look the selection up by id every render so the drawer reflects an edit made behind it.
   const selected = selectedId ? (userList.find((user) => user.id === selectedId) ?? null) : null;
@@ -193,12 +229,14 @@ export function UsersView({ openAddOnMount = false }: { openAddOnMount?: boolean
     const needle = search.trim().toLowerCase();
     return userList.filter((user) => {
       if (needle) {
-        const haystack = `${user.name} ${user.email} ${user.id} ${roleLabels[user.role]}`.toLowerCase();
+        const roleLabel = roleLabels[user.role] ?? user.role;
+        const haystack = `${user.name} ${user.email} ${user.id} ${user.phone} ${user.city ?? ""} ${roleLabel}`.toLowerCase();
         if (!haystack.includes(needle)) return false;
       }
       if (role !== "all" && user.role !== role) return false;
       if (status === "active" && !user.isActive) return false;
       if (status === "suspended" && user.isActive) return false;
+      // When status is "deleted", the API already returns only deleted users, so no extra client filtering needed here.
       return true;
     });
   }, [role, search, status, userList]);
@@ -220,6 +258,7 @@ export function UsersView({ openAddOnMount = false }: { openAddOnMount?: boolean
         { value: "all", label: "Any status" },
         { value: "active", label: "Active" },
         { value: "suspended", label: "Suspended" },
+        ...(canViewDeleted ? [{ value: "deleted", label: "Deleted" }] : []),
       ],
     },
   ];
@@ -283,7 +322,7 @@ export function UsersView({ openAddOnMount = false }: { openAddOnMount?: boolean
       { header: "Phone", value: (user) => user.phone },
       { header: "Role", value: (user) => roleLabels[user.role] },
       { header: "Positions", value: (user) => user.positions.map((position) => positionLabels[position].en).join(" / ") },
-      { header: "Status", value: (user) => (user.isActive ? "Active" : "Suspended") },
+      { header: "Status", value: (user) => (user.deletedAt ? "Deleted" : user.isActive ? "Active" : "Suspended") },
       { header: "Extra permissions", value: (user) => user.permissions.join(" ") },
       { header: "Denied permissions", value: (user) => user.deniedPermissions.join(" ") },
       { header: "Joined", value: (user) => user.joinedAt },
@@ -318,10 +357,13 @@ export function UsersView({ openAddOnMount = false }: { openAddOnMount?: boolean
     {
       key: "status",
       header: "Status",
-      cell: (user) => (
-        <Badge tone={user.isActive ? "success" : "danger"}>{user.isActive ? "Active" : "Suspended"}</Badge>
-      ),
-      sortValue: (user) => (user.isActive ? 0 : 1),
+      cell: (user) => {
+        if (user.deletedAt) {
+          return <Badge tone="neutral">Deleted</Badge>;
+        }
+        return <Badge tone={user.isActive ? "success" : "danger"}>{user.isActive ? "Active" : "Suspended"}</Badge>;
+      },
+      sortValue: (user) => (user.deletedAt ? 2 : user.isActive ? 0 : 1),
     },
     {
       key: "lastActive",
@@ -350,9 +392,30 @@ export function UsersView({ openAddOnMount = false }: { openAddOnMount?: boolean
     },
   ];
 
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-[300px]">
+        <SpinnerIcon className="h-8 w-8 animate-spin text-[#0d4d3b]" />
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="space-y-4">
+        <InlineNotice tone="danger" icon="alert">
+          {error}
+        </InlineNotice>
+        <Button variant="secondary" onClick={loadUsers} icon="refresh">
+          Try Again
+        </Button>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-4">
-      <StatGrid metrics={metrics} />
+      <StatGrid metrics={userMetrics} />
 
       <Panel>
         <PanelHeader
@@ -394,9 +457,10 @@ export function UsersView({ openAddOnMount = false }: { openAddOnMount?: boolean
           pageSize={10}
           mobileTitle={(user) => user.name}
           mobileSubtitle={(user) => `${roleLabels[user.role]} · ${user.email}`}
-          mobileTrailing={(user) => (
-            <Badge tone={user.isActive ? "success" : "danger"}>{user.isActive ? "Active" : "Suspended"}</Badge>
-          )}
+          mobileTrailing={(user) => {
+            if (user.deletedAt) return <Badge tone="neutral">Deleted</Badge>;
+            return <Badge tone={user.isActive ? "success" : "danger"}>{user.isActive ? "Active" : "Suspended"}</Badge>;
+          }}
           mobileHiddenKeys={["user", "role", "status"]}
           emptyState={
             <FinanceEmptyState
@@ -599,12 +663,15 @@ function UserDetailDrawer({
         <DetailSection title="Details">
           <DetailGrid>
             <DetailField label="Account ID" value={user.id} />
-            <DetailField label="Phone" value={user.phone} />
+            <DetailField label="Phone" value={user.phone || "—"} />
+            {user.gender ? <DetailField label="Gender" value={user.gender} /> : null}
+            {user.city ? <DetailField label="City" value={user.city} /> : null}
+            {user.dateOfBirth ? <DetailField label="Date of birth" value={formatLongDate(user.dateOfBirth)} /> : null}
             <DetailField label="Member record" value={user.memberId ?? "Not a member"} />
             <DetailField label="Staff record" value={user.staffId ?? "Not on payroll"} />
-            <DetailField label="Joined" value={formatLongDate(user.joinedAt)} />
+            <DetailField label="Joined" value={user.joinedAt ? formatLongDate(user.joinedAt) : "—"} />
             <DetailField label="Last active" value={user.lastActiveAt ? formatLongDate(user.lastActiveAt) : "Never signed in"} />
-            <DetailField label="Mosque" value={user.mosqueName} full />
+            {user.mosqueName ? <DetailField label="Mosque" value={user.mosqueName} full /> : null}
           </DetailGrid>
         </DetailSection>
       </div>

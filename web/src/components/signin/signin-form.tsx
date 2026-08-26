@@ -19,6 +19,7 @@ import {
   SpinnerIcon,
 } from "@/components/signup/icons";
 import { SigninSuccess } from "./signin-success";
+import { useAuth } from "@/components/auth-provider";
 import {
   detectIdentifierKind,
   initialSigninValues,
@@ -41,6 +42,7 @@ const FIELD_IDS: Record<SigninField, string> = {
 const RESET_HELP_ID = "signin-reset-help";
 
 export function SigninForm() {
+  const { login } = useAuth();
   const [values, setValues] = useState<SigninValues>(initialSigninValues);
   const [touched, setTouched] = useState<Partial<Record<SigninField, boolean>>>(
     {},
@@ -81,8 +83,10 @@ export function SigninForm() {
 
     setStatus("submitting");
     try {
-      // Simulated for now — swap the service body for the Express endpoint later.
-      await loginUser(toSigninPayload(values));
+      // The login response already carries the profile, so passing it straight through saves a follow-up
+      // request to `/auth/me`.
+      const { token, session } = await loginUser(toSigninPayload(values));
+      login(token, session);
       setStatus("success");
     } catch {
       setStatus("idle");

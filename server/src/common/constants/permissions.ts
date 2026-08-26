@@ -39,6 +39,7 @@ export const PERMISSION_GROUPS = {
   ],
   access: [
     'user.view',
+    'user.viewDeleted',
     'user.manage',
     'role.assign',
     'permission.assign',
@@ -156,5 +157,6 @@ export const BASE_PERMISSIONS: Permission[] = [...PERMISSION_GROUPS.base];
 export const PLATFORM_ONLY: Permission[] = [
   'platform.manage',
   'mosque.create',
+  'user.viewDeleted',
   'workflow.selfApprove',
 ];

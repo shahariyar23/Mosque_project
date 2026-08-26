@@ -131,6 +131,22 @@ type RefreshTokenRow = {
   createdAt: Date;
 };
 
+type AuditLogRow = {
+  id: string;
+  mosqueId: string;
+  actorId: string | null;
+  actorName: string;
+  actorRole: string | null;
+  action: string;
+  resource: string;
+  resourceId: string | null;
+  changes: Row | null;
+  note: string | null;
+  ipAddress: string | null;
+  userAgent: string | null;
+  createdAt: Date;
+};
+
 interface FindArgs {
   where?: unknown;
   select?: unknown;
@@ -304,6 +320,7 @@ class InMemoryDatabase {
   readonly users: UserRow[] = [];
   readonly mosques: MosqueRow[] = [];
   readonly refreshTokens: RefreshTokenRow[] = [];
+  readonly auditLogs: AuditLogRow[] = [];
 
   /** Every `data` object handed to `user.create`, so a test can assert what was *not* in it. */
   readonly userCreates: Row[] = [];
@@ -400,6 +417,57 @@ class InMemoryDatabase {
   };
 
   /**
+   * The audit trail, and the one delegate here that exists for what it *cannot* hold.
+   *
+   * `AuditLogService.record` swallows its own failures by design, so leaving this out would not have
+   * failed a test — it would have logged an error and carried on, and the assertions below that read
+   * the trail would have had nothing to read. Every row a request writes lands in `auditLogs`, where a
+   * test can serialise the lot and check that no password and no token is anywhere in it.
+   */
+  readonly auditLog = {
+    create: (args: CreateArgs): Promise<Row> => {
+      const data = defined(args.data);
+      const row: AuditLogRow = {
+        id: randomUUID(),
+        mosqueId: '',
+        actorId: null,
+        actorName: '',
+        actorRole: null,
+        action: '',
+        resource: '',
+        resourceId: null,
+        changes: null,
+        note: null,
+        ipAddress: null,
+        userAgent: null,
+        createdAt: new Date(),
+        ...(data as Partial<AuditLogRow>),
+      };
+
+      this.auditLogs.push(row);
+      return Promise.resolve(project(row, args.select));
+    },
+
+    count: (args: FindArgs): Promise<number> =>
+      Promise.resolve(this.auditLogs.filter((row) => matchesRow(row, args.where)).length),
+
+    findMany: (args: FindArgs): Promise<Row[]> => {
+      const matched = sortRows(
+        this.auditLogs.filter((row) => matchesRow(row, args.where)),
+        args.orderBy,
+      );
+      const skipped = args.skip === undefined ? matched : matched.slice(args.skip);
+      const limited = args.take === undefined ? skipped : skipped.slice(0, args.take);
+      return Promise.resolve(limited.map((row) => project(row, args.select)));
+    },
+
+    findFirst: (args: FindArgs): Promise<Row | null> => {
+      const found = this.auditLogs.find((row) => matchesRow(row, args.where));
+      return Promise.resolve(found === undefined ? null : project(found, args.select));
+    },
+  };
+
+  /**
    * Both of Prisma's shapes, because this project now uses both.
    *
    * The array form's operations have already begun by the time they arrive — a fake has no lazy
@@ -428,6 +496,7 @@ class InMemoryDatabase {
     this.users.length = 0;
     this.mosques.length = 0;
     this.refreshTokens.length = 0;
+    this.auditLogs.length = 0;
     this.userCreates.length = 0;
 
     this.mosques.push(
@@ -919,6 +988,62 @@ describe('Auth (integration)', () => {
         .expect(200);
 
       expect(member.lastLoginAt).toBeInstanceOf(Date);
+    });
+
+    it('records the sign-in in the audit trail, holding neither the password nor a token', async () => {
+      const member = seedMember();
+
+      const response = await request(server)
+        .post('/api/v1/auth/login')
+        .send({ email: 'karim@noor.example', password: PASSWORD })
+        .expect(200);
+
+      expect(database.auditLogs).toHaveLength(1);
+      const [entry] = database.auditLogs;
+
+      expect(entry).toMatchObject({
+        mosqueId: member.mosqueId,
+        action: 'LOGIN_SUCCESS',
+        resource: 'auth',
+        resourceId: member.id,
+        actorId: member.id,
+        actorName: member.fullName,
+        actorRole: member.role,
+      });
+      expect(entry.ipAddress).toEqual(expect.any(String));
+
+      // The trail exists to be read, by people who must not be able to sign in as this member because
+      // they read it. Nothing that would let them is in the row: not what was typed, not what it was
+      // verified against, not what the response handed back.
+      const written = JSON.stringify(entry);
+      expect(written).not.toContain(PASSWORD);
+      expect(written).not.toContain(member.passwordHash);
+      expect(written).not.toContain(refreshTokenOf(response));
+    });
+
+    it('records a refused sign-in against a known account, and nothing for an unknown address', async () => {
+      seedMember({ email: 'karim@noor.example' });
+      seedMember({ email: 'disabled@noor.example', phone: null, isActive: false });
+
+      const refused = [
+        { email: 'karim@noor.example', password: 'not-the-password' },
+        { email: 'disabled@noor.example', password: PASSWORD },
+        // Deliberately unrecorded. `AuditLog.mosqueId` is non-null and an address with no account
+        // belongs to no mosque, so an entry here would have to guess one — which would let anyone who
+        // can type into the sign-in form write rows into a mosque's trail.
+        { email: 'nobody@noor.example', password: PASSWORD },
+      ];
+
+      for (const attempt of refused) {
+        await request(server).post('/api/v1/auth/login').send(attempt).expect(401);
+      }
+
+      expect(database.auditLogs.map((entry) => [entry.action, entry.actorName])).toEqual([
+        ['LOGIN_FAILED', 'karim@noor.example'],
+        ['LOGIN_FAILED', 'disabled@noor.example'],
+      ]);
+      // Why it was refused is worth keeping; what was typed is not, and is nowhere in the rows.
+      expect(JSON.stringify(database.auditLogs)).not.toContain('not-the-password');
     });
 
     it('answers the same 401 for a wrong password, an unknown address, a disabled account and a deleted one', async () => {
