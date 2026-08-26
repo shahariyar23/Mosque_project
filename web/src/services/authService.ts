@@ -26,7 +26,9 @@ import type { Session } from "@/lib/session";
  * and the refresh request is the one that must present it.
  */
 
-const apiBase = (): string => process.env.NEXT_PUBLIC_API_URL ?? "";
+import { getApiBaseUrl } from "@/config/api";
+
+const apiBase = getApiBaseUrl;
 
 /** What the server returns from `/auth/login` and `/auth/refresh`, under `data`. */
 type SessionPayload = {
