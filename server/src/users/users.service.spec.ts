@@ -16,7 +16,7 @@ import { AuditLogService } from '../audit/audit-log.service';
 import type { AuditEntry } from '../audit/types/audit-log.types';
 import { CreateUserDto } from './dto/create-user.dto';
 import type { UserQueryDto } from './dto/user-query.dto';
-import { USER_SELECT, type SelectedUser } from './types/user.types';
+import { USER_SELECT, USER_SELECT_WITH_DELETED, type SelectedUser } from './types/user.types';
 import { UsersService } from './users.service';
 
 /**
@@ -469,6 +469,84 @@ describe('UsersService', () => {
       await service.findMany({}, actor());
 
       expect(argsOf(prisma.user.findMany).orderBy).toEqual([{ createdAt: 'desc' }, { id: 'asc' }]);
+    });
+
+    it('excludes deleted users by default', async () => {
+      prisma.user.count.mockResolvedValue(1);
+      prisma.user.findMany.mockResolvedValue([userRow()]);
+
+      await service.findMany({}, actor());
+
+      expect(whereOf(prisma.user.findMany).deletedAt).toBeNull();
+      expect(argsOf(prisma.user.findMany).select).toBe(USER_SELECT);
+    });
+
+    it('super admin with user.viewDeleted sees deleted users when deleted=true', async () => {
+      prisma.user.count.mockResolvedValue(1);
+      prisma.user.findMany.mockResolvedValue([userRow()]);
+
+      await service.findMany({ deleted: true }, actor({ role: Role.super_admin }));
+
+      expect(whereOf(prisma.user.findMany).deletedAt).toEqual({ not: null });
+      expect(argsOf(prisma.user.findMany).select).toBe(USER_SELECT_WITH_DELETED);
+    });
+
+    it('unauthorized admin cannot see deleted users even with deleted=true', async () => {
+      prisma.user.count.mockResolvedValue(0);
+      prisma.user.findMany.mockResolvedValue([]);
+
+      await service.findMany({ deleted: true }, actor({ role: Role.mosque_admin }));
+
+      // mosque_admin does not hold user.viewDeleted, so the flag is silently ignored.
+      expect(whereOf(prisma.user.findMany).deletedAt).toBeNull();
+      expect(argsOf(prisma.user.findMany).select).toBe(USER_SELECT);
+    });
+
+    it('search cannot expose deleted users for unauthorized actor', async () => {
+      prisma.user.count.mockResolvedValue(0);
+      prisma.user.findMany.mockResolvedValue([]);
+
+      await service.findMany(
+        { deleted: true, search: 'karim' },
+        actor({ role: Role.mosque_admin }),
+      );
+
+      expect(whereOf(prisma.user.findMany).deletedAt).toBeNull();
+    });
+
+    it('status/role/position filters cannot expose deleted users', async () => {
+      prisma.user.count.mockResolvedValue(0);
+      prisma.user.findMany.mockResolvedValue([]);
+
+      await service.findMany(
+        { deleted: true, status: 'active', role: Role.member, position: Position.president },
+        actor({ role: Role.mosque_admin }),
+      );
+
+      expect(whereOf(prisma.user.findMany).deletedAt).toBeNull();
+    });
+
+    it('mosque isolation still works with deleted filter', async () => {
+      prisma.user.count.mockResolvedValue(0);
+      prisma.user.findMany.mockResolvedValue([]);
+
+      // A super admin with platform.manage has no mosque scope, but a mosque_admin does.
+      // Even though the deleted flag is ignored for mosque_admin, the mosque scope survives.
+      await service.findMany({}, actor({ role: Role.mosque_admin }));
+
+      expect(whereOf(prisma.user.findMany).mosqueId).toBe(MOSQUE_ID);
+    });
+
+    it('normal users query remains unchanged without deleted param', async () => {
+      prisma.user.count.mockResolvedValue(1);
+      prisma.user.findMany.mockResolvedValue([userRow()]);
+
+      await service.findMany({}, actor({ role: Role.mosque_admin }));
+
+      const where = whereOf(prisma.user.findMany);
+      expect(where.deletedAt).toBeNull();
+      expect(where.mosqueId).toBe(MOSQUE_ID);
+      expect(argsOf(prisma.user.findMany).select).toBe(USER_SELECT);
     });
   });
 

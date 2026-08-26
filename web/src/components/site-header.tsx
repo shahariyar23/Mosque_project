@@ -20,7 +20,7 @@ const links = [
 export function SiteHeader() {
   const [open, setOpen] = useState(false);
   const { language, setLanguage } = useLanguage();
-  const { session } = useAuth();
+  const { session, loading } = useAuth();
   const [scrolled, setScrolled] = useState(false);
   const [hidden, setHidden] = useState(false);
   const prevY = useRef(0);
@@ -168,7 +168,9 @@ export function SiteHeader() {
             {language === "bn" ? "English" : "বাংলা"}
           </button>
           
-          {session ? (
+          {loading ? (
+            <SessionPlaceholder />
+          ) : session ? (
             <div className="nav-user-menu">
               <UserMenu />
             </div>
@@ -190,7 +192,7 @@ export function SiteHeader() {
         </div>
 
         <div className="flex items-center gap-4 lg:hidden">
-          {session && <UserMenu />}
+          {loading ? <SessionPlaceholder compact /> : session ? <UserMenu /> : null}
           <button
             onClick={() => setOpen((value) => !value)}
             className="grid h-10 w-10 place-items-center border border-white/40 text-xl"
@@ -225,7 +227,7 @@ export function SiteHeader() {
             {language === "bn" ? "English" : "বাংলা"}
           </button>
           
-          {!session && (
+          {!loading && !session && (
             <>
               <Link
                 href="/signup"
@@ -245,5 +247,28 @@ export function SiteHeader() {
         </div>
       </div>
     </header>
+  );
+}
+
+/**
+ * Stands in for the account control while the session is being recovered.
+ *
+ * The signed-out state and the not-yet-known state are different, and the header is where showing them as
+ * the same thing is most visible: a reload holds no access token, so rendering "Sign In / Sign Up" during
+ * the recovery call announces to a signed-in visitor that they have been logged out, then replaces it a
+ * moment later. A placeholder of roughly the avatar's size says "checking" and holds the space still.
+ */
+function SessionPlaceholder({ compact = false }: { compact?: boolean }) {
+  return (
+    <div className="flex items-center gap-2" role="status" aria-live="polite">
+      <span className="h-8 w-8 animate-pulse rounded-full bg-white/15" aria-hidden="true" />
+      {!compact && (
+        <span
+          className="hidden h-3 w-16 animate-pulse rounded bg-white/10 lg:block"
+          aria-hidden="true"
+        />
+      )}
+      <span className="sr-only">Checking your session…</span>
+    </div>
   );
 }

@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { SiteFooter } from "@/components/site-footer";
 import { SiteHeader } from "@/components/site-header";
 import { SignupPage } from "@/components/signup/signup-page";
+import { RequireGuest } from "@/components/auth/route-guards";
 
 export const metadata: Metadata = {
   title: "Create Your Account | Noor Community Mosque",
@@ -17,10 +18,12 @@ export const metadata: Metadata = {
 
 export default function Signup() {
   return (
-    <main>
-      <SiteHeader />
-      <SignupPage />
-      <SiteFooter />
-    </main>
+    <RequireGuest>
+      <main>
+        <SiteHeader />
+        <SignupPage />
+        <SiteFooter />
+      </main>
+    </RequireGuest>
   );
 }

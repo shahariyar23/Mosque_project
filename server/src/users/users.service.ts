@@ -29,6 +29,7 @@ import { DeletedUserDto, UserListMetaDto, UserResponseDto } from './dto/user-res
 import {
   DEFAULT_USER_PAGE_SIZE,
   USER_SELECT,
+  USER_SELECT_WITH_DELETED,
   isActiveFor,
   type SelectedUser,
 } from './types/user.types';
@@ -155,6 +156,8 @@ export class UsersService {
     const page = Math.max(1, query.page ?? 1);
     const limit = Math.min(Math.max(1, query.limit ?? DEFAULT_USER_PAGE_SIZE), MAX_PAGE_SIZE);
     const where = this.buildWhere(query, actor);
+    const showDeleted = this.canViewDeleted(query, actor);
+    const select = showDeleted ? USER_SELECT_WITH_DELETED : USER_SELECT;
 
     // One transaction so the count and the page describe the same set of rows. Counting separately
     // means a concurrent insert can produce a total that does not match the rows returned.
@@ -162,7 +165,7 @@ export class UsersService {
       this.prisma.user.count({ where }),
       this.prisma.user.findMany({
         where,
-        select: USER_SELECT,
+        select,
         // `id` breaks ties so a row cannot appear on two pages, or on none, when several users share
         // a creation timestamp — which seeding and bulk import both produce.
         orderBy: [{ createdAt: 'desc' }, { id: 'asc' }],
@@ -654,8 +657,10 @@ export class UsersService {
     const search = query.search?.trim();
 
     return {
-      // Soft-deleted users are gone as far as every read is concerned.
-      deletedAt: null,
+      // Permission-gated soft-delete filter: only actors with `user.viewDeleted` who explicitly
+      // request `deleted=true` see soft-deleted accounts. Everyone else unconditionally sees
+      // `deletedAt: null`.
+      ...this.deletedFilter(query, actor),
       ...this.mosqueScope(actor),
       ...(query.status ? { isActive: isActiveFor(query.status) } : {}),
       // An exact match on an indexed column — `@@index([mosqueId, role])` — not a text comparison.
@@ -675,6 +680,30 @@ export class UsersService {
           }
         : {}),
     };
+  }
+
+  /**
+   * Whether the actor is both asking for deleted users and authorised to see them.
+   *
+   * Read from `effectivePermissions` so a suspended super admin is refused, and so a `user.viewDeleted`
+   * denial on an individual account works without anyone having to remember this method exists.
+   */
+  private canViewDeleted(query: UserQueryDto, actor: AuthenticatedUser): boolean {
+    return query.deleted === true && hasPermission(effectivePermissions(actor), 'user.viewDeleted');
+  }
+
+  /**
+   * The Prisma `deletedAt` condition to spread into a `where` clause.
+   *
+   * When the actor holds `user.viewDeleted` and explicitly asks for deleted users, the filter flips
+   * to `{ not: null }` — returning only soft-deleted rows. In every other case the filter is
+   * `{ deletedAt: null }`, which is the same hardcoded default the service had before this feature.
+   */
+  private deletedFilter(
+    query: UserQueryDto,
+    actor: AuthenticatedUser,
+  ): { deletedAt: null } | { deletedAt: { not: null } } {
+    return this.canViewDeleted(query, actor) ? { deletedAt: { not: null } } : { deletedAt: null };
   }
 
   /**

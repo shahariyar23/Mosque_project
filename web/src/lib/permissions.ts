@@ -49,6 +49,7 @@ export const PERMISSION_GROUPS = {
   mosque: ["mosque.view", "mosque.manage", "settings.view", "settings.manage"],
   access: [
     "user.view",
+    "user.viewDeleted",
     "user.manage",
     "role.assign",
     "permission.assign",
@@ -156,7 +157,7 @@ export const BASE_PERMISSIONS: Permission[] = [...PERMISSION_GROUPS.base];
  * it is computed below rather than typed out — a permission added later cannot be silently missed
  * (spec 0001, AC-3).
  */
-export const PLATFORM_ONLY: Permission[] = ["platform.manage", "mosque.create", "workflow.selfApprove"];
+export const PLATFORM_ONLY: Permission[] = ["platform.manage", "mosque.create", "user.viewDeleted", "workflow.selfApprove"];
 
 /* -------------------------------------------------------------------------- *
  * Roles

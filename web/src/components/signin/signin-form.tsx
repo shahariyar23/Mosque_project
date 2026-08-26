@@ -83,8 +83,10 @@ export function SigninForm() {
 
     setStatus("submitting");
     try {
-      const { token } = await loginUser(toSigninPayload(values));
-      login(token);
+      // The login response already carries the profile, so passing it straight through saves a follow-up
+      // request to `/auth/me`.
+      const { token, session } = await loginUser(toSigninPayload(values));
+      login(token, session);
       setStatus("success");
     } catch {
       setStatus("idle");

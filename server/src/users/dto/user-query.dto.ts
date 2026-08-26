@@ -1,7 +1,17 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { Position, Role } from '@prisma/client';
 import { Type } from 'class-transformer';
-import { IsEnum, IsIn, IsInt, IsOptional, IsString, Max, MaxLength, Min } from 'class-validator';
+import {
+  IsBoolean,
+  IsEnum,
+  IsIn,
+  IsInt,
+  IsOptional,
+  IsString,
+  Max,
+  MaxLength,
+  Min,
+} from 'class-validator';
 
 import { MAX_PAGE_SIZE } from '../../common/pagination/page';
 import { DEFAULT_USER_PAGE_SIZE, USER_STATUSES, type UserStatus } from '../types/user.types';
@@ -82,4 +92,15 @@ export class UserQueryDto {
   @IsOptional()
   @IsEnum(Position, { message: `position must be one of: ${Object.values(Position).join(', ')}` })
   position?: Position;
+
+  @ApiPropertyOptional({
+    description:
+      'When true, returns only soft-deleted users. Requires `user.viewDeleted`. ' +
+      'Silently ignored when the authenticated actor does not hold the permission.',
+    default: false,
+  })
+  @IsOptional()
+  @Type(() => Boolean)
+  @IsBoolean()
+  deleted?: boolean;
 }

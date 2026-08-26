@@ -118,7 +118,9 @@ export class UsersController {
     summary: 'List users.',
     description:
       'Requires `user.view`. Paginated, newest first, capped at 100 rows per page. Soft-deleted ' +
-      'accounts are never listed. `search` matches name, email and phone; `status` filters on ' +
+      'accounts are excluded by default. Pass `deleted=true` to list only soft-deleted accounts; ' +
+      'this requires the `user.viewDeleted` permission and is silently ignored without it. ' +
+      '`search` matches name, email and phone; `status` filters on ' +
       '`isActive`; `role` matches the single role an account holds; `position` matches anyone whose ' +
       'committee posts include the one named. This is also the Members list — a member is a user.',
   })

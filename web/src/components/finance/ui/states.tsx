@@ -87,7 +87,7 @@ export function InlineNotice({
   className = "",
 }: {
   icon?: IconName;
-  tone?: "info" | "gold" | "neutral";
+  tone?: "info" | "gold" | "neutral" | "danger";
   children: ReactNode;
   className?: string;
 }) {
@@ -95,6 +95,7 @@ export function InlineNotice({
     info: "border-[#c5dae2] bg-[#ebf2f5] text-[#1d5265]",
     gold: "border-[#e3ce9d] bg-[#f7f0df] text-[#7d5f18]",
     neutral: "border-[#dcdacd] bg-[#f6f5ee] text-[#4d564f]",
+    danger: "border-[#ebc8c4] bg-[#fbeceb] text-[#a13228]",
   } as const;
   return (
     <div className={`flex items-start gap-2.5 rounded-lg border px-3.5 py-3 text-[13px] leading-6 ${tones[tone]} ${className}`}>

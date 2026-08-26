@@ -44,8 +44,22 @@ export const USER_SELECT = {
   updatedAt: true,
 } satisfies Prisma.UserSelect;
 
+/**
+ * `USER_SELECT` plus `deletedAt`. Used only when an actor with `user.viewDeleted` requests the
+ * soft-deleted user list, so the response can include the deletion timestamp.
+ */
+export const USER_SELECT_WITH_DELETED = {
+  ...USER_SELECT,
+  deletedAt: true,
+} satisfies Prisma.UserSelect;
+
 /** What Prisma hands back for `USER_SELECT`, derived so the two cannot drift apart. */
 export type SelectedUser = Prisma.UserGetPayload<{ select: typeof USER_SELECT }>;
+
+/** What Prisma hands back for `USER_SELECT_WITH_DELETED`. */
+export type SelectedUserWithDeleted = Prisma.UserGetPayload<{
+  select: typeof USER_SELECT_WITH_DELETED;
+}>;
 
 /**
  * The status vocabulary the API accepts, mapped onto `User.isActive`.
