@@ -88,12 +88,66 @@ export function MembershipTierBadge({ tier }: { tier: MembershipTier }) {
   );
 }
 
-export function VolunteerStatusBadge({ status }: { status: VolunteerStatus }) {
-  return <Badge tone={volunteerStatusTone[status]}>{status}</Badge>;
+const volunteerStatusLabels: Record<string, string> = {
+  active: "Active",
+  inactive: "Inactive",
+  on_leave: "On Leave",
+  Active: "Active",
+  Inactive: "Inactive",
+  "On Leave": "On Leave",
+};
+
+export function VolunteerStatusBadge({ status }: { status: any }) {
+  const tone = volunteerStatusTone[status] ?? "neutral";
+  const label = volunteerStatusLabels[status] ?? status;
+  return <Badge tone={tone}>{label}</Badge>;
 }
 
-export function AvailabilityBadge({ availability }: { availability: VolunteerAvailability }) {
-  return <Badge tone={volunteerAvailabilityTone[availability]}>{availability}</Badge>;
+export function AvailabilityBadge({ availability }: { availability?: string | null }) {
+  if (!availability || availability.trim() === "" || availability.toLowerCase() === "unknown") {
+    return (
+      <span className="inline-flex items-center gap-1.5 rounded-full border border-[#e5e4dc] bg-[#f8f7f2] px-2.5 py-0.5 text-[11px] font-medium text-[#7a817b]">
+        <span aria-hidden="true" className="h-1.5 w-1.5 rounded-full bg-[#b5b4a8]" />
+        Flexible
+      </span>
+    );
+  }
+
+  const text = availability.trim();
+  const lower = text.toLowerCase();
+
+  const isWeekendOrJumuah =
+    lower.includes("weekend") ||
+    lower.includes("jumuah") ||
+    lower.includes("friday") ||
+    lower.includes("sat") ||
+    lower.includes("sun");
+
+  const isEvening =
+    lower.includes("evening") ||
+    lower.includes("night") ||
+    lower.includes("asr") ||
+    lower.includes("maghrib");
+
+  const badgeClass = isWeekendOrJumuah
+    ? "border-[#c3e6cb] bg-[#eef8f2] text-[#0f5132]"
+    : isEvening
+      ? "border-[#ffeeba] bg-[#fff9e6] text-[#856404]"
+      : "border-[#bee5eb] bg-[#eaf7f9] text-[#0c5460]";
+
+  return (
+    <span className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-[11.5px] font-semibold tracking-tight whitespace-nowrap shadow-xs ${badgeClass}`}>
+      <svg className="h-3 w-3 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          strokeWidth={2}
+          d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"
+        />
+      </svg>
+      <span>{text}</span>
+    </span>
+  );
 }
 
 export function EventStatusBadge({ status }: { status: EventStatus }) {
