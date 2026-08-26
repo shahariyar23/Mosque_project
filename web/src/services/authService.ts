@@ -1,3 +1,4 @@
+"use client";
 import type { SigninPayload } from "@/components/signin/signin-validation";
 import type { SignupPayload } from "@/components/signup/signup-validation";
 
@@ -33,25 +34,46 @@ export type SignedInUser = {
 
 const SIMULATED_LATENCY_MS = 1200;
 
-export async function registerUser(
-  payload: SignupPayload,
-): Promise<RegisteredUser> {
-  await new Promise((resolve) => setTimeout(resolve, SIMULATED_LATENCY_MS));
-
+export const registerUser = async (payload: SignupPayload): Promise<RegisteredUser> => {
+  const baseUrl = process.env.NEXT_PUBLIC_API_URL;
+  const url = `${baseUrl}/api/v1/auth/register`;
+  const response = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+    credentials: "include",
+  });
+  if (!response.ok) {
+    const errMsg = await response.text();
+    throw new Error(errMsg || "REGISTRATION_FAILED");
+  }
+  const data = await response.json();
   return {
-    id: "pending-backend",
-    fullName: payload.fullName,
-    email: payload.email,
+    id: data.id,
+    fullName: data.fullName,
+    email: data.email,
   };
-}
+};
 
-export async function loginUser(payload: SigninPayload): Promise<SignedInUser> {
-  await new Promise((resolve) => setTimeout(resolve, SIMULATED_LATENCY_MS));
-
-  // Credentials cannot be checked without the API, so this resolves optimistically.
-  // The real endpoint should throw on a 401 so the form shows its credentials error.
+export const loginUser = async (payload: SigninPayload): Promise<{ token: string; user: SignedInUser }> => {
+  const baseUrl = process.env.NEXT_PUBLIC_API_URL;
+  const url = `${baseUrl}/api/v1/auth/login`;
+  const response = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+    credentials: "include",
+  });
+  if (!response.ok) {
+    const errMsg = await response.text();
+    throw new Error(errMsg || "LOGIN_FAILED");
+  }
+  const data = await response.json();
   return {
-    id: "pending-backend",
-    identifier: payload.email ?? payload.phone ?? "",
+    token: data.accessToken,
+    user: {
+      id: data.user?.id ?? "",
+      identifier: payload.email ?? payload.phone ?? "",
+    },
   };
-}
+};

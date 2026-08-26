@@ -123,7 +123,8 @@ export class CreateBudgetDto {
   status?: BudgetStatus;
 
   @ApiPropertyOptional({
-    description: 'Anything the mosque wants on the record — how the figure was arrived at. Internal.',
+    description:
+      'Anything the mosque wants on the record — how the figure was arrived at. Internal.',
     maxLength: 2000,
     nullable: true,
   })

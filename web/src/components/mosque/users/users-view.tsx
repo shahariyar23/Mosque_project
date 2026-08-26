@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
 import { Badge } from "@/components/finance/ui/badge";
 import { Button, IconButton } from "@/components/finance/ui/button";
 import { DataTable, type Column } from "@/components/finance/ui/data-table";
@@ -18,7 +18,10 @@ import { StatGrid } from "@/components/ui/stat-card";
 import { RoleBadge } from "@/components/ui/status-badge";
 import { useToast } from "@/components/ui/toast";
 import { adminUsers as seedUsers, userStats } from "@/data/users";
+import { useAuth } from "@/components/auth-provider";
+import { fetchUsers } from "@/services/userService";
 import { groupPermissions } from "@/lib/mosque/access";
+import { SpinnerIcon } from "@/components/signup/icons";
 import { downloadCsv } from "@/lib/mosque/export";
 import { formatCount, formatLongDate, REFERENCE_DATE } from "@/lib/mosque/format";
 import type { AdminUser, AdminUserDraft, StatMetric } from "@/lib/mosque/types";
@@ -177,14 +180,33 @@ function EffectivePermissions({ user }: { user: AdminUser }) {
 
 export function UsersView({ openAddOnMount = false }: { openAddOnMount?: boolean }) {
   const { notify } = useToast();
-  const [userList, setUserList] = useState<AdminUser[]>(seedUsers);
+const { token } = useAuth();
+  const [userList, setUserList] = useState<AdminUser[]>([]);
   const [search, setSearch] = useState("");
   const [role, setRole] = useState("all");
   const [status, setStatus] = useState("all");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [adding, setAdding] = useState(openAddOnMount);
   const [editing, setEditing] = useState<AdminUser | null>(null);
+const [loading, setLoading] = useState(false);
+const [error, setError] = useState<string | null>(null);
   const [suspendTarget, setSuspendTarget] = useState<AdminUser | null>(null);
+
+useEffect(() => {
+  const loadUsers = async () => {
+    setLoading(true);
+    try {
+      const data = await fetchUsers(token);
+      setUserList(data);
+    } catch (e) {
+      console.error(e);
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setLoading(false);
+    }
+  };
+  loadUsers();
+}, []);
 
   // Look the selection up by id every render so the drawer reflects an edit made behind it.
   const selected = selectedId ? (userList.find((user) => user.id === selectedId) ?? null) : null;
@@ -350,7 +372,19 @@ export function UsersView({ openAddOnMount = false }: { openAddOnMount?: boolean
     },
   ];
 
+if (loading) {
   return (
+    <div className="flex items-center justify-center min-h-[200px]">
+      <SpinnerIcon className="h-6 w-6 animate-spin" />
+    </div>
+  );
+}
+if (error) {
+  return (
+    <InlineNotice tone="danger" icon="alert" description={error} />
+  );
+}
+return (
     <div className="space-y-4">
       <StatGrid metrics={metrics} />
 

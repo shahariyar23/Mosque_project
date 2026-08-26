@@ -12,7 +12,10 @@ import * as argon2 from 'argon2';
 import { MAX_PAGE_SIZE } from '../common/pagination/page';
 import type { AuthenticatedUser } from '../common/types/authenticated-user';
 import { PrismaService } from '../prisma/prisma.service';
+import { AuditLogService } from '../audit/audit-log.service';
+import type { AuditEntry } from '../audit/types/audit-log.types';
 import { CreateUserDto } from './dto/create-user.dto';
+import type { UserQueryDto } from './dto/user-query.dto';
 import { USER_SELECT, type SelectedUser } from './types/user.types';
 import { UsersService } from './users.service';
 
@@ -38,6 +41,7 @@ const PLAINTEXT = 'Str0ngPassphrase!';
 const MOSQUE_ID = '3f1a7c2e-9b4d-4f6a-8c11-2d5e7a9b0c31';
 const USER_ID = '9c8b7a65-4321-4f6a-8c11-2d5e7a9b0c31';
 const OTHER_ID = '5e4d3c2b-1a09-4f6a-8c11-2d5e7a9b0c31';
+const OTHER_MOSQUE = 'f47ac10b-58cc-4372-a567-0e02b2c3d479';
 
 const hashMock = argon2.hash as unknown as jest.Mock;
 
@@ -137,9 +141,16 @@ function knownRequestError(code: string, target?: string[]): Prisma.PrismaClient
   });
 }
 
+/** The audit entry a call produced, so a test can read what was recorded without reaching into Prisma. */
+function recorded(audit: { record: jest.Mock }): AuditEntry {
+  expect(audit.record).toHaveBeenCalled();
+  return audit.record.mock.calls[audit.record.mock.calls.length - 1][0] as AuditEntry;
+}
+
 describe('UsersService', () => {
   let service: UsersService;
   let prisma: PrismaMock;
+  let audit: { record: jest.Mock };
 
   beforeEach(async () => {
     prisma = {
@@ -158,10 +169,17 @@ describe('UsersService', () => {
       $transaction: jest.fn((operations: Promise<unknown>[]) => Promise.all(operations)),
     };
 
+    // The real one swallows its own failures, so a mock that resolves is the honest stand-in.
+    audit = { record: jest.fn().mockResolvedValue(undefined) };
+
     hashMock.mockClear();
 
     const moduleRef = await Test.createTestingModule({
-      providers: [UsersService, { provide: PrismaService, useValue: prisma }],
+      providers: [
+        UsersService,
+        { provide: PrismaService, useValue: prisma },
+        { provide: AuditLogService, useValue: audit },
+      ],
     }).compile();
 
     service = moduleRef.get(UsersService);
@@ -276,7 +294,7 @@ describe('UsersService', () => {
     it('returns the user, read through USER_SELECT', async () => {
       prisma.user.findFirst.mockResolvedValue(userRow());
 
-      const result = await service.findOne(USER_ID);
+      const result = await service.findOne(USER_ID, actor());
 
       expect(result.id).toBe(USER_ID);
       expect(result.email).toBe('karim@noor.example');
@@ -286,14 +304,14 @@ describe('UsersService', () => {
     it('does not see a soft-deleted account', async () => {
       prisma.user.findFirst.mockResolvedValue(null);
 
-      await expect(service.findOne(USER_ID)).rejects.toBeInstanceOf(NotFoundException);
+      await expect(service.findOne(USER_ID, actor())).rejects.toBeInstanceOf(NotFoundException);
       expect(whereOf(prisma.user.findFirst)).toMatchObject({ id: USER_ID, deletedAt: null });
     });
 
     it('reports a missing user as USER_NOT_FOUND', async () => {
       prisma.user.findFirst.mockResolvedValue(null);
 
-      await expect(service.findOne(USER_ID)).rejects.toMatchObject({
+      await expect(service.findOne(USER_ID, actor())).rejects.toMatchObject({
         response: { code: 'USER_NOT_FOUND' },
       });
     });
@@ -301,7 +319,7 @@ describe('UsersService', () => {
     it('serialises a date of birth as a calendar date and timestamps as instants', async () => {
       prisma.user.findFirst.mockResolvedValue(userRow());
 
-      const result = await service.findOne(USER_ID);
+      const result = await service.findOne(USER_ID, actor());
 
       expect(result.dateOfBirth).toBe('1990-04-17');
       expect(result.createdAt).toBe('2026-01-15T10:00:00.000Z');
@@ -313,7 +331,7 @@ describe('UsersService', () => {
       prisma.user.count.mockResolvedValue(42);
       prisma.user.findMany.mockResolvedValue([userRow()]);
 
-      const { rows, meta } = await service.findMany({});
+      const { rows, meta } = await service.findMany({}, actor());
 
       expect(meta).toEqual({ page: 1, limit: 20, total: 42, totalPages: 3 });
       expect(rows).toHaveLength(1);
@@ -324,7 +342,7 @@ describe('UsersService', () => {
       prisma.user.count.mockResolvedValue(42);
       prisma.user.findMany.mockResolvedValue([]);
 
-      const { meta } = await service.findMany({ page: 3, limit: 5 });
+      const { meta } = await service.findMany({ page: 3, limit: 5 }, actor());
 
       expect(meta).toEqual({ page: 3, limit: 5, total: 42, totalPages: 9 });
       expect(argsOf(prisma.user.findMany)).toMatchObject({ skip: 10, take: 5 });
@@ -334,7 +352,7 @@ describe('UsersService', () => {
       prisma.user.count.mockResolvedValue(5000);
       prisma.user.findMany.mockResolvedValue([]);
 
-      const { meta } = await service.findMany({ limit: 5000 });
+      const { meta } = await service.findMany({ limit: 5000 }, actor());
 
       expect(meta.limit).toBe(MAX_PAGE_SIZE);
       expect(argsOf(prisma.user.findMany).take).toBe(MAX_PAGE_SIZE);
@@ -344,7 +362,7 @@ describe('UsersService', () => {
       prisma.user.count.mockResolvedValue(0);
       prisma.user.findMany.mockResolvedValue([]);
 
-      const { rows, meta } = await service.findMany({});
+      const { rows, meta } = await service.findMany({}, actor());
 
       expect(rows).toEqual([]);
       expect(meta).toEqual({ page: 1, limit: 20, total: 0, totalPages: 0 });
@@ -354,7 +372,7 @@ describe('UsersService', () => {
       prisma.user.count.mockResolvedValue(1);
       prisma.user.findMany.mockResolvedValue([userRow()]);
 
-      await service.findMany({});
+      await service.findMany({}, actor());
 
       expect(prisma.$transaction).toHaveBeenCalledTimes(1);
       expect(whereOf(prisma.user.count)).toEqual(whereOf(prisma.user.findMany));
@@ -364,7 +382,7 @@ describe('UsersService', () => {
       prisma.user.count.mockResolvedValue(1);
       prisma.user.findMany.mockResolvedValue([userRow()]);
 
-      await service.findMany({ search: '  karim  ' });
+      await service.findMany({ search: '  karim  ' }, actor());
 
       const where = whereOf(prisma.user.findMany);
       expect(where.deletedAt).toBeNull();
@@ -379,13 +397,13 @@ describe('UsersService', () => {
       prisma.user.count.mockResolvedValue(0);
       prisma.user.findMany.mockResolvedValue([]);
 
-      await service.findMany({ status: 'inactive' });
+      await service.findMany({ status: 'inactive' }, actor());
       expect(whereOf(prisma.user.findMany).isActive).toBe(false);
 
-      await service.findMany({ status: 'active' });
+      await service.findMany({ status: 'active' }, actor());
       expect(whereOf(prisma.user.findMany).isActive).toBe(true);
 
-      await service.findMany({});
+      await service.findMany({}, actor());
       expect(whereOf(prisma.user.findMany)).not.toHaveProperty('isActive');
     });
 
@@ -393,13 +411,13 @@ describe('UsersService', () => {
       prisma.user.count.mockResolvedValue(1);
       prisma.user.findMany.mockResolvedValue([userRow({ role: Role.treasurer })]);
 
-      await service.findMany({ role: Role.treasurer });
+      await service.findMany({ role: Role.treasurer }, actor());
 
       // Not a `contains`: a role is one of seven known values, and `@@index([mosqueId, role])` is
       // there to be used.
       expect(whereOf(prisma.user.findMany).role).toBe(Role.treasurer);
 
-      await service.findMany({});
+      await service.findMany({}, actor());
       expect(whereOf(prisma.user.findMany)).not.toHaveProperty('role');
     });
 
@@ -409,13 +427,13 @@ describe('UsersService', () => {
         userRow({ positions: [Position.treasurer, Position.cashier] }),
       ]);
 
-      await service.findMany({ position: Position.cashier });
+      await service.findMany({ position: Position.cashier }, actor());
 
       // `positions` is a scalar list. An equality filter would only match somebody whose *only* post
       // is cashier, which would hide every person holding two — and holding two is normal here.
       expect(whereOf(prisma.user.findMany).positions).toEqual({ has: Position.cashier });
 
-      await service.findMany({});
+      await service.findMany({}, actor());
       expect(whereOf(prisma.user.findMany)).not.toHaveProperty('positions');
     });
 
@@ -423,12 +441,15 @@ describe('UsersService', () => {
       prisma.user.count.mockResolvedValue(0);
       prisma.user.findMany.mockResolvedValue([]);
 
-      await service.findMany({
-        search: 'rahim',
-        status: 'active',
-        role: Role.member,
-        position: Position.president,
-      });
+      await service.findMany(
+        {
+          search: 'rahim',
+          status: 'active',
+          role: Role.member,
+          position: Position.president,
+        },
+        actor(),
+      );
 
       // The case §6 describes: Rahim, role `member`, position `president`. Every filter narrows the
       // same `where` rather than replacing it, and the soft-delete condition survives all of them.
@@ -445,7 +466,7 @@ describe('UsersService', () => {
       prisma.user.count.mockResolvedValue(0);
       prisma.user.findMany.mockResolvedValue([]);
 
-      await service.findMany({});
+      await service.findMany({}, actor());
 
       expect(argsOf(prisma.user.findMany).orderBy).toEqual([{ createdAt: 'desc' }, { id: 'asc' }]);
     });
@@ -623,7 +644,7 @@ describe('UsersService', () => {
     it('suspends an account by clearing isActive, and changes nothing else', async () => {
       prisma.user.update.mockResolvedValue(userRow({ isActive: false }));
 
-      const result = await service.setStatus(USER_ID, { status: 'inactive' });
+      const result = await service.setStatus(USER_ID, { status: 'inactive' }, actor());
 
       expect(dataOf(prisma.user.update)).toEqual({ isActive: false });
       expect(result.isActive).toBe(false);
@@ -633,7 +654,7 @@ describe('UsersService', () => {
     it('reactivates an account', async () => {
       prisma.user.update.mockResolvedValue(userRow({ isActive: true }));
 
-      const result = await service.setStatus(USER_ID, { status: 'active' });
+      const result = await service.setStatus(USER_ID, { status: 'active' }, actor());
 
       expect(dataOf(prisma.user.update)).toEqual({ isActive: true });
       expect(result.status).toBe('active');
@@ -642,9 +663,11 @@ describe('UsersService', () => {
     it('reports a missing user rather than creating one', async () => {
       prisma.user.findFirst.mockResolvedValue(null);
 
-      await expect(service.setStatus(USER_ID, { status: 'active' })).rejects.toMatchObject({
-        response: { code: 'USER_NOT_FOUND' },
-      });
+      await expect(service.setStatus(USER_ID, { status: 'active' }, actor())).rejects.toMatchObject(
+        {
+          response: { code: 'USER_NOT_FOUND' },
+        },
+      );
 
       expect(prisma.user.update).not.toHaveBeenCalled();
     });
@@ -988,7 +1011,7 @@ describe('UsersService', () => {
     });
 
     it('marks the row instead of deleting it, and deactivates the account', async () => {
-      const result = await service.remove(USER_ID);
+      const result = await service.remove(USER_ID, actor());
 
       const data = dataOf(prisma.user.update);
       expect(data.deletedAt).toBeInstanceOf(Date);
@@ -997,7 +1020,7 @@ describe('UsersService', () => {
     });
 
     it('revokes the account’s live sessions in the same transaction', async () => {
-      await service.remove(USER_ID);
+      await service.remove(USER_ID, actor());
 
       expect(prisma.$transaction).toHaveBeenCalledTimes(1);
       expect(argsOf(prisma.refreshToken.updateMany)).toMatchObject({
@@ -1008,12 +1031,540 @@ describe('UsersService', () => {
     it('treats a second delete as a missing user', async () => {
       prisma.user.findFirst.mockResolvedValue(null);
 
-      await expect(service.remove(USER_ID)).rejects.toMatchObject({
+      await expect(service.remove(USER_ID, actor())).rejects.toMatchObject({
         response: { code: 'USER_NOT_FOUND' },
       });
 
       expect(prisma.user.update).not.toHaveBeenCalled();
       expect(prisma.refreshToken.updateMany).not.toHaveBeenCalled();
+    });
+  });
+
+  /**
+   * Nobody reaches another mosque.
+   *
+   * The filter is one private method, `mosqueScope`, spread into every `where` in the service — so what
+   * these cases check is that it is spread into *every* one. A read that forgot it would return another
+   * mosque's directory, and a write that forgot it would let a mosque admin suspend a stranger's
+   * treasurer. Both would pass every other test in this file.
+   */
+  describe('mosque isolation', () => {
+    /** A platform administrator, whose authority is granted rather than inferred from the role name. */
+    const platform = (over: Partial<AuthenticatedUser> = {}) =>
+      actor({ role: Role.super_admin, permissions: ['platform.manage'], ...over });
+
+    beforeEach(() => {
+      prisma.user.count.mockResolvedValue(1);
+      prisma.user.findFirst.mockResolvedValue(userRow());
+      prisma.user.update.mockResolvedValue(userRow());
+    });
+
+    it('scopes a single read to the caller’s mosque', async () => {
+      await service.findOne(USER_ID, actor());
+
+      expect(whereOf(prisma.user.findFirst)).toEqual({
+        id: USER_ID,
+        deletedAt: null,
+        mosqueId: MOSQUE_ID,
+      });
+    });
+
+    it('scopes the directory listing to the caller’s mosque', async () => {
+      await service.findMany({}, actor());
+
+      expect(whereOf(prisma.user.findMany)).toMatchObject({ mosqueId: MOSQUE_ID });
+      expect(whereOf(prisma.user.count)).toMatchObject({ mosqueId: MOSQUE_ID });
+    });
+
+    it('scopes the search, so a name at another mosque is not findable', async () => {
+      await service.findMany({ search: 'karim' }, actor());
+
+      const where = whereOf(prisma.user.findMany);
+      expect(where.mosqueId).toBe(MOSQUE_ID);
+      expect(where.OR).toBeDefined();
+    });
+
+    // Every write resolves its target through `load` or `loadForAssignment` first, and both scope. A
+    // write that read the row unscoped would be a write across mosques even with a perfect guard.
+    it('resolves the target of every write through the mosque filter', async () => {
+      prisma.user.findFirst.mockResolvedValue({
+        ...assignmentRow(),
+        mosqueId: MOSQUE_ID,
+        isActive: true,
+      });
+      prisma.refreshToken.updateMany.mockResolvedValue({ count: 0 });
+      prisma.user.update.mockResolvedValue(userRow());
+
+      const writes: Array<[string, () => Promise<unknown>]> = [
+        ['update', () => service.update(USER_ID, { city: 'Sylhet' }, actor())],
+        ['setStatus', () => service.setStatus(USER_ID, { status: 'inactive' }, actor())],
+        ['setRole', () => service.setRole(USER_ID, { role: Role.treasurer }, actor())],
+        ['setPermissions', () => service.setPermissions(USER_ID, { permissions: [] }, platform())],
+        ['setPositions', () => service.setPositions(USER_ID, { positions: [] }, actor())],
+        ['remove', () => service.remove(USER_ID, actor())],
+      ];
+
+      for (const [name, call] of writes) {
+        prisma.user.findFirst.mockClear();
+        await call();
+
+        expect(whereOf(prisma.user.findFirst)).toMatchObject({
+          id: USER_ID,
+          deletedAt: null,
+          // `setPermissions` above runs as a platform administrator, who is exempt by design.
+          ...(name === 'setPermissions' ? {} : { mosqueId: MOSQUE_ID }),
+        });
+      }
+    });
+
+    it('answers a target at another mosque as missing, not as forbidden', async () => {
+      // The scope is in the `where`, so a row at another mosque simply does not match. A 403 would
+      // confirm the account exists, which is the thing worth hiding.
+      prisma.user.findFirst.mockResolvedValue(null);
+
+      const attempts: Array<() => Promise<unknown>> = [
+        () => service.findOne(USER_ID, actor()),
+        () => service.update(USER_ID, { city: 'Sylhet' }, actor()),
+        () => service.setStatus(USER_ID, { status: 'inactive' }, actor()),
+        () => service.setRole(USER_ID, { role: Role.treasurer }, actor()),
+        () => service.setPermissions(USER_ID, { permissions: [] }, actor()),
+        () => service.setPositions(USER_ID, { positions: [] }, actor()),
+        () => service.remove(USER_ID, actor()),
+      ];
+
+      for (const attempt of attempts) {
+        await expect(attempt()).rejects.toMatchObject({ response: { code: 'USER_NOT_FOUND' } });
+      }
+
+      expect(prisma.user.update).not.toHaveBeenCalled();
+    });
+
+    it('lets a platform administrator read across mosques', async () => {
+      await service.findMany({}, platform());
+      expect(whereOf(prisma.user.findMany).mosqueId).toBeUndefined();
+
+      await service.findOne(USER_ID, platform());
+      expect(whereOf(prisma.user.findFirst).mosqueId).toBeUndefined();
+    });
+
+    it('confines a suspended platform administrator to their own mosque', async () => {
+      // `effectivePermissions` resolves an inactive account to nothing, so the exemption goes with the
+      // rest of their authority. The alternative — reading the role name — would leave a suspended
+      // super admin with the run of every mosque.
+      await service.findMany({}, platform({ isActive: false }));
+
+      expect(whereOf(prisma.user.findMany).mosqueId).toBe(MOSQUE_ID);
+    });
+
+    it('confines a platform administrator whose exemption has been denied', async () => {
+      await service.findMany({}, platform({ deniedPermissions: ['platform.manage'] }));
+
+      expect(whereOf(prisma.user.findMany).mosqueId).toBe(MOSQUE_ID);
+    });
+
+    it('refuses a create aimed at another mosque, before hashing or touching the database', async () => {
+      await expect(
+        service.create(createDto({ mosqueId: OTHER_MOSQUE }), actor()),
+      ).rejects.toMatchObject({ response: { code: 'CROSS_MOSQUE_DENIED' } });
+
+      // A 403 here, unlike the 404s above: the id came from the caller and `GET /mosques` lists them
+      // all, so there is no record left to conceal.
+      await expect(
+        service.create(createDto({ mosqueId: OTHER_MOSQUE }), actor()),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+
+      expect(hashMock).not.toHaveBeenCalled();
+      expect(prisma.mosque.findUnique).not.toHaveBeenCalled();
+      expect(prisma.user.create).not.toHaveBeenCalled();
+    });
+
+    it('lets a platform administrator create at another mosque', async () => {
+      prisma.user.create.mockResolvedValue(userRow({ mosqueId: OTHER_MOSQUE }));
+
+      await expect(
+        service.create(createDto({ mosqueId: OTHER_MOSQUE }), platform()),
+      ).resolves.toBeDefined();
+    });
+
+    it('lets a self-registration through, having no actor to check it against', async () => {
+      prisma.user.create.mockResolvedValue(userRow({ mosqueId: OTHER_MOSQUE }));
+
+      // `AuthService.register` resolved the mosque from a slug on the server, so there is no
+      // client-supplied id on that path for this rule to be protecting anything from.
+      await expect(service.create(createDto({ mosqueId: OTHER_MOSQUE }))).resolves.toBeDefined();
+    });
+
+    it('takes the mosque from the token, never from the query', async () => {
+      // `UserQueryDto` has no `mosqueId`, so this cannot arrive through the pipe. The cast is what a
+      // future property, or a caller inside the server, would look like.
+      await service.findMany({ mosqueId: OTHER_MOSQUE } as UserQueryDto, actor());
+
+      expect(whereOf(prisma.user.findMany).mosqueId).toBe(MOSQUE_ID);
+    });
+
+    it('files a cross-mosque action under the mosque where it happened', async () => {
+      prisma.user.findFirst.mockResolvedValue({
+        id: USER_ID,
+        mosqueId: OTHER_MOSQUE,
+        email: 'karim@noor.example',
+        role: Role.member,
+        isActive: true,
+      });
+
+      await service.setPositions(USER_ID, { positions: [Position.cashier] }, platform());
+
+      // The target's mosque, not the actor's. Filing it under the platform administrator's own mosque
+      // would hide the action from the very people it was done to.
+      expect(recorded(audit).mosqueId).toBe(OTHER_MOSQUE);
+    });
+  });
+
+  /**
+   * The platform keeps at least one active super admin.
+   *
+   * Three routes can cost the platform its last one, and the third is the one that gets forgotten:
+   * demoting them, suspending them — which leaves an account that still *says* `super_admin` and can do
+   * nothing — and deleting them. The guard is counted at the moment of the change rather than cached,
+   * because two administrators demoting each other simultaneously is the race it exists to lose safely.
+   */
+  describe('the last active super admin', () => {
+    const lastOne = {
+      id: USER_ID,
+      mosqueId: MOSQUE_ID,
+      email: 'owner@noor.example',
+      role: Role.super_admin,
+      isActive: true,
+    };
+
+    /** Only somebody holding platform authority can touch a super admin's role at all. */
+    const platform = () => actor({ role: Role.super_admin, permissions: ['platform.manage'] });
+
+    beforeEach(() => {
+      prisma.user.findFirst.mockResolvedValue(lastOne);
+      prisma.user.update.mockResolvedValue(userRow());
+      prisma.refreshToken.updateMany.mockResolvedValue({ count: 0 });
+      // Nobody else holds the role.
+      prisma.user.count.mockResolvedValue(0);
+    });
+
+    it('refuses to suspend them', async () => {
+      await expect(
+        service.setStatus(USER_ID, { status: 'inactive' }, actor()),
+      ).rejects.toMatchObject({ response: { code: 'LAST_SUPER_ADMIN' } });
+
+      expect(prisma.user.update).not.toHaveBeenCalled();
+    });
+
+    it('refuses to demote them', async () => {
+      await expect(
+        service.setRole(USER_ID, { role: Role.mosque_admin }, platform()),
+      ).rejects.toMatchObject({ response: { code: 'LAST_SUPER_ADMIN' } });
+
+      expect(prisma.user.update).not.toHaveBeenCalled();
+    });
+
+    it('refuses to delete them', async () => {
+      await expect(service.remove(USER_ID, actor())).rejects.toMatchObject({
+        response: { code: 'LAST_SUPER_ADMIN' },
+      });
+
+      expect(prisma.user.update).not.toHaveBeenCalled();
+      expect(prisma.refreshToken.updateMany).not.toHaveBeenCalled();
+    });
+
+    it('answers with a conflict rather than a refusal', async () => {
+      // The caller does hold the authority; the platform simply cannot be left in that state. A 403
+      // would send an administrator looking for a permission they already have.
+      await expect(service.remove(USER_ID, actor())).rejects.toBeInstanceOf(ConflictException);
+    });
+
+    it('says what to do about it, because this one is recoverable', async () => {
+      await expect(service.remove(USER_ID, actor())).rejects.toMatchObject({
+        response: { message: expect.stringContaining('Appoint another') },
+      });
+    });
+
+    it('records nothing for an action it refused', async () => {
+      await expect(service.remove(USER_ID, actor())).rejects.toThrow();
+
+      expect(audit.record).not.toHaveBeenCalled();
+    });
+
+    it('allows all three once another active super admin exists', async () => {
+      prisma.user.count.mockResolvedValue(1);
+
+      await expect(
+        service.setStatus(USER_ID, { status: 'inactive' }, actor()),
+      ).resolves.toBeDefined();
+      await expect(
+        service.setRole(USER_ID, { role: Role.mosque_admin }, platform()),
+      ).resolves.toBeDefined();
+      await expect(service.remove(USER_ID, actor())).resolves.toBeDefined();
+    });
+
+    it('counts platform-wide, excluding the target and the deleted', async () => {
+      await expect(service.remove(USER_ID, actor())).rejects.toThrow();
+
+      expect(whereOf(prisma.user.count)).toEqual({
+        role: Role.super_admin,
+        isActive: true,
+        deletedAt: null,
+        id: { not: USER_ID },
+      });
+      // Not narrowed to the caller's mosque: `super_admin` is a platform role, so the last one
+      // anywhere is the last one.
+      expect(whereOf(prisma.user.count)).not.toHaveProperty('mosqueId');
+    });
+
+    it('does not count when the target is not a super admin', async () => {
+      prisma.user.findFirst.mockResolvedValue({ ...lastOne, role: Role.treasurer });
+
+      await service.remove(USER_ID, actor());
+
+      expect(prisma.user.count).not.toHaveBeenCalled();
+    });
+
+    it('does not count when the target is already suspended', async () => {
+      // An inactive super admin is not holding the platform up, so removing them costs nothing.
+      prisma.user.findFirst.mockResolvedValue({ ...lastOne, isActive: false });
+
+      await service.remove(USER_ID, actor());
+
+      expect(prisma.user.count).not.toHaveBeenCalled();
+    });
+
+    it('does not stand in the way of reactivating them', async () => {
+      await expect(
+        service.setStatus(USER_ID, { status: 'active' }, actor()),
+      ).resolves.toBeDefined();
+
+      expect(prisma.user.count).not.toHaveBeenCalled();
+    });
+
+    it('does not stand in the way of appointing another one', async () => {
+      prisma.user.findFirst.mockResolvedValue({ ...lastOne, id: USER_ID, role: Role.mosque_admin });
+
+      await expect(
+        service.setRole(USER_ID, { role: Role.super_admin }, platform()),
+      ).resolves.toBeDefined();
+
+      // Only a change *away* from the role can cost the platform its last holder of it.
+      expect(prisma.user.count).not.toHaveBeenCalled();
+    });
+  });
+
+  /**
+   * What reaches the audit trail.
+   *
+   * Every administrative write in this service records one entry, after the write has committed and
+   * outside its transaction — so a trail that cannot be written never rolls back a legitimate change.
+   * Two properties are asserted for all of them: the entry names the *target's* mosque, and no entry
+   * anywhere carries a password or a hash.
+   */
+  describe('the audit trail', () => {
+    beforeEach(() => {
+      prisma.user.findFirst.mockResolvedValue({
+        id: USER_ID,
+        mosqueId: MOSQUE_ID,
+        email: 'karim@noor.example',
+        role: Role.member,
+        isActive: true,
+      });
+      prisma.user.create.mockResolvedValue(userRow());
+      prisma.user.update.mockResolvedValue(userRow());
+      prisma.refreshToken.updateMany.mockResolvedValue({ count: 0 });
+    });
+
+    it('records a new account, naming the administrator who made it', async () => {
+      await service.create(createDto(), actor());
+
+      expect(recorded(audit)).toEqual({
+        actorId: OTHER_ID,
+        // `AuthenticatedUser` carries no display name, so the email identifies the caller. A name in a
+        // signed token would record whatever it said when the token was issued.
+        actorName: 'admin@noor.example',
+        actorRole: Role.mosque_admin,
+        mosqueId: MOSQUE_ID,
+        action: 'USER_CREATED',
+        resource: 'user',
+        resourceId: USER_ID,
+        changes: {
+          fullName: 'Abdul Karim',
+          email: 'karim@noor.example',
+          phone: '+8801700000002',
+          isActive: true,
+        },
+      });
+    });
+
+    it('records a self-registration as its own actor, and says so', async () => {
+      await service.create(createDto());
+
+      // Truer than recording no actor at all: somebody did do this, and it was them.
+      expect(recorded(audit)).toMatchObject({
+        actorId: USER_ID,
+        actorName: 'karim@noor.example',
+        actorRole: Role.member,
+        action: 'USER_CREATED',
+        note: 'Self-registration.',
+      });
+    });
+
+    it('records a profile edit as only the fields that were sent', async () => {
+      await service.update(USER_ID, { city: 'Sylhet' }, actor());
+
+      // An absent field is not a change. Recording the whole profile every time would make each entry
+      // look like a rewrite and bury the one field that moved.
+      expect(recorded(audit)).toMatchObject({
+        action: 'USER_UPDATED',
+        resourceId: USER_ID,
+        changes: { city: 'Sylhet' },
+      });
+      expect(Object.keys(recorded(audit).changes ?? {})).toEqual(['city']);
+    });
+
+    it('marks a self-service edit as one', async () => {
+      await service.update(OTHER_ID, { city: 'Sylhet' }, actor());
+
+      expect(recorded(audit).note).toBe('Self-service profile edit.');
+    });
+
+    it('records the cleared verification when an address changes', async () => {
+      prisma.user.update.mockResolvedValue(userRow({ email: 'new@noor.example' }));
+
+      await service.update(USER_ID, { email: 'new@noor.example' }, actor());
+
+      expect(recorded(audit).changes).toEqual({
+        email: 'new@noor.example',
+        emailVerifiedAt: null,
+      });
+    });
+
+    it('records a status change as both sides of it', async () => {
+      await service.setStatus(USER_ID, { status: 'inactive' }, actor());
+
+      expect(recorded(audit)).toMatchObject({
+        action: 'USER_STATUS_CHANGED',
+        changes: { isActive: { from: true, to: false } },
+      });
+    });
+
+    it('records a role change as both sides of it', async () => {
+      await service.setRole(USER_ID, { role: Role.treasurer }, actor());
+
+      // The old role is the part a reviewer needs and the part the database no longer has.
+      expect(recorded(audit)).toMatchObject({
+        action: 'ROLE_ASSIGNED',
+        changes: { role: { from: Role.member, to: Role.treasurer } },
+      });
+    });
+
+    it('records a grant as the new list and what was added to it', async () => {
+      prisma.user.findFirst.mockResolvedValue({
+        ...assignmentRow(),
+        mosqueId: MOSQUE_ID,
+        isActive: true,
+      });
+
+      await service.setPermissions(
+        USER_ID,
+        { permissions: ['finance.manage'] },
+        actor({ role: Role.treasurer }),
+      );
+
+      expect(recorded(audit)).toMatchObject({
+        action: 'PERMISSION_CHANGED',
+        changes: { permissions: ['finance.manage'], added: ['finance.manage'], lifted: [] },
+      });
+    });
+
+    it('records a lifted denial as the denial that went', async () => {
+      prisma.user.findFirst.mockResolvedValue({
+        ...assignmentRow({ deniedPermissions: ['finance.manage'] }),
+        mosqueId: MOSQUE_ID,
+        isActive: true,
+      });
+
+      await service.setPermissions(
+        USER_ID,
+        { deniedPermissions: [] },
+        actor({ role: Role.treasurer }),
+      );
+
+      expect(recorded(audit).changes).toEqual({
+        deniedPermissions: [],
+        added: [],
+        lifted: ['finance.manage'],
+      });
+    });
+
+    it('records a change of posts', async () => {
+      await service.setPositions(USER_ID, { positions: [Position.cashier] }, actor());
+
+      expect(recorded(audit)).toMatchObject({
+        action: 'POSITIONS_ASSIGNED',
+        changes: { positions: [Position.cashier] },
+      });
+    });
+
+    it('records a soft delete, saying what else it did', async () => {
+      prisma.user.update.mockResolvedValue({ id: USER_ID, deletedAt: new Date() });
+
+      await service.remove(USER_ID, actor());
+
+      expect(recorded(audit)).toMatchObject({
+        action: 'USER_DELETED',
+        resourceId: USER_ID,
+        changes: { deletedAt: expect.any(String), isActive: false },
+        note: 'Soft delete; account deactivated and live sessions revoked.',
+      });
+    });
+
+    it('records nothing when the write was refused', async () => {
+      // The entry is written after the change commits, so a refusal leaves no trace of a change that
+      // did not happen. Why it was refused is in the application log, where it belongs.
+      await expect(service.setRole(USER_ID, { role: Role.super_admin }, actor())).rejects.toThrow();
+
+      expect(audit.record).not.toHaveBeenCalled();
+    });
+
+    it('records nothing when the target could not be found', async () => {
+      prisma.user.findFirst.mockResolvedValue(null);
+
+      await expect(service.setStatus(USER_ID, { status: 'active' }, actor())).rejects.toThrow();
+
+      expect(audit.record).not.toHaveBeenCalled();
+    });
+
+    it('files every entry against the user it concerned', async () => {
+      prisma.user.update.mockResolvedValue(userRow());
+
+      await service.create(createDto(), actor());
+      await service.update(USER_ID, { city: 'Sylhet' }, actor());
+      await service.setStatus(USER_ID, { status: 'inactive' }, actor());
+      await service.setPositions(USER_ID, { positions: [] }, actor());
+
+      const entries = audit.record.mock.calls.map((call) => call[0] as AuditEntry);
+      expect(entries).toHaveLength(4);
+
+      for (const entry of entries) {
+        expect(entry.resource).toBe('user');
+        expect(entry.resourceId).toBe(USER_ID);
+        expect(entry.mosqueId).toBe(MOSQUE_ID);
+      }
+    });
+
+    it('never names a password or a hash in anything it records', async () => {
+      await service.create(createDto(), actor());
+      await service.update(USER_ID, { fullName: 'Abdul Karim' }, actor());
+      await service.setStatus(USER_ID, { status: 'inactive' }, actor());
+
+      // The service names each recorded field by hand and `password` is not among them. The redaction
+      // in `AuditLogService` is the second line, not the first.
+      const written = JSON.stringify(audit.record.mock.calls);
+      expect(written).not.toContain(PLAINTEXT);
+      expect(written).not.toContain(HASHED);
+      expect(written).not.toContain('passwordHash');
     });
   });
 
@@ -1034,7 +1585,7 @@ describe('UsersService', () => {
         deletedAt: null,
       });
 
-      const result = await service.findOne(USER_ID);
+      const result = await service.findOne(USER_ID, actor());
       const keys = Object.keys(result);
 
       expect(keys).not.toContain('passwordHash');
@@ -1047,7 +1598,7 @@ describe('UsersService', () => {
     it('reads every user through the same allow-list', async () => {
       prisma.user.count.mockResolvedValue(1);
       prisma.user.findMany.mockResolvedValue([userRow()]);
-      await service.findMany({});
+      await service.findMany({}, actor());
       expect(argsOf(prisma.user.findMany).select).toBe(USER_SELECT);
 
       // `user.findMany` serves the list *and* the contact-uniqueness pre-check, so the row staged

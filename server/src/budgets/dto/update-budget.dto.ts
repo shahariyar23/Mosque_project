@@ -84,8 +84,7 @@ export class UpdateBudgetDto {
   category?: string;
 
   @ApiPropertyOptional({
-    description:
-      'Required column — may be revised, may not be cleared. Must be greater than zero.',
+    description: 'Required column — may be revised, may not be cleared. Must be greater than zero.',
     example: '55000.00',
   })
   @ValidateIf(sentAmount)

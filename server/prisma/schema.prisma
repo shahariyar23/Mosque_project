@@ -103,8 +103,9 @@ model Mosque {
   expenses         Expense[]
   budgets          Budget[]
   salaryRecords    SalaryRecord[]
-  users     User[]
-  auditLogs AuditLog[]
+  users            User[]
+  auditLogs        AuditLog[]
+  approvalRequests ApprovalRequest[]
 
   @@index([isActive])
   @@map("mosques")
@@ -237,6 +238,10 @@ model User {
   /// At most one: volunteering is something a person either does or does not, not a list of
   /// enrolments. Optional because most members never volunteer.
   volunteer     Volunteer?
+  /// Reviews asked for and reviews given, kept apart by name because one person is routinely both —
+  /// and the rule that they may not be both on the *same* row is enforced in the service.
+  approvalsRequested ApprovalRequest[] @relation("ApprovalRequester")
+  approvalsReviewed  ApprovalRequest[] @relation("ApprovalReviewer")
 
   // Unique per mosque, not globally: two mosques may each have a member at the same address.
   @@unique([mosqueId, email])
@@ -909,14 +914,17 @@ model AuditLog {
   actorName String  @db.VarChar(160)
   actorRole String? @db.VarChar(32)
 
-  /// `resource.action`, matching the permission registry's vocabulary.
-  action   String  @db.VarChar(64)
-  resource String  @db.VarChar(64)
+  /// What happened, e.g. `ROLE_ASSIGNED`. One of the closed set in `src/audit/types/audit-log.types.ts`,
+  /// so a writer cannot invent one and a search cannot miss one. Free text at the database level only
+  /// because the constraint belongs in code, where the writers are.
+  action String @db.VarChar(64)
+  /// What kind of thing it happened to, e.g. `user`. The API calls this `entity`.
+  resource String @db.VarChar(64)
   /// Id of the affected row, when the action concerns one.
   resourceId String? @db.VarChar(64)
 
   /// What changed. Never contains a password, token or secret — the writer passes field names and
-  /// business values only.
+  /// business values only, and `redactSecrets` strips anything whose name suggests otherwise.
   changes Json?
   /// Free-text note, e.g. the reason given when voiding a donation.
   note    String? @db.Text
@@ -930,4 +938,81 @@ model AuditLog {
   @@index([mosqueId, resource, resourceId])
   @@index([actorId])
   @@map("audit_logs")
+}
+
+// ---------------------------------------------------------------------------
+// Approvals
+//
+// A four-state review record, not a workflow engine. There are no stages, no routing rules, no
+// parallel reviewers and no state machine beyond the one the enum describes: something is proposed,
+// and then somebody with authority accepts or declines it.
+//
+// The generic `entity`/`entityId` pair is what makes it reusable across expenses, salary, donations
+// and whatever comes later without this table knowing any of their schemas. That is deliberately not
+// a set of nullable foreign keys — a column per reviewable table would grow with every module and
+// leave every row mostly null. The cost is that the reference is unenforced, so nothing stops a row
+// pointing at an id that has since been deleted; a reviewer sees the reference, not a join.
+// ---------------------------------------------------------------------------
+
+enum ApprovalStatus {
+  pending
+  approved
+  rejected
+  cancelled
+}
+
+/// One request for review.
+///
+/// `status` starts `pending` and moves exactly once. There is no path back to `pending`: a decision is
+/// a record of what somebody decided, and re-opening it would erase that. A second look means a second
+/// request, which is why nothing here forbids two rows over the same target.
+model ApprovalRequest {
+  id       String @id @default(uuid()) @db.Uuid
+  mosqueId String @db.Uuid
+  mosque   Mosque @relation(fields: [mosqueId], references: [id], onDelete: Cascade)
+
+  /// Who asked. Not nullable — an unattributed request cannot be reviewed, because the first question
+  /// a reviewer has is who wants this. `Restrict` rather than `SetNull` for the same reason; users are
+  /// soft-deleted here anyway, so the row keeps resolving.
+  requestedById String @db.Uuid
+  requestedBy   User   @relation("ApprovalRequester", fields: [requestedById], references: [id], onDelete: Restrict)
+
+  /// What kind of thing needs review — `expense`, `salary`, `donation`. Matches the first half of a
+  /// permission, like `AuditLog.resource`, and is validated in code against a closed list rather than
+  /// by the database, so adding a reviewable kind is a reviewable code change.
+  entity   String @db.VarChar(64)
+  /// The row under review. Unenforced by design; see the section note.
+  entityId String @db.VarChar(64)
+  /// What is proposed — `create`, `update`, `delete`, `pay`, `void`. Also a closed list in code.
+  action   String @db.VarChar(64)
+
+  status ApprovalStatus @default(pending)
+
+  /// Why it is being asked for, in the requester's words. Optional: an expense over the threshold
+  /// often needs no explanation beyond the expense itself.
+  reason String? @db.Text
+
+  /// Null while pending. Set together with `reviewedAt` and the terminal status, in one update.
+  reviewedById String? @db.Uuid
+  reviewedBy   User?   @relation("ApprovalReviewer", fields: [reviewedById], references: [id], onDelete: SetNull)
+  reviewedAt   DateTime? @db.Timestamptz
+  /// The reviewer's note. The one field a rejection should always carry, though it is not forced —
+  /// requiring it would produce a table full of "no".
+  comment      String?   @db.Text
+
+  createdAt DateTime @default(now()) @db.Timestamptz
+  updatedAt DateTime @updatedAt @db.Timestamptz
+
+  /// One mosque's queue, pending first, newest first — the read this table exists for.
+  @@index([mosqueId, status, createdAt])
+  /// Serves "is there anything outstanding against this row", which is the question a module asks
+  /// before letting an operation through, and which the service also uses to refuse a second pending
+  /// request for the same target. That rule is enforced in the service rather than by a partial unique
+  /// index: Prisma cannot express `WHERE status = 'pending'`, so hand-writing one into the migration
+  /// would leave the database permanently drifted from this file and every later `migrate dev` asking
+  /// to reset it. A duplicate created by two simultaneous requests is a duplicate row in a review
+  /// queue, which a reviewer resolves; a reset is data loss.
+  @@index([entity, entityId, status])
+  @@index([requestedById])
+  @@map("approval_requests")
 }

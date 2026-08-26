@@ -6,6 +6,8 @@ import { Role } from '@prisma/client';
 import * as argon2 from 'argon2';
 import { createHash } from 'node:crypto';
 
+import { AuditLogService } from '../audit/audit-log.service';
+import type { AuditEntry } from '../audit/types/audit-log.types';
 import type { AuthenticatedUser } from '../common/types/authenticated-user';
 import type { AppConfig } from '../config/app.config';
 import { PrismaService } from '../prisma/prisma.service';
@@ -158,6 +160,11 @@ function whereOf(mock: jest.Mock): Record<string, unknown> {
   return argsOf(mock).where as Record<string, unknown>;
 }
 
+/** Every audit entry a call produced, so a test can read the trail rather than infer it. */
+function recorded(audit: MockedDelegate<'record'>): AuditEntry[] {
+  return audit.record.mock.calls.map((call) => call[0] as AuditEntry);
+}
+
 /** What the service stores: the SHA-256 of the token, hex, never the token. */
 function sha256(value: string): string {
   return createHash('sha256').update(value).digest('hex');
@@ -169,6 +176,7 @@ describe('AuthService', () => {
   let service: AuthService;
   let prisma: PrismaMock;
   let users: MockedDelegate<'create' | 'findOne'>;
+  let audit: MockedDelegate<'record'>;
   let jwt: JwtService;
   let logged: jest.SpyInstance;
   let warned: jest.SpyInstance;
@@ -208,6 +216,10 @@ describe('AuthService', () => {
       findOne: jest.fn().mockResolvedValue(UserResponseDto.from(userRow())),
     };
 
+    // The real writer swallows its own failures, so a resolving mock is the honest stand-in. Several
+    // cases below read what was handed to it, because "what did the trail record" is the assertion.
+    audit = { record: jest.fn().mockResolvedValue(undefined) };
+
     hashMock.mockClear();
     verifyMock.mockClear();
     verifyMock.mockResolvedValue(true);
@@ -224,6 +236,7 @@ describe('AuthService', () => {
         AuthService,
         { provide: PrismaService, useValue: prisma },
         { provide: UsersService, useValue: users },
+        { provide: AuditLogService, useValue: audit },
         JwtService,
         {
           // Only the keys the auth paths read. A miss returns undefined, which would fail loudly at
@@ -513,6 +526,74 @@ describe('AuthService', () => {
       expect(written).not.toContain(PLAINTEXT);
     });
 
+    it('records the sign-in in the audit trail, with the origin it came from', async () => {
+      await service.login(loginDto(), ORIGIN);
+
+      expect(recorded(audit)).toEqual([
+        {
+          mosqueId: MOSQUE_ID,
+          action: 'LOGIN_SUCCESS',
+          resource: 'auth',
+          resourceId: USER_ID,
+          actorId: USER_ID,
+          actorName: 'Abdul Karim',
+          actorRole: Role.member,
+          ipAddress: ORIGIN.ipAddress,
+          userAgent: ORIGIN.userAgent,
+        },
+      ]);
+    });
+
+    it('records a refused sign-in, saying why in the note rather than in the changes', async () => {
+      verifyMock.mockResolvedValue(false);
+
+      await expect(service.login(loginDto(), ORIGIN)).rejects.toThrow();
+
+      const [entry] = recorded(audit);
+      expect(entry).toMatchObject({
+        mosqueId: MOSQUE_ID,
+        action: 'LOGIN_FAILED',
+        resource: 'auth',
+        resourceId: USER_ID,
+        actorId: USER_ID,
+        // The address, because nobody signed in: there is no session to read a name from, and the row
+        // the attempt was aimed at is already named by `resourceId`.
+        actorName: 'karim@noor.example',
+        note: 'Incorrect password.',
+      });
+      expect(entry.changes).toBeUndefined();
+    });
+
+    it('records a refused sign-in against a suspended account', async () => {
+      prisma.user.findMany.mockResolvedValue([credentialRow({ isActive: false })]);
+
+      await expect(service.login(loginDto(), ORIGIN)).rejects.toThrow();
+
+      expect(recorded(audit)).toMatchObject([
+        { action: 'LOGIN_FAILED', actorId: USER_ID, note: 'Account is not active.' },
+      ]);
+    });
+
+    it('records nothing at all for an address with no account', async () => {
+      prisma.user.findMany.mockResolvedValue([]);
+
+      await expect(service.login(loginDto(), ORIGIN)).rejects.toThrow();
+
+      // `AuditLog.mosqueId` is non-null and an unknown address belongs to no mosque. An entry here
+      // would have to guess one, which would put a mosque's trail at the mercy of a sign-in form.
+      expect(audit.record).not.toHaveBeenCalled();
+    });
+
+    it('keeps the password and both tokens out of every entry it writes', async () => {
+      const { session, refresh } = await service.login(loginDto(), ORIGIN);
+
+      const written = JSON.stringify(recorded(audit));
+      expect(written).not.toContain(PLAINTEXT);
+      expect(written).not.toContain(HASHED);
+      expect(written).not.toContain(session.accessToken);
+      expect(written).not.toContain(refresh.token);
+    });
+
     it('makes the cookie persistent only when the caller asked to be remembered', async () => {
       const plain = await service.login(loginDto(), ORIGIN);
       expect(plain.refresh.remember).toBe(false);
@@ -651,6 +732,43 @@ describe('AuthService', () => {
       });
       expect(prisma.refreshToken.updateMany).not.toHaveBeenCalled();
     });
+
+    it('records the reset once it has committed, naming neither the token nor the password', async () => {
+      prisma.user.findFirst.mockResolvedValue({
+        id: USER_ID,
+        mosqueId: MOSQUE_ID,
+        fullName: 'Abdul Karim',
+        role: Role.member,
+      });
+      const dto = resetPasswordDto();
+
+      await service.resetPassword(dto);
+
+      const [entry] = recorded(audit);
+      expect(entry).toMatchObject({
+        mosqueId: MOSQUE_ID,
+        action: 'PASSWORD_RESET',
+        resource: 'auth',
+        resourceId: USER_ID,
+        actorId: USER_ID,
+        actorName: 'Abdul Karim',
+        actorRole: Role.member,
+        changes: { passwordChangedAt: expect.any(String), sessionsRevoked: true },
+      });
+
+      const written = JSON.stringify(entry);
+      expect(written).not.toContain(dto.token);
+      expect(written).not.toContain(sha256(dto.token));
+      expect(written).not.toContain(dto.newPassword);
+      expect(written).not.toContain(HASHED);
+    });
+
+    it('records nothing when the token is refused', async () => {
+      prisma.user.findFirst.mockResolvedValue(null);
+
+      await expect(service.resetPassword(resetPasswordDto())).rejects.toThrow();
+      expect(audit.record).not.toHaveBeenCalled();
+    });
   });
 
   // ---------------------------------------------------------------------------
@@ -704,6 +822,38 @@ describe('AuthService', () => {
       const result = await service.changePassword(subject(), changePasswordDto());
 
       expect(result).toBeUndefined();
+    });
+
+    it('records the change, with neither password in the entry', async () => {
+      const dto = changePasswordDto();
+
+      await service.changePassword(subject(), dto);
+
+      const [entry] = recorded(audit);
+      expect(entry).toMatchObject({
+        mosqueId: MOSQUE_ID,
+        action: 'PASSWORD_CHANGED',
+        resource: 'auth',
+        resourceId: USER_ID,
+        actorId: USER_ID,
+        // The token carries an address, not a name — and this action is always self-inflicted, so the
+        // actor and the subject are the same person either way.
+        actorName: 'karim@noor.example',
+        actorRole: Role.member,
+        changes: { passwordChangedAt: expect.any(String), sessionsRevoked: true },
+      });
+
+      const written = JSON.stringify(entry);
+      expect(written).not.toContain(dto.currentPassword);
+      expect(written).not.toContain(dto.newPassword);
+      expect(written).not.toContain(HASHED);
+    });
+
+    it('records nothing when the current password is wrong', async () => {
+      verifyMock.mockResolvedValue(false);
+
+      await expect(service.changePassword(subject(), changePasswordDto())).rejects.toThrow();
+      expect(audit.record).not.toHaveBeenCalled();
     });
   });
 
@@ -879,7 +1029,7 @@ describe('AuthService', () => {
 
       const { session } = await service.refresh(subject(), presented, ORIGIN);
 
-      expect(users.findOne).toHaveBeenCalledWith(USER_ID);
+      expect(users.findOne).toHaveBeenCalledWith(USER_ID, expect.objectContaining({ id: USER_ID }));
       expect(session.user.role).toBe(Role.mosque_admin);
       // ...and the new authority is reflected in what the client is told it may do.
       expect(session.user.effectivePermissions.length).toBeGreaterThan(0);
@@ -950,7 +1100,7 @@ describe('AuthService', () => {
     it('returns the profile with resolved permissions, read fresh from the row', async () => {
       const profile = await service.me(subject());
 
-      expect(users.findOne).toHaveBeenCalledWith(USER_ID);
+      expect(users.findOne).toHaveBeenCalledWith(USER_ID, expect.objectContaining({ id: USER_ID }));
       expect(profile.id).toBe(USER_ID);
       expect(profile.effectivePermissions).toEqual(expect.any(Array));
     });
