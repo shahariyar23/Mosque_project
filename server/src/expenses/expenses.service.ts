@@ -4,7 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { ExpenseStatus, Prisma } from '@prisma/client';
+import { ExpenseStatus, Prisma, TransactionStatus, TransactionType } from '@prisma/client';
 
 import { MAX_PAGE_SIZE } from '../common/pagination/page';
 import type { AuthenticatedUser } from '../common/types/authenticated-user';
@@ -62,25 +62,45 @@ export class ExpensesService {
     const currency = await this.resolveCurrency(actor.mosqueId, dto.currency);
 
     try {
-      const created = await this.prisma.expense.create({
-        // Field by field rather than spread from the DTO, and `mosqueId` from the token: a field added to
-        // the DTO later cannot reach the database until someone names it here, and no request body can
-        // book a payment against another mosque.
-        data: {
-          mosqueId: actor.mosqueId,
-          createdById: actor.id,
-          category: dto.category.trim(),
-          description: dto.description.trim(),
-          amount: toMoney(dto.amount),
-          currency,
-          paymentMethod: dto.paymentMethod,
-          expenseDate: toDateOnly(dto.expenseDate),
-          // Falls back to the column default, `pending`, when the caller does not say.
-          ...(dto.status !== undefined ? { status: dto.status } : {}),
-          reference: dto.reference ?? null,
-          notes: dto.notes ?? null,
-        },
-        select: EXPENSE_SELECT,
+      const created = await this.prisma.$transaction(async (tx) => {
+        const expense = await tx.expense.create({
+          data: {
+            mosqueId: actor.mosqueId,
+            createdById: actor.id,
+            category: dto.category.trim(),
+            description: dto.description.trim(),
+            amount: toMoney(dto.amount),
+            currency,
+            paymentMethod: dto.paymentMethod,
+            expenseDate: toDateOnly(dto.expenseDate),
+            ...(dto.status !== undefined ? { status: dto.status } : {}),
+            reference: dto.reference ?? null,
+            notes: dto.notes ?? null,
+          },
+          select: EXPENSE_SELECT,
+        });
+
+        // If expense is paid on creation, record the corresponding expense ledger transaction
+        if (expense.status === ExpenseStatus.paid) {
+          await tx.transaction.create({
+            data: {
+              mosqueId: actor.mosqueId,
+              type: TransactionType.expense,
+              status: TransactionStatus.completed,
+              amount: expense.amount,
+              currency: expense.currency,
+              description: expense.description,
+              category: expense.category,
+              reference: expense.reference,
+              paymentMethod: expense.paymentMethod,
+              expenseId: expense.id,
+              transactedAt: expense.expenseDate,
+              createdById: actor.id,
+            },
+          });
+        }
+
+        return expense;
       });
 
       return ExpenseResponseDto.from(created);
@@ -141,12 +161,67 @@ export class ExpensesService {
     await this.getOwned(actor.mosqueId, id);
 
     try {
-      const updated = await this.prisma.expense.update({
-        // `id` alone is safe only because `getOwned` has already established that it belongs to the
-        // caller's mosque.
-        where: { id },
-        data: this.toUpdateData(dto),
-        select: EXPENSE_SELECT,
+      const updated = await this.prisma.$transaction(async (tx) => {
+        const expense = await tx.expense.update({
+          where: { id },
+          data: this.toUpdateData(dto),
+          select: EXPENSE_SELECT,
+        });
+
+        // Synchronize corresponding ledger transaction
+        if (expense.status === ExpenseStatus.paid) {
+          const existingTx = await tx.transaction.findFirst({
+            where: { mosqueId: actor.mosqueId, expenseId: expense.id },
+            select: { id: true },
+          });
+
+          if (existingTx) {
+            await tx.transaction.update({
+              where: { id: existingTx.id },
+              data: {
+                status: TransactionStatus.completed,
+                amount: expense.amount,
+                currency: expense.currency,
+                description: expense.description,
+                category: expense.category,
+                reference: expense.reference,
+                paymentMethod: expense.paymentMethod,
+                transactedAt: expense.expenseDate,
+              },
+            });
+          } else {
+            await tx.transaction.create({
+              data: {
+                mosqueId: actor.mosqueId,
+                type: TransactionType.expense,
+                status: TransactionStatus.completed,
+                amount: expense.amount,
+                currency: expense.currency,
+                description: expense.description,
+                category: expense.category,
+                reference: expense.reference,
+                paymentMethod: expense.paymentMethod,
+                expenseId: expense.id,
+                transactedAt: expense.expenseDate,
+                createdById: actor.id,
+              },
+            });
+          }
+        } else if (expense.status === ExpenseStatus.cancelled) {
+          const existingTx = await tx.transaction.findFirst({
+            where: { mosqueId: actor.mosqueId, expenseId: expense.id },
+            select: { id: true },
+          });
+
+          if (existingTx) {
+            await tx.transaction.update({
+              where: { id: existingTx.id },
+              data: { status: TransactionStatus.cancelled },
+            });
+          }
+        }
+
+        return expense;
       });
 
       return ExpenseResponseDto.from(updated);

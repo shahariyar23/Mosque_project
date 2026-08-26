@@ -1,8 +1,9 @@
 "use client";
 
-import { createContext, useContext, useEffect, useState } from "react";
+import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
+import { siteConfig } from "@/config/site";
 
-type Language = "en" | "bn";
+export type Language = "en" | "bn";
 const LanguageContext = createContext<{
   language: Language;
   setLanguage: (language: Language) => void;
@@ -24,9 +25,8 @@ export const bn: Record<string, string> = {
   "Sign Up": "\u09b8\u09be\u0987\u09a8 \u0986\u09aa",
   "Sign In": "\u09b8\u09be\u0987\u09a8 \u0987\u09a8",
   Contact: "\u09af\u09cb\u0997\u09be\u09af\u09cb\u0997",
-  NOOR: "\u09a8\u09c2\u09b0",
-  "COMMUNITY MOSQUE":
-    "\u0995\u09ae\u09bf\u0989\u09a8\u09bf\u099f\u09bf \u09ae\u09b8\u099c\u09bf\u09a6",
+  [siteConfig.name.toUpperCase()]: siteConfig.nameBn,
+  "COMMUNITY MOSQUE": "\u0995\u09ae\u09bf\u0989\u09a8\u09bf\u099f\u09bf \u09ae\u09b8\u099c\u09bf\u09a6",
   "WELCOME TO OUR MOSQUE":
     "\u0986\u09ae\u09be\u09a6\u09c7\u09b0 \u09ae\u09b8\u099c\u09bf\u09a6\u09c7 \u09b8\u09cd\u09ac\u09be\u0997\u09a4\u09ae",
   "Faith.": "\u0988\u09ae\u09be\u09a8\u0964",
@@ -61,8 +61,8 @@ export const bn: Record<string, string> = {
   "All services →": "\u09b8\u09ac \u09b8\u09c7\u09ac\u09be →",
   "JOIN US":
     "\u0986\u09ae\u09be\u09a6\u09c7\u09b0 \u09b8\u09be\u09a5\u09c7 \u09af\u09cb\u0997 \u09a6\u09bf\u09a8",
-  "Upcoming at Noor.":
-    "\u09a8\u09c2\u09b0\u09c7 \u0986\u09b8\u09a8\u09cd\u09a8 \u0985\u09a8\u09c1\u09b7\u09cd\u09a0\u09be\u09a8\u0964",
+  [`Upcoming at ${siteConfig.name}.`]: `${siteConfig.nameBn}ে আসন্ন অনুষ্ঠান`,
+  "Support through challenging times.": "কঠিন সময়ে সহায়তা।",
   "GIVE WITH PURPOSE":
     "\u0989\u09a6\u09cd\u09a6\u09c7\u09b6\u09cd\u09af\u09aa\u09c2\u09b0\u09cd\u09a3 \u09a6\u09be\u09a8",
   "Support your mosque.":
@@ -89,8 +89,8 @@ export const bn: Record<string, string> = {
   "Imam & Leadership":
     "\u0987\u09ae\u09be\u09ae \u0993 \u09a8\u09c1\u09a8\u09cd\u09a6\u09c7\u09b8\u09a4\u09b0",
   Volunteers: "\u09b8\u09a7\u09bf\u09af\u09a8\u09c7",
-  "Life at Noor":
-    "\u09a8\u09c2\u09b0\u09c7 \u099c\u09bf\u09b8\u09a4\u09b7\u09c7",
+  [`Life at ${siteConfig.name}`]: `${siteConfig.nameBn} এর জীবন`,
+  "Reflections, announcements, and moments from our community.": "আমাদের কমিউনিটি থেকে প্রতিফলন, ঘোষণা এবং মুহূর্ত।",
   Testimonials: "\u09ac\u09be\u09b0\u09cd\u0995\u09be\u09a8",
   "Be Part of Our Community":
     "\u09b8\u09ae\u09cd\u09aa\u09cd\u09b0\u09a6\u09a6\u09bc\u09c7\u09b0 \u09a8\u09bf\u09b8\u09cd\u09b8\u09b8\u09b8\u09c7",
@@ -111,7 +111,6 @@ export function LanguageProvider({ children }: { children: React.ReactNode }) {
     if (saved) {
       setLanguage(saved);
     } else {
-      // First visit: show language selection prompt
       setShowPrompt(true);
     }
   }, []);

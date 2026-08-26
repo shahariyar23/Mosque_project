@@ -103,6 +103,8 @@ model Mosque {
   expenses         Expense[]
   budgets          Budget[]
   salaryRecords    SalaryRecord[]
+  receipts         Receipt[]
+  transactions     Transaction[]
   users            User[]
   auditLogs        AuditLog[]
   approvalRequests ApprovalRequest[]
@@ -235,6 +237,9 @@ model User {
   /// Salary this person is paid. A staff member is an ordinary user with rows here — there is no separate
   /// imam or employee record anywhere in this schema.
   salaryRecords SalaryRecord[]
+  /// Receipts made out to this person. Kept even after the receipt is voided, and one more reason a
+  /// user row is soft-deleted rather than removed: a receipt names who it was issued to, permanently.
+  receipts      Receipt[]
   /// At most one: volunteering is something a person either does or does not, not a list of
   /// enrolments. Optional because most members never volunteer.
   volunteer     Volunteer?
@@ -242,6 +247,7 @@ model User {
   /// and the rule that they may not be both on the *same* row is enforced in the service.
   approvalsRequested ApprovalRequest[] @relation("ApprovalRequester")
   approvalsReviewed  ApprovalRequest[] @relation("ApprovalReviewer")
+  transactions       Transaction[]     @relation("UserCreatedTransactions")
 
   // Unique per mosque, not globally: two mosques may each have a member at the same address.
   @@unique([mosqueId, email])
@@ -534,8 +540,11 @@ model DonationFund {
   createdAt DateTime @default(now()) @db.Timestamptz
   updatedAt DateTime @updatedAt @db.Timestamptz
 
-  campaigns Campaign[]
-  donations Donation[]
+  campaigns         Campaign[]
+  donations         Donation[]
+  receipts          Receipt[]
+  transactions      Transaction[] @relation("FundTransactions")
+  transfersIncoming Transaction[] @relation("TransferToFund")
 
   // One slug per mosque, not one globally: the slug appears in a public URL, and two mosques are
   // each entitled to a "zakat".
@@ -710,6 +719,11 @@ model Donation {
   createdAt DateTime @default(now()) @db.Timestamptz
   updatedAt DateTime @updatedAt @db.Timestamptz
 
+  /// Receipts issued against this donation. Plural: a receipt issued in error is voided and a fresh one
+  /// takes its place, and both rows stay here.
+  receipts     Receipt[]
+  transactions Transaction[]
+
   // Every index leads with `mosqueId`, because every query does: no read of this table is ever
   // unscoped, so an index that does not start there cannot serve one.
   @@index([mosqueId, status])
@@ -755,8 +769,9 @@ model Expense {
 
   status ExpenseStatus @default(pending)
 
-  createdAt DateTime @default(now()) @db.Timestamptz
-  updatedAt DateTime @updatedAt @db.Timestamptz
+  createdAt    DateTime      @default(now()) @db.Timestamptz
+  updatedAt    DateTime      @updatedAt @db.Timestamptz
+  transactions Transaction[]
 
   @@index([mosqueId, status])
   @@index([mosqueId, expenseDate])
@@ -893,6 +908,205 @@ model SalaryRecord {
   @@index([mosqueId, paymentDate])
   @@index([mosqueId, createdAt])
   @@map("salary_records")
+}
+
+// ---------------------------------------------------------------------------
+// Receipts
+//
+// A receipt is the mosque's written word that it received someone's money. That makes this table unlike
+// every other one in this file: the rows above record what happened and may be corrected when somebody
+// wrote them down wrongly, whereas a row here is a *document that has left the building*. Somebody is
+// holding a printed copy of it.
+//
+// So the rule, enforced in the service and stated here because this file is where the shape is decided:
+//
+//  * A receipt is immutable after issuance. `receiptNumber`, `amount`, `currency`, `issuedAt` and every
+//    reference are written once, at issue, and never updated.
+//  * A receipt is never deleted. Not soft-deleted either — there is no `deletedAt` here, because there
+//    is no state in which a receipt stops having existed. A gap in a receipt sequence is the first thing
+//    an auditor asks about.
+//  * The only permitted change is voiding: `status` moves to `voided` and `voidedAt`/`voidReason` are
+//    filled in, in one update, and nothing else on the row is touched. The voided receipt keeps every
+//    field it had, which is the whole point — the record of what was issued in error has to survive it.
+//
+// Correcting a receipt therefore means voiding it and issuing a new one, which is why nothing here is
+// unique on the transaction it points at. See the comment on `donationId`.
+//
+// `amount` is `Decimal(14, 2)` with `currency` beside it, as everywhere money appears in this schema. On
+// a receipt the per-row currency matters more than anywhere else: the paper says "৳ 1,000", and a mosque
+// that later changes its default currency must not restate a document somebody already has in hand.
+// ---------------------------------------------------------------------------
+
+/// Two states, and no path back. `issued` is what a receipt is; `voided` is what it becomes when the
+/// mosque withdraws it. There is no `draft` — a receipt that has not been issued is not a receipt — and
+/// no `reprinted`, because reprinting is not reissuing: the same number comes out of the printer again.
+enum ReceiptStatus {
+  issued
+  voided
+}
+
+/// One receipt, as handed to or sent to whoever paid.
+model Receipt {
+  id       String @id @default(uuid()) @db.Uuid
+  mosqueId String @db.Uuid
+  mosque   Mosque @relation(fields: [mosqueId], references: [id], onDelete: Cascade)
+
+  /// What is printed at the top of the document, e.g. `REC-2026-00125`. Assigned by the mosque's own
+  /// register and never changed afterwards.
+  ///
+  /// Unique per mosque rather than globally, for the reason `User.email` and `DonationFund.slug` are:
+  /// two mosques each run their own numbering from 1, and a global constraint would make the second
+  /// mosque's book collide with the first's. Deriving the next number from this column is a service
+  /// concern; the constraint here is what stops two simultaneous issues from both taking it.
+  receiptNumber String @db.VarChar(64)
+
+  /// Who the receipt is made out to, when they have an account.
+  ///
+  /// Nullable and `Restrict`, exactly as on `Donation.userId`: a receipt for the Friday collection box
+  /// has nobody to name, and a user row is soft-deleted precisely so a reference like this keeps
+  /// resolving rather than being cleared.
+  userId String? @db.Uuid
+  donor  User?   @relation(fields: [userId], references: [id], onDelete: Restrict)
+
+  /// The donation this receipt was issued against, when it was issued against one. Null for the other
+  /// things a mosque receipts — a monthly contribution, a salary paid out, shop rent — which have no
+  /// donation row behind them.
+  ///
+  /// Deliberately *not* unique, per mosque or otherwise. A receipt issued in error is voided and a fresh
+  /// one issued for the same money, so two rows pointing at one donation is the ordinary outcome of the
+  /// void rule, not a duplicate. Prisma cannot express `UNIQUE (mosqueId, donationId) WHERE status =
+  /// 'issued'`, which is the constraint that would actually be correct, and hand-writing a partial index
+  /// into the migration would leave this file permanently drifted from the database — the same trade-off
+  /// `ApprovalRequest` documents. "At most one live receipt per donation" is enforced in the service.
+  ///
+  /// `Restrict`, so a donation with a receipt against it cannot be deleted out from under the document.
+  donationId String?   @db.Uuid
+  donation   Donation? @relation(fields: [donationId], references: [id], onDelete: Restrict)
+
+  /// Which fund the money was filed under. Nullable because not everything a mosque receipts is
+  /// directed to a donation fund, and `Restrict` for the reason `Donation.fundId` is: a fund with
+  /// history behind it is archived, never deleted.
+  fundId String?       @db.Uuid
+  fund   DonationFund? @relation(fields: [fundId], references: [id], onDelete: Restrict)
+
+  amount   Decimal @db.Decimal(14, 2)
+  /// ISO 4217, held per row. See the section comment on why it is stored rather than read at print time.
+  currency String  @db.VarChar(8)
+
+  status ReceiptStatus @default(issued)
+
+  /// When the receipt was issued, which is what the document itself says. Not the same fact as
+  /// `createdAt` — a receipt entered into the system on Monday for a collection receipted on Friday
+  /// carries Friday. A timestamp rather than a date, because two receipts issued on one day still have
+  /// an order, and the register is read newest first.
+  issuedAt DateTime @default(now()) @db.Timestamptz
+
+  /// Null while the receipt stands. Set together with `status = voided` and `voidReason`, in one update.
+  voidedAt   DateTime? @db.Timestamptz
+  /// Why it was withdrawn, in the words of whoever withdrew it: "issued against the wrong member code".
+  /// Optional at the database level only — the service requires it, because a void with no reason on it
+  /// is the one thing an auditor cannot resolve.
+  voidReason String?   @db.Text
+
+  createdAt DateTime @default(now()) @db.Timestamptz
+  /// Moves exactly once in the life of a row, when the receipt is voided. Every other field is written
+  /// at issue and never again.
+  updatedAt DateTime @updatedAt @db.Timestamptz
+
+  // One number per mosque. This also serves the lookup by number, since `mosqueId` leads it.
+  @@unique([mosqueId, receiptNumber])
+  // Every index leads with `mosqueId`, for the reason given on the donation indexes: no read of this
+  // table is ever unscoped, so an index that does not start there cannot serve one.
+  @@index([mosqueId, status])
+  // The register's own read: one mosque's receipts, newest issued first.
+  @@index([mosqueId, issuedAt])
+  @@index([mosqueId, createdAt])
+  // Serves a member opening their own receipts, which is what `receipt.viewOwn` grants.
+  @@index([mosqueId, userId])
+  // Serves "what has been receipted against this donation", asked before a second one is issued.
+  @@index([mosqueId, donationId])
+  @@index([mosqueId, fundId])
+  transactions Transaction[]
+  @@map("receipts")
+}
+
+// ---------------------------------------------------------------------------
+// Transactions (Financial Ledger)
+// ---------------------------------------------------------------------------
+
+enum TransactionType {
+  income
+  expense
+  transfer
+}
+
+enum TransactionStatus {
+  pending
+  completed
+  voided
+  cancelled
+}
+
+/// A financial ledger entry recording a verified movement of money (income, expense, or fund transfer).
+/// Main balances and financial reports are derived from completed ledger transactions.
+model Transaction {
+  id          String            @id @default(uuid()) @db.Uuid
+  mosqueId    String            @db.Uuid
+  mosque      Mosque            @relation(fields: [mosqueId], references: [id], onDelete: Cascade)
+
+  type        TransactionType
+  status      TransactionStatus @default(completed)
+
+  amount      Decimal           @db.Decimal(14, 2)
+  currency    String            @db.VarChar(8)
+
+  description String            @db.VarChar(500)
+  category    String?           @db.VarChar(120)
+  reference   String?           @db.VarChar(120)
+
+  paymentMethod PaymentMethod   @default(cash)
+
+  /// The fund credited (for income/transfer) or debited (for expense/transfer).
+  fundId      String?           @db.Uuid
+  fund        DonationFund?     @relation("FundTransactions", fields: [fundId], references: [id], onDelete: Restrict)
+
+  /// Target fund for a transfer between funds.
+  toFundId    String?           @db.Uuid
+  toFund      DonationFund?     @relation("TransferToFund", fields: [toFundId], references: [id], onDelete: Restrict)
+
+  /// Optional link to an underlying donation event.
+  donationId  String?           @db.Uuid
+  donation    Donation?         @relation(fields: [donationId], references: [id], onDelete: Restrict)
+
+  /// Optional link to an underlying expense event.
+  expenseId   String?           @db.Uuid
+  expense     Expense?          @relation(fields: [expenseId], references: [id], onDelete: Restrict)
+
+  /// Optional link to an issued receipt document.
+  receiptId   String?           @db.Uuid
+  receipt     Receipt?          @relation(fields: [receiptId], references: [id], onDelete: Restrict)
+
+  /// When the financial transaction occurred.
+  transactedAt DateTime         @default(now()) @db.Timestamptz
+
+  /// Who recorded or entered this ledger transaction.
+  createdById String?           @db.Uuid
+  createdBy   User?             @relation("UserCreatedTransactions", fields: [createdById], references: [id], onDelete: Restrict)
+
+  createdAt   DateTime          @default(now()) @db.Timestamptz
+  updatedAt   DateTime          @updatedAt @db.Timestamptz
+
+  @@index([mosqueId, type])
+  @@index([mosqueId, status])
+  @@index([mosqueId, transactedAt])
+  @@index([mosqueId, createdAt])
+  @@index([mosqueId, fundId])
+  @@index([mosqueId, toFundId])
+  @@index([mosqueId, donationId])
+  @@index([mosqueId, expenseId])
+  @@index([mosqueId, receiptId])
+  @@index([mosqueId, createdById])
+  @@map("transactions")
 }
 
 // ---------------------------------------------------------------------------

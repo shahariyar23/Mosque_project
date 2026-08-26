@@ -6,6 +6,7 @@ import { useLanguage, translations } from "@/components/language-provider";
 import { useAuth } from "@/components/auth-provider";
 import { UserMenu } from "@/components/account/UserMenu";
 import { gsap, useIsomorphicLayoutEffect } from "@/lib/gsap";
+import { siteConfig } from "@/config/site";
 
 const links = [
   { label: "Home", href: "/", section: "home" },
@@ -130,18 +131,18 @@ export function SiteHeader() {
       >
         <Link
           href="/"
-          className="flex items-center gap-3 logo-group"
-          aria-label="Noor Mosque home"
+          className="logo-mark -ml-2.5 flex items-center gap-3 px-2 py-1 outline-none transition-transform hover:scale-[1.02] focus-visible:ring-2 focus-visible:ring-white/20"
+          aria-label={`${siteConfig.name} Mosque home`}
         >
           <span className="grid h-10 w-10 place-items-center rounded-full border border-[#e0be79] text-xl text-[#e0be79] logo-mark">
             ✦
           </span>
-          <span>
-            <b className="block text-sm tracking-[.18em]">{t("NOOR")}</b>
-            <span className="text-[10px] tracking-[.23em] text-white/65">
-              {t("COMMUNITY MOSQUE")}
+          <div className="hidden lg:block">
+            <b className="block text-sm tracking-[.18em]">{t(siteConfig.name.toUpperCase())}</b>
+            <span className="block text-[10px] uppercase tracking-[.18em] text-[#e0be79] opacity-90">
+              Community Mosque
             </span>
-          </span>
+          </div>
         </Link>
 
         <div className="hidden items-center gap-6 text-sm text-white/85 lg:flex">

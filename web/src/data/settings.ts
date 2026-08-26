@@ -8,6 +8,7 @@ import type {
   PrayerSettings,
   SecuritySettings,
 } from "@/lib/mosque/types";
+import { siteConfig } from "@/config/site";
 
 /** Option lists for the settings selects. Kept here so the page has no literals in it. */
 export const timezoneOptions = [
@@ -63,7 +64,7 @@ export const reminderOptions = [
 ] as const;
 
 const general: GeneralSettings = {
-  mosqueName: "Noor Community Mosque",
+  mosqueName: siteConfig.fullName,
   timezone: "Asia/Dhaka",
   language: "en",
   currency: "BDT",

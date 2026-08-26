@@ -1,4 +1,5 @@
 import type { Receipt, ReceiptSource, ReceiptStatus } from "@/lib/finance/types";
+import { siteConfig } from "@/config/site";
 
 /**
  * Mock receipt register. Swap for `GET /api/finance/receipts`.
@@ -17,7 +18,7 @@ import type { Receipt, ReceiptSource, ReceiptStatus } from "@/lib/finance/types"
 
 /** Printed at the head of every receipt. The real values will come from the mosque profile. */
 export const receiptIssuer = {
-  name: "Noor Community Mosque",
+  name: siteConfig.fullName,
   nameBn: "নূর কমিউনিটি মসজিদ",
   address: "142 Shahjadpur Road, Gulshan, Dhaka 1212",
   phone: "+880 2 9871 2200",

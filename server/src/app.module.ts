@@ -32,6 +32,8 @@ import { ApprovalsModule } from './approvals/approvals.module';
 import { ReportsModule } from './reports/reports.module';
 import { DashboardModule } from './dashboard/dashboard.module';
 import { AuditModule } from './audit/audit.module';
+import { ReceiptsModule } from './receipts/receipts.module';
+import { TransactionsModule } from './transactions/transactions.module';
 
 /**
  * The composition root.
@@ -104,6 +106,8 @@ import { AuditModule } from './audit/audit.module';
     DonationCampaignsModule,
     DonationsModule,
     ExpensesModule,
+    ReceiptsModule,
+    TransactionsModule,
     // Then what the money was meant for and who it went to. Budgets and salaries are independent of each
     // other and of the three above; reports come last because they read all four tables and nothing reads
     // them. Registration order does not affect resolution — Nest builds the graph from the dependencies —

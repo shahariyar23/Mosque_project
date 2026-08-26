@@ -1,4 +1,5 @@
 import type { MosqueProfile } from "@/lib/mosque/types";
+import { siteConfig } from "@/config/site";
 
 /**
  * The mosque's own record. One object rather than a list — a dashboard session is always scoped to a
@@ -8,15 +9,15 @@ import type { MosqueProfile } from "@/lib/mosque/types";
  * back, and the shape matches the `GET /api/mosque/:id` response the Express API will return.
  */
 export const mosqueProfile: MosqueProfile = {
-  name: "Noor Community Mosque",
-  shortName: "Noor Mosque",
+  name: siteConfig.fullName,
+  shortName: `${siteConfig.name} Mosque`,
   tagline: "Serving the local Muslim community with faith, education and service.",
   established: "1998",
   phone: "+880 1711-204488",
   officePhone: "+880 2-9821140",
-  emergencyContact: "+880 1811-660214",
-  email: "info@noormosque.org",
-  website: "www.noormosque.org",
+  emergencyContact: "+880 2 9876543",
+  email: siteConfig.email,
+  website: siteConfig.website,
   country: "Bangladesh",
   division: "Dhaka",
   district: "Dhaka",
@@ -24,10 +25,9 @@ export const mosqueProfile: MosqueProfile = {
   postalCode: "1213",
   addressLine: "House 25, Road 7, Block C, Banani",
   about:
-    "Noor Community Mosque has served the families of Banani and the surrounding neighbourhoods since 1998. " +
-    "What began as a single prayer hall above a shopfront is now a three-storey masjid with room for eleven " +
-    "hundred worshippers, a madrasa for two hundred children, and a women's prayer hall with its own entrance " +
-    "from Road 7.\n\n" +
+    `${siteConfig.fullName} has served the families of ${siteConfig.city} and the surrounding neighbourhoods since 1998. ` +
+    "Our mission is to provide a welcoming spiritual home, foster Islamic education, " +
+    "and build a strong, supportive community based on the principles of the Quran and Sunnah.\n\n" +
     "Five daily congregations are held throughout the year, with two Jumu'ah jama'ats every Friday to make room " +
     "for those who cannot leave work early. The mosque runs a hifz programme, weekend Qur'an classes for children " +
     "and adults, a Friday food distribution for families in need, and a zakat fund administered by the finance " +
@@ -36,9 +36,9 @@ export const mosqueProfile: MosqueProfile = {
     "read aloud after Jumu'ah at the end of the financial year. Everyone is welcome — for prayer, for study, or " +
     "simply to sit quietly.",
   social: {
-    facebook: "facebook.com/noormosquedhaka",
-    youtube: "youtube.com/@noormosque",
-    instagram: "instagram.com/noormosque",
+    facebook: siteConfig.facebook,
+    youtube: siteConfig.youtube,
+    instagram: siteConfig.instagram,
   },
 };
 

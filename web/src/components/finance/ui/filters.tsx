@@ -24,7 +24,7 @@ export type RangeFilter = {
 };
 
 type Props = {
-  search: { value: string; onChange: (value: string) => void; placeholder: string; label: string };
+  search?: { value: string; onChange: (value: string) => void; placeholder: string; label: string };
   filters?: SelectFilter[];
   dateRange?: RangeFilter;
   amountRange?: RangeFilter;
@@ -126,23 +126,27 @@ export function FinanceFilters({ search, filters = [], dateRange, amountRange, a
   return (
     <div className="border-b border-[#e7e6dc] px-4 py-3.5 sm:px-6">
       <div className="flex flex-wrap items-center gap-2">
-        <div className="relative min-w-0 flex-1 sm:max-w-xs">
-          <label htmlFor="finance-search" className="sr-only">
-            {search.label}
-          </label>
-          <span aria-hidden="true" className="absolute left-3 top-1/2 -translate-y-1/2 text-[#8b938d]">
-            <Icon name="search" size={16} />
-          </span>
-          <input
-            id="finance-search"
-            name="finance-search"
-            type="search"
-            value={search.value}
-            onChange={(event) => search.onChange(event.target.value)}
-            placeholder={search.placeholder}
-            className="min-h-10 w-full rounded-md border border-[#cfd4cd] bg-white pl-9 pr-3 text-[13px] text-[#17211d] placeholder:text-[#9aa19c] focus:border-[#0d4d3b] focus:outline-2 focus:outline-offset-1 focus:outline-[#0d4d3b]/40"
-          />
-        </div>
+        {search ? (
+          <div className="relative min-w-0 flex-1 sm:max-w-xs">
+            <label htmlFor="finance-search" className="sr-only">
+              {search.label}
+            </label>
+            <span aria-hidden="true" className="absolute left-3 top-1/2 -translate-y-1/2 text-[#8b938d]">
+              <Icon name="search" size={16} />
+            </span>
+            <input
+              id="finance-search"
+              name="finance-search"
+              type="search"
+              value={search.value}
+              onChange={(event) => search.onChange(event.target.value)}
+              placeholder={search.placeholder}
+              className="min-h-10 w-full rounded-md border border-[#cfd4cd] bg-white pl-9 pr-3 text-[13px] text-[#17211d] placeholder:text-[#9aa19c] focus:border-[#0d4d3b] focus:outline-2 focus:outline-offset-1 focus:outline-[#0d4d3b]/40"
+            />
+          </div>
+        ) : (
+          <div className="min-w-0 flex-1" />
+        )}
 
         {hasFilters ? (
           <Button

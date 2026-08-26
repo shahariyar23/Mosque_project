@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useLanguage } from "@/components/language-provider";
 import { IslamicTexture } from "@/components/islamic-texture";
 import { gsap, ScrollTrigger, useIsomorphicLayoutEffect } from "@/lib/gsap";
+import { siteConfig } from "@/config/site";
 
 type FooterLink = { label: string; href: string };
 type FooterGroup = { title: string; links: FooterLink[] };
@@ -155,7 +156,7 @@ export function SiteFooter() {
               </p>
             </div>
             <form
-              action="mailto:salam@noormosque.org"
+              action={`mailto:${siteConfig.email}`}
               method="get"
               className="flex w-full max-w-xl justify-center gap-2 lg:self-center"
             >
@@ -188,14 +189,10 @@ export function SiteFooter() {
               <Link
                 href="/"
                 className="inline-block"
-                aria-label={
-                  bengali
-                    ? "নূর কমিউনিটি মসজিদ হোম"
-                    : "Noor Community Mosque home"
-                }
+                aria-label={`${siteConfig.name} Community Mosque home`}
               >
                 <span className="block text-3xl xs:text-4xl sm:text-5xl font-semibold tracking-[.12em] text-white">
-                  ✦ NOOR
+                  ✦ {siteConfig.name.toUpperCase()}
                 </span>
                 <span className="mt-1.5 sm:mt-2 block text-[10px] xs:text-xs font-bold tracking-[.24em] text-[#e0be79]">
                   {bengali ? "কমিউনিটি মসজিদ" : "COMMUNITY MOSQUE"}
@@ -240,7 +237,7 @@ export function SiteFooter() {
               </h3>
               <address className="mt-3 sm:mt-5 not-italic text-xs sm:text-sm leading-relaxed text-white/65">
                 <span className="block text-white font-medium">
-                  {bengali ? "নূর কমিউনিটি মসজিদ" : "Noor Community Mosque"}
+                  {bengali ? siteConfig.fullNameBn : siteConfig.fullName}
                 </span>
                 {bengali
                   ? "১২৩ পিস অ্যাভিনিউ, ঢাকা"
@@ -254,10 +251,10 @@ export function SiteFooter() {
                 </a>
                 <br />
                 <a
-                  href="mailto:salam@noormosque.org"
+                  href={`mailto:${siteConfig.email}`}
                   className="footer-link transition hover:text-white"
                 >
-                  salam@noormosque.org
+                  {siteConfig.email}
                 </a>
               </address>
               <a

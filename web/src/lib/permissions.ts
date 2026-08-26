@@ -1,11 +1,11 @@
 /**
  * Frontend mirror of the platform permission registry.
  *
- * The authority for this file is
- * `docs/specs/0001-role-permission-architecture/0001-identity-permission-model.md`,
- * and the runtime authority once the API lands is `server/auth/permissions.js`. This module exists
- * so the interface can decide what to show; it is never the security boundary. Every action gated
- * here is refused independently by the API (spec 0003, AC-8).
+ * The runtime authority is `server/src/common/constants/permissions.ts` (and, for the role map,
+ * `server/src/common/constants/roles.ts`), which names this file as its mirror and is written in the same
+ * order with the same group names so a diff between the two is readable by eye. This module exists so the
+ * interface can decide what to show; it is never the security boundary. Every action gated here is
+ * refused independently by the API.
  *
  * Two rules from the spec shape everything below:
  *
@@ -16,6 +16,10 @@
  *
  * Permissions ending in `Own` answer "may this kind of person do this at all", never "does this
  * record belong to them". Ownership is a query concern and lives in the controller (spec 0004).
+ *
+ * **The resolution helpers here are for rendering only.** A signed-in session takes its permission list
+ * from `effectivePermissions` on the API's auth profile, resolved server-side; `effectivePermissions`
+ * below is not called on a live session.
  */
 
 /* -------------------------------------------------------------------------- *
@@ -43,10 +47,23 @@ export const PERMISSION_GROUPS = {
     "service.view",
     "quran.view",
     "gallery.view",
+    // Everyone signed in may read the facility list — it is what the mosque publishes about its rooms.
+    // The three write grants are in `mosque` below, next to the routes that use them.
+    "facility.view",
   ],
   dashboard: ["dashboard.view"],
   platform: ["platform.manage", "mosque.create", "audit.view"],
-  mosque: ["mosque.view", "mosque.manage", "settings.view", "settings.manage"],
+  mosque: [
+    "mosque.view",
+    "mosque.manage",
+    "settings.view",
+    "settings.manage",
+    // `/mosque/facilities` is guarded per verb, so the three are separate rather than one
+    // `facility.manage`: a caretaker who edits a room's availability is not someone who removes rooms.
+    "facility.create",
+    "facility.update",
+    "facility.delete",
+  ],
   access: [
     "user.view",
     "user.viewDeleted",
@@ -124,9 +141,11 @@ export type Permission = (typeof PERMISSION_GROUPS)[keyof typeof PERMISSION_GROU
 export const allPermissions: Permission[] = Object.values(PERMISSION_GROUPS).flat() as Permission[];
 
 /**
- * The additions this module makes to the spec's registry, isolated so the backend can add exactly
- * these strings to `server/auth/permissions.js` and nothing else. Kept as a literal list rather
- * than computed, because its purpose is to be read and reviewed by a person.
+ * The additions this module made to the spec's original registry, kept as a literal list because its
+ * purpose is to be read by a person rather than computed.
+ *
+ * All of them have since been adopted by `server/src/common/constants/permissions.ts`, so this is now a
+ * record of where they came from rather than a request for the backend to add them.
  */
 export const FINANCE_EXTENSIONS: Permission[] = [
   "expense.view",
@@ -211,6 +230,9 @@ export const rolePermissions: Record<Role, Permission[]> = {
     "booking.view",
     "booking.manage",
     "service.manage",
+    "facility.create",
+    "facility.update",
+    "facility.delete",
   ],
 
   // The finance owner. Holds `workflow.review` but not `workflow.approve`: a treasurer prepares a

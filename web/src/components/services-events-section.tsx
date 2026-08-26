@@ -1,6 +1,7 @@
 "use client";
 import { useRef } from "react";
 import { useLanguage } from "@/components/language-provider";
+import { siteConfig } from "@/config/site";
 import { gsap, useIsomorphicLayoutEffect } from "@/lib/gsap";
 import { Moon, BookOpen, Home, Heart } from "lucide-react";
 
@@ -218,7 +219,7 @@ export function ServicesEventsSection() {
           className="mt-3 text-3xl xs:text-4xl sm:text-5xl lg:text-[46px] font-serif font-bold text-[#0F2E26] leading-[1.18] tracking-tight"
           style={{ fontFamily: "var(--font-heading-en), 'Playfair Display', serif" }}
         >
-          {bn ? "নূরে আসন্ন অনুষ্ঠান" : "Upcoming at Noor"}<span className="text-[#D4AF37]">.</span>
+          {bn ? `${siteConfig.nameBn}-এ আসন্ন অনুষ্ঠান` : `Upcoming at ${siteConfig.name}`}<span className="text-[#D4AF37]">.</span>
         </h2>
 
         <div className="mt-10 grid gap-5 sm:gap-6 md:grid-cols-3">
@@ -257,7 +258,7 @@ export function ServicesEventsSection() {
                 >
                   {time}
                   <br />
-                  {bn ? "নূর কমিউনিটি হল" : "Noor Community Hall"}
+                  {bn ? `${siteConfig.nameBn} কমিউনিটি হল` : `${siteConfig.name} Community Hall`}
                 </p>
               </div>
 

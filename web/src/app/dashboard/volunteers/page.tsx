@@ -27,7 +27,7 @@ export default async function VolunteersPage({
         ]}
       />
       <RequirePermission anyOf={["volunteer.view"]} area="Volunteers">
-        <VolunteersView openAddOnMount={action === "add"} />
+        <VolunteersView />
       </RequirePermission>
     </div>
   );

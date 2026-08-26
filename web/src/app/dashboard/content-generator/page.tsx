@@ -1,22 +1,17 @@
 import { ContentGenerator } from "@/components/dashboard/content-generator";
 import { PageHeader } from "@/components/dashboard/page-header";
-import { getSession } from "@/lib/session";
+import { RequirePermission } from "@/components/finance/ui/permission-gate";
 
-export default async function ContentGeneratorPage() {
-  const session = getSession();
-  if (!session?.permissions.includes("article.manage")) {
-    return (
-      <div className="rounded-xl border border-[#e2e1d6] bg-white p-8 text-center">
-        <h1 className="text-xl font-semibold text-[#17211d]">
-          Content generator unavailable
-        </h1>
-        <p className="mt-2 text-sm text-[#69726d]">
-          Your account does not have permission to generate content.
-        </p>
-      </div>
-    );
-  }
-
+/**
+ * The permission check here used to read `getSession()` — the hard-coded demo profile — so it granted or
+ * refused access on invented permissions rather than the signed-in account's own. `RequirePermission`
+ * reads the real session, and renders the same no-access panel every other gated page uses instead of a
+ * one-off card written for this route.
+ *
+ * Nothing behind this page is a backend call: the generator has no controller, so the gate is purely
+ * about not offering a tool the person's role does not include.
+ */
+export default function ContentGeneratorPage() {
   return (
     <div className="space-y-6">
       <PageHeader
@@ -27,7 +22,13 @@ export default async function ContentGeneratorPage() {
           { label: "Content generator" },
         ]}
       />
-      <ContentGenerator />
+      <RequirePermission
+        anyOf={["article.manage"]}
+        area="the content generator"
+        description="Drafting mosque content needs permission to manage articles. Ask an administrator if you need it."
+      >
+        <ContentGenerator />
+      </RequirePermission>
     </div>
   );
 }

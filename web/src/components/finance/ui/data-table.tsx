@@ -44,6 +44,25 @@ type Props<Row> = {
    */
   rowHref?: (row: Row) => string;
   footNote?: ReactNode;
+  /**
+   * Present when `rows` is one page fetched from the API rather than the whole list.
+   *
+   * It replaces both halves of the footer, because both are wrong for a server page. The record count
+   * is computed from `rows.length`, so a table holding page 2 of 7 would read "Showing 1–20 of 20
+   * records" when there are 137; and the pager only ever sees the rows it was handed, so it cannot know
+   * further pages exist. Passing this hands both figures to the caller, which is the only place that
+   * knows them.
+   *
+   * Do not combine it with sortable columns: no list endpoint accepts a sort parameter, so the sort
+   * here would reorder the current page only and quietly imply it had ordered the whole list.
+   */
+  serverPage?: {
+    page: number;
+    pageSize: number;
+    total: number;
+    totalPages: number;
+    onPageChange: (page: number) => void;
+  };
 };
 
 const alignClass = { left: "text-left", right: "text-right" } as const;
@@ -70,6 +89,7 @@ export function DataTable<Row>({
   mobileHiddenKeys = [],
   rowHref,
   footNote,
+  serverPage,
 }: Props<Row>) {
   const [sort, setSort] = useState<SortState | null>(initialSort ?? null);
   const [page, setPage] = useState(1);
@@ -83,10 +103,15 @@ export function DataTable<Row>({
     return [...rows].sort((a, b) => compareValues(pick(a), pick(b)) * factor);
   }, [columns, rows, sort]);
 
-  const totalPages = Math.max(1, Math.ceil(sorted.length / pageSize));
-  const currentPage = Math.min(page, totalPages);
-  const start = (currentPage - 1) * pageSize;
-  const visible = sorted.slice(start, start + pageSize);
+  // Every figure below has a server-paged reading and a client-paged one. Kept side by side rather than
+  // branched around, so the table body and footer cannot end up describing different pages.
+  const totalPages = serverPage ? serverPage.totalPages : Math.max(1, Math.ceil(sorted.length / pageSize));
+  const currentPage = serverPage ? serverPage.page : Math.min(page, totalPages);
+  const start = serverPage ? (serverPage.page - 1) * serverPage.pageSize : (currentPage - 1) * pageSize;
+  const visible = serverPage ? sorted : sorted.slice(start, start + pageSize);
+  const shownTo = serverPage ? start + sorted.length : Math.min(start + pageSize, sorted.length);
+  const total = serverPage ? serverPage.total : sorted.length;
+  const changePage = serverPage ? serverPage.onPageChange : setPage;
 
   const toggleSort = (key: string) => {
     setPage(1);
@@ -218,11 +243,11 @@ export function DataTable<Row>({
       <div className="flex flex-col gap-3 border-t border-[#e7e6dc] px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-6">
         <p className="text-[12px] text-[#69726d]" aria-live="polite">
           Showing <span className="font-semibold tabular-nums text-[#3d453f]">{start + 1}</span>–
-          <span className="font-semibold tabular-nums text-[#3d453f]">{Math.min(start + pageSize, sorted.length)}</span> of{" "}
-          <span className="font-semibold tabular-nums text-[#3d453f]">{sorted.length}</span> records
+          <span className="font-semibold tabular-nums text-[#3d453f]">{shownTo}</span> of{" "}
+          <span className="font-semibold tabular-nums text-[#3d453f]">{total}</span> records
           {footNote ? <span className="ml-2">{footNote}</span> : null}
         </p>
-        <Pagination page={currentPage} totalPages={totalPages} onChange={setPage} />
+        <Pagination page={currentPage} totalPages={totalPages} onChange={changePage} />
       </div>
     </div>
   );

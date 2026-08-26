@@ -1,4 +1,5 @@
 import { IslamicTexture } from "@/components/islamic-texture";
+import { siteConfig } from "@/config/site";
 import { SigninForm } from "./signin-form";
 import { SigninVisualPanel } from "./signin-visual-panel";
 
@@ -16,8 +17,8 @@ export function SigninPage() {
         />
 
         <div className="relative z-10 mx-auto max-w-7xl">
-          <p className="text-[11px] font-bold tracking-[.2em] text-[#e0be79] sm:text-xs">
-            NOOR COMMUNITY MOSQUE · MEMBER SIGN IN
+          <p className="mb-8 text-xs font-semibold tracking-[0.2em] text-[#e0be79]">
+            {siteConfig.fullName.toUpperCase()} · MEMBER SIGN IN
           </p>
           <h1 className="mt-4 max-w-2xl text-3xl font-semibold leading-tight sm:text-4xl lg:text-5xl">
             Welcome back.
