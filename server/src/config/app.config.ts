@@ -74,6 +74,23 @@ export const env = {
 
   swaggerEnabled: (config: AppConfig): boolean => config.get('SWAGGER_ENABLED', { infer: true }),
 
+  emailHost: (config: AppConfig): string => config.get('EMAIL_HOST', { infer: true }),
+
+  emailPort: (config: AppConfig): number => config.get('EMAIL_PORT', { infer: true }),
+
+  emailSecure: (config: AppConfig): boolean => config.get('EMAIL_SECURE', { infer: true }),
+
+  emailUser: (config: AppConfig): string | undefined => config.get('EMAIL_USER', { infer: true }),
+
+  emailPassword: (config: AppConfig): string | undefined =>
+    config.get('EMAIL_PASSWORD', { infer: true }),
+
+  emailFrom: (config: AppConfig): string =>
+    config.get('EMAIL_FROM', { infer: true }) ?? 'noreply@mostak.tech',
+
+  emailFromName: (config: AppConfig): string =>
+    config.get('EMAIL_FROM_NAME', { infer: true }) ?? 'NOOR',
+
   /** Trailing slash trimmed, so callers can join paths without doubling it. */
   aladhanBaseUrl: (config: AppConfig): string =>
     config.get('ALADHAN_BASE_URL', { infer: true }).replace(/\/+$/, ''),

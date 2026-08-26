@@ -95,7 +95,8 @@ export class DonationsService {
               status: TransactionStatus.completed,
               amount: donation.amount,
               currency: donation.currency,
-              description: donation.notes || `Donation received (${donation.reference || donation.id})`,
+              description:
+                donation.notes || `Donation received (${donation.reference || donation.id})`,
               category: 'Donation',
               reference: donation.reference,
               paymentMethod: donation.paymentMethod,
@@ -223,7 +224,8 @@ export class DonationsService {
                 paymentMethod: donation.paymentMethod,
                 transactedAt: donation.donatedAt,
                 reference: donation.reference,
-                description: donation.notes || `Donation received (${donation.reference || donation.id})`,
+                description:
+                  donation.notes || `Donation received (${donation.reference || donation.id})`,
               },
             });
           } else {
@@ -234,7 +236,8 @@ export class DonationsService {
                 status: TransactionStatus.completed,
                 amount: donation.amount,
                 currency: donation.currency,
-                description: donation.notes || `Donation received (${donation.reference || donation.id})`,
+                description:
+                  donation.notes || `Donation received (${donation.reference || donation.id})`,
                 category: 'Donation',
                 reference: donation.reference,
                 paymentMethod: donation.paymentMethod,
@@ -245,7 +248,10 @@ export class DonationsService {
               },
             });
           }
-        } else if (donation.status === DonationStatus.cancelled || donation.status === DonationStatus.failed) {
+        } else if (
+          donation.status === DonationStatus.cancelled ||
+          donation.status === DonationStatus.failed
+        ) {
           const existingTx = await tx.transaction.findFirst({
             where: { mosqueId: actor.mosqueId, donationId: donation.id },
             select: { id: true },

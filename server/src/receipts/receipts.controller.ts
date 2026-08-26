@@ -1,13 +1,4 @@
-import {
-  Body,
-  Controller,
-  Get,
-  Param,
-  ParseUUIDPipe,
-  Patch,
-  Post,
-  Query,
-} from '@nestjs/common';
+import { Body, Controller, Get, Param, ParseUUIDPipe, Patch, Post, Query } from '@nestjs/common';
 import {
   ApiBadRequestResponse,
   ApiBearerAuth,
@@ -27,10 +18,7 @@ import { Permissions } from '../common/decorators/permissions.decorator';
 import type { AuthenticatedUser } from '../common/types/authenticated-user';
 import { CreateReceiptDto } from './dto/create-receipt.dto';
 import { ReceiptQueryDto } from './dto/receipt-query.dto';
-import {
-  ReceiptEnvelopeDto,
-  ReceiptListEnvelopeDto,
-} from './dto/receipt-response.dto';
+import { ReceiptEnvelopeDto, ReceiptListEnvelopeDto } from './dto/receipt-response.dto';
 import { VoidReceiptDto } from './dto/void-receipt.dto';
 import { ReceiptsService } from './receipts.service';
 
@@ -60,8 +48,12 @@ export class ReceiptsController {
       'Validates referenced donation, fund, or user and ensures no duplicate active receipts exist.',
   })
   @ApiCreatedResponse({ description: 'Receipt issued successfully.', type: ReceiptEnvelopeDto })
-  @ApiBadRequestResponse({ description: 'Validation failed or referenced entity does not belong to the mosque.' })
-  @ApiConflictResponse({ description: 'Receipt numbering collision or active receipt already exists.' })
+  @ApiBadRequestResponse({
+    description: 'Validation failed or referenced entity does not belong to the mosque.',
+  })
+  @ApiConflictResponse({
+    description: 'Receipt numbering collision or active receipt already exists.',
+  })
   @ApiForbiddenResponse({ description: 'Authenticated, but without `receipt.issue`.' })
   async create(
     @CurrentUser() user: AuthenticatedUser,
@@ -83,7 +75,9 @@ export class ReceiptsController {
       'Supports pagination, status filtering, fund/donation/user filtering, date window, and text search.',
   })
   @ApiOkResponse({ description: 'Page of receipts.', type: ReceiptListEnvelopeDto })
-  @ApiForbiddenResponse({ description: 'Authenticated, but without `receipt.view` or `receipt.viewOwn`.' })
+  @ApiForbiddenResponse({
+    description: 'Authenticated, but without `receipt.view` or `receipt.viewOwn`.',
+  })
   async findMany(
     @CurrentUser() user: AuthenticatedUser,
     @Query() query: ReceiptQueryDto,
@@ -107,7 +101,9 @@ export class ReceiptsController {
   @ApiParam({ name: 'id', format: 'uuid', description: 'The receipt identifier.' })
   @ApiOkResponse({ description: 'The receipt record.', type: ReceiptEnvelopeDto })
   @ApiNotFoundResponse({ description: 'No receipt with that ID exists in the mosque register.' })
-  @ApiForbiddenResponse({ description: 'Authenticated, but without permission to view this receipt.' })
+  @ApiForbiddenResponse({
+    description: 'Authenticated, but without permission to view this receipt.',
+  })
   async findOne(
     @CurrentUser() user: AuthenticatedUser,
     @Param('id', ParseUUIDPipe) id: string,

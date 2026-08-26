@@ -10,6 +10,7 @@ import { AuditLogService } from '../audit/audit-log.service';
 import type { AuditEntry } from '../audit/types/audit-log.types';
 import type { AuthenticatedUser } from '../common/types/authenticated-user';
 import type { AppConfig } from '../config/app.config';
+import { MailService } from '../mail/mail.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { UserResponseDto } from '../users/dto/user-response.dto';
 import { USER_SELECT, type SelectedUser } from '../users/types/user.types';
@@ -177,6 +178,12 @@ describe('AuthService', () => {
   let prisma: PrismaMock;
   let users: MockedDelegate<'create' | 'findOne'>;
   let audit: MockedDelegate<'record'>;
+  let mail: {
+    sendMail: jest.Mock;
+    sendPasswordResetEmail: jest.Mock;
+    sendPasswordResetSuccessEmail: jest.Mock;
+    sendLoginAlertEmail: jest.Mock;
+  };
   let jwt: JwtService;
   let logged: jest.SpyInstance;
   let warned: jest.SpyInstance;
@@ -189,8 +196,21 @@ describe('AuthService', () => {
   beforeEach(async () => {
     prisma = {
       user: {
-        findMany: jest.fn().mockResolvedValue([credentialRow()]),
-        findFirst: jest.fn().mockResolvedValue({ id: USER_ID }),
+        findMany: jest.fn().mockResolvedValue([
+          {
+            ...credentialRow(),
+            fullName: 'Abdul Karim',
+            mosque: { name: 'Noor Community Mosque', email: 'salam@noormosque.org' },
+          },
+        ]),
+        findFirst: jest.fn().mockResolvedValue({
+          id: USER_ID,
+          mosqueId: MOSQUE_ID,
+          email: 'karim@noor.example',
+          fullName: 'Abdul Karim',
+          role: Role.member,
+          mosque: { name: 'Noor Community Mosque', email: 'salam@noormosque.org' },
+        }),
         update: jest.fn().mockResolvedValue(userRow()),
         updateMany: jest.fn().mockResolvedValue({ count: 1 }),
       },
@@ -220,6 +240,15 @@ describe('AuthService', () => {
     // cases below read what was handed to it, because "what did the trail record" is the assertion.
     audit = { record: jest.fn().mockResolvedValue(undefined) };
 
+    mail = {
+      sendMail: jest.fn().mockResolvedValue({ success: true, messageId: 'test-id' }),
+      sendPasswordResetEmail: jest.fn().mockResolvedValue({ success: true, messageId: 'test-id' }),
+      sendPasswordResetSuccessEmail: jest
+        .fn()
+        .mockResolvedValue({ success: true, messageId: 'test-id' }),
+      sendLoginAlertEmail: jest.fn().mockResolvedValue({ success: true, messageId: 'test-id' }),
+    };
+
     hashMock.mockClear();
     verifyMock.mockClear();
     verifyMock.mockResolvedValue(true);
@@ -237,6 +266,7 @@ describe('AuthService', () => {
         { provide: PrismaService, useValue: prisma },
         { provide: UsersService, useValue: users },
         { provide: AuditLogService, useValue: audit },
+        { provide: MailService, useValue: mail },
         JwtService,
         {
           // Only the keys the auth paths read. A miss returns undefined, which would fail loudly at
@@ -251,6 +281,7 @@ describe('AuthService', () => {
                 JWT_REFRESH_SECRET: REFRESH_SECRET,
                 JWT_REFRESH_EXPIRES_IN: '7d',
                 CORS_ORIGINS: 'http://localhost:3000',
+                APP_WEB_URL: 'http://localhost:3000',
               })[key],
           },
         },
@@ -612,6 +643,38 @@ describe('AuthService', () => {
       // `jti` is what stops the unique index on `tokenHash` from rejecting the second sign-in.
       expect(second.refresh.token).not.toBe(first.refresh.token);
     });
+
+    it('dispatches a login alert email upon successful sign-in', async () => {
+      await service.login(loginDto(), {
+        userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
+        ipAddress: '103.10.20.30',
+      });
+
+      expect(mail.sendLoginAlertEmail).toHaveBeenCalledWith(
+        'karim@noor.example',
+        expect.objectContaining({
+          device: expect.stringContaining('Windows'),
+          location: expect.stringContaining('Bangladesh'),
+          securityUrl: 'http://localhost:3000/forgot-password',
+          userName: 'Abdul Karim',
+        }),
+      );
+    });
+
+    it('does not dispatch a login alert when sign-in fails', async () => {
+      verifyMock.mockResolvedValue(false);
+
+      await expect(service.login(loginDto(), ORIGIN)).rejects.toThrow();
+      expect(mail.sendLoginAlertEmail).not.toHaveBeenCalled();
+    });
+
+    it('succeeds even if login alert email dispatch fails', async () => {
+      mail.sendLoginAlertEmail.mockRejectedValue(new Error('Titan SMTP timeout'));
+
+      const result = await service.login(loginDto(), ORIGIN);
+      expect(result.session.user.email).toBe('karim@noor.example');
+      expect(result.session.accessToken).toBeTruthy();
+    });
   });
 
   // ---------------------------------------------------------------------------
@@ -619,7 +682,7 @@ describe('AuthService', () => {
   // ---------------------------------------------------------------------------
 
   describe('forgotPassword', () => {
-    it('stores only a short-lived hash for an existing account', async () => {
+    it('stores only a short-lived hash for an existing account and sends recovery email', async () => {
       await expect(service.forgotPassword(forgotPasswordDto())).resolves.toBeUndefined();
 
       expect(whereOf(prisma.user.findMany)).toMatchObject({
@@ -632,57 +695,54 @@ describe('AuthService', () => {
       expect(data.passwordResetTokenHash).toHaveLength(64);
       expect(data.passwordResetExpiresAt).toBeInstanceOf(Date);
       expect(JSON.stringify(data)).not.toContain('a-reset-token-that-is-never-stored-raw');
+
+      expect(mail.sendPasswordResetEmail).toHaveBeenCalledWith(
+        'karim@noor.example',
+        expect.objectContaining({
+          resetUrl: expect.stringMatching(
+            /^http:\/\/localhost:3000\/reset-password\?token=[A-Za-z0-9_-]+$/,
+          ),
+          expiresIn: '30 minutes',
+          userName: 'Abdul Karim',
+          websiteUrl: 'http://localhost:3000',
+        }),
+      );
     });
 
-    it('returns the same service result for an unknown account without writing a token', async () => {
+    it('returns the same service result for an unknown account without writing a token or sending email', async () => {
       prisma.user.findMany.mockResolvedValue([]);
 
       await expect(service.forgotPassword(forgotPasswordDto())).resolves.toBeUndefined();
       expect(prisma.user.update).not.toHaveBeenCalled();
+      expect(mail.sendPasswordResetEmail).not.toHaveBeenCalled();
     });
 
-    it('does not return a reset token', async () => {
+    it('does not return a reset token or leak secrets', async () => {
       const result = await service.forgotPassword(forgotPasswordDto());
 
       expect(result).toBeUndefined();
+      expect(warnings()).not.toContain('token=');
+      expect(warnings()).not.toContain('password');
     });
 
-    it('prints a usable reset link to the log in development, where nothing else can deliver it', async () => {
-      nodeEnv = 'development';
-
+    it('generates a valid reset URL using the configured web URL', async () => {
       await service.forgotPassword(forgotPasswordDto());
 
-      const link = /https?:\/\/\S+/.exec(warnings())?.[0] ?? '';
-      expect(link).toContain('/reset-password?token=');
+      const [recipient, emailData] = mail.sendPasswordResetEmail.mock.calls[0] as [
+        string,
+        { resetUrl: string },
+      ];
+      expect(recipient).toBe('karim@noor.example');
+      expect(emailData.resetUrl).toMatch(/^http:\/\/localhost:3000\/reset-password\?token=/);
 
-      // The point of the assertion is that the printed link *works*: the token in its query string
-      // has to be the one the stored hash will accept. A test that only checked a URL was logged
-      // would still pass if the link carried a different token than the row, which is the one way
-      // this can be broken while looking correct.
-      expect(sha256(new URL(link).searchParams.get('token') ?? '')).toBe(
-        dataOf(prisma.user.update).passwordResetTokenHash,
-      );
-    });
-
-    it('keeps the link and the token out of the log everywhere else', async () => {
-      for (const environment of ['test', 'production'] as const) {
-        warned.mockClear();
-        nodeEnv = environment;
-
-        await service.forgotPassword(forgotPasswordDto());
-
-        expect(warnings()).not.toContain('reset-password');
-        expect(warnings()).not.toContain('token=');
-        // But it still says something. A channel that sends nothing while the caller is told a link
-        // went out looks like a working feature from the outside, and would be reported as a
-        // mysterious missing email rather than as a missing implementation.
-        expect(warnings()).toContain('no delivery channel is configured');
-      }
+      const tokenInUrl = new URL(emailData.resetUrl).searchParams.get('token');
+      expect(tokenInUrl).toBeTruthy();
+      expect(sha256(tokenInUrl!)).toBe(dataOf(prisma.user.update).passwordResetTokenHash);
     });
   });
 
   describe('resetPassword', () => {
-    it('hashes a replacement password, consumes the token and revokes refresh sessions', async () => {
+    it('hashes a replacement password, consumes the token, revokes refresh sessions and sends success email', async () => {
       const dto = resetPasswordDto();
 
       await expect(service.resetPassword(dto)).resolves.toBeUndefined();
@@ -701,9 +761,18 @@ describe('AuthService', () => {
         where: { userId: USER_ID, revokedAt: null },
         data: { revokedAt: expect.any(Date) },
       });
+
+      expect(mail.sendPasswordResetSuccessEmail).toHaveBeenCalledWith(
+        'karim@noor.example',
+        expect.objectContaining({
+          loginUrl: 'http://localhost:3000/login',
+          userName: 'Abdul Karim',
+          websiteUrl: 'http://localhost:3000',
+        }),
+      );
     });
 
-    it('rejects an invalid token without changing credentials or sessions', async () => {
+    it('rejects an invalid token without changing credentials or sessions and sends no email', async () => {
       prisma.user.findFirst.mockResolvedValue(null);
 
       await expect(service.resetPassword(resetPasswordDto())).rejects.toBeInstanceOf(
@@ -711,9 +780,10 @@ describe('AuthService', () => {
       );
       expect(prisma.user.updateMany).not.toHaveBeenCalled();
       expect(prisma.refreshToken.updateMany).not.toHaveBeenCalled();
+      expect(mail.sendPasswordResetSuccessEmail).not.toHaveBeenCalled();
     });
 
-    it('rejects an expired token with the same generic refusal', async () => {
+    it('rejects an expired token with generic refusal and sends no email', async () => {
       prisma.user.findFirst.mockResolvedValue(null);
 
       await expect(service.resetPassword(resetPasswordDto())).rejects.toMatchObject({
@@ -722,21 +792,24 @@ describe('AuthService', () => {
       expect(whereOf(prisma.user.findFirst).passwordResetExpiresAt).toEqual({
         gt: expect.any(Date),
       });
+      expect(mail.sendPasswordResetSuccessEmail).not.toHaveBeenCalled();
     });
 
-    it('rejects a token that was already used', async () => {
+    it('rejects a token that was already used and sends no email', async () => {
       prisma.user.updateMany.mockResolvedValue({ count: 0 });
 
       await expect(service.resetPassword(resetPasswordDto())).rejects.toMatchObject({
         response: { code: 'INVALID_RESET_TOKEN' },
       });
       expect(prisma.refreshToken.updateMany).not.toHaveBeenCalled();
+      expect(mail.sendPasswordResetSuccessEmail).not.toHaveBeenCalled();
     });
 
     it('records the reset once it has committed, naming neither the token nor the password', async () => {
       prisma.user.findFirst.mockResolvedValue({
         id: USER_ID,
         mosqueId: MOSQUE_ID,
+        email: 'karim@noor.example',
         fullName: 'Abdul Karim',
         role: Role.member,
       });
@@ -768,6 +841,7 @@ describe('AuthService', () => {
 
       await expect(service.resetPassword(resetPasswordDto())).rejects.toThrow();
       expect(audit.record).not.toHaveBeenCalled();
+      expect(mail.sendPasswordResetSuccessEmail).not.toHaveBeenCalled();
     });
   });
 

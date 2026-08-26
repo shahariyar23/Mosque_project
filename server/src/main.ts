@@ -47,9 +47,9 @@ async function bootstrap(): Promise<void> {
         .setTitle('NOOR Mosque Management API')
         .setDescription(
           'REST API for the NOOR mosque management system. All endpoints are versioned under ' +
-          '/api/v1. Send the access token as `Authorization: Bearer <token>`; the refresh token is ' +
-          'set as an HttpOnly cookie scoped to /api/v1/auth and is never returned in a response ' +
-          'body. `POST /auth/refresh` reads that cookie, rotates it, and returns a new access token.',
+            '/api/v1. Send the access token as `Authorization: Bearer <token>`; the refresh token is ' +
+            'set as an HttpOnly cookie scoped to /api/v1/auth and is never returned in a response ' +
+            'body. `POST /auth/refresh` reads that cookie, rotates it, and returns a new access token.',
         )
         .setVersion('1.0')
         .addBearerAuth({ type: 'http', scheme: 'bearer', bearerFormat: 'JWT' }, 'access-token')

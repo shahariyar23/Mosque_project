@@ -20,6 +20,7 @@ import {
 } from "@/components/signup/icons";
 import { SigninSuccess } from "./signin-success";
 import { useAuth } from "@/components/auth-provider";
+import { useToast } from "@/components/ui/toast";
 import {
   detectIdentifierKind,
   initialSigninValues,
@@ -39,10 +40,9 @@ const FIELD_IDS: Record<SigninField, string> = {
   remember: "signin-remember",
 };
 
-const RESET_HELP_ID = "signin-reset-help";
-
 export function SigninForm() {
   const { login } = useAuth();
+  const { notify } = useToast();
   const [values, setValues] = useState<SigninValues>(initialSigninValues);
   const [touched, setTouched] = useState<Partial<Record<SigninField, boolean>>>(
     {},
@@ -50,7 +50,6 @@ export function SigninForm() {
   const [submitAttempted, setSubmitAttempted] = useState(false);
   const [status, setStatus] = useState<Status>("idle");
   const [submitError, setSubmitError] = useState<string | null>(null);
-  const [resetHelpOpen, setResetHelpOpen] = useState(false);
 
   const errors = useMemo(() => validateSignin(values), [values]);
   const formIsValid = useMemo(() => isSigninValid(values), [values]);
@@ -88,12 +87,23 @@ export function SigninForm() {
       const { token, session } = await loginUser(toSigninPayload(values));
       login(token, session);
       setStatus("success");
-    } catch {
+      notify({
+        message: "Signed in successfully",
+        description: `Welcome back, ${session.user.name || "Member"}.`,
+        tone: "success",
+      });
+    } catch (err: unknown) {
       setStatus("idle");
-      // Deliberately vague: never reveal which half of the credentials was wrong.
-      setSubmitError(
-        "We could not sign you in. Please check your details and try again.",
-      );
+      const message =
+        err instanceof Error && err.message
+          ? err.message
+          : "Invalid credentials.";
+      setSubmitError(message);
+      notify({
+        message,
+        description: "Please check your email/phone and password and try again.",
+        tone: "danger",
+      });
     }
   };
 
@@ -166,17 +176,12 @@ export function SigninForm() {
             >
               Password
             </label>
-            {/* Password reset needs the API, so this discloses the interim route
-                instead of linking to a page that does not exist yet. */}
-            <button
-              type="button"
-              onClick={() => setResetHelpOpen((current) => !current)}
-              aria-expanded={resetHelpOpen}
-              aria-controls={RESET_HELP_ID}
+            <Link
+              href="/forgot-password"
               className="text-[12px] font-medium text-[#0d4d3b] underline decoration-[#c79a45] underline-offset-2 transition-colors hover:text-[#073a2d] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#0d4d3b]"
             >
               Forgot password?
-            </button>
+            </Link>
           </div>
           <PasswordInput
             field={{
@@ -202,22 +207,6 @@ export function SigninForm() {
             >
               <AlertIcon className="mt-0.5 h-3.5 w-3.5 shrink-0" />
               <span>{errorFor("password")}</span>
-            </p>
-          ) : null}
-
-          {resetHelpOpen ? (
-            <p
-              id={RESET_HELP_ID}
-              className="mt-2 rounded-md bg-[#faf9f4] p-3 text-[12px] leading-5 text-[#69726d]"
-            >
-              Online password reset is coming soon. In the meantime, please{" "}
-              <Link
-                href="/contact"
-                className="font-medium text-[#0d4d3b]! underline decoration-[#c79a45] underline-offset-2 hover:text-[#073a2d]!"
-              >
-                contact the mosque office
-              </Link>{" "}
-              and we will help you back into your account.
             </p>
           ) : null}
         </div>

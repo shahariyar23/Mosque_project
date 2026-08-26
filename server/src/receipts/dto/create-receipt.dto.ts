@@ -1,12 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import {
-  IsISO8601,
-  IsNotEmpty,
-  IsOptional,
-  IsString,
-  IsUUID,
-  Matches,
-} from 'class-validator';
+import { IsISO8601, IsNotEmpty, IsOptional, IsString, IsUUID, Matches } from 'class-validator';
 
 import { CURRENCY_PATTERN } from '../../common/utils/currency';
 import { MONEY_PATTERN } from '../../common/utils/money';
@@ -43,7 +36,8 @@ export class CreateReceiptDto {
   @IsNotEmpty({ message: 'amount is required' })
   @IsString({ message: 'amount must be a string' })
   @Matches(MONEY_PATTERN, {
-    message: 'amount must be a non-negative amount with at most 2 decimal places, for example "1500.00"',
+    message:
+      'amount must be a non-negative amount with at most 2 decimal places, for example "1500.00"',
   })
   amount!: string;
 

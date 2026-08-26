@@ -164,7 +164,7 @@ describe('TransactionsService', () => {
       // Income: 1000, Expense: 100
       prisma.$transaction.mockResolvedValue([
         { _sum: { amount: new Prisma.Decimal('1000.00') } }, // incomeAgg
-        { _sum: { amount: new Prisma.Decimal('100.00') } },  // expenseAgg
+        { _sum: { amount: new Prisma.Decimal('100.00') } }, // expenseAgg
         5, // totalCount
         1, // pendingCount
         1, // voidedCount

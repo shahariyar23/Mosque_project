@@ -79,7 +79,8 @@ export class TransactionsController {
   @Permissions('transaction.view')
   @ApiOperation({
     summary: 'Get transactions summary',
-    description: 'Retrieves mosque-wide financial ledger summary figures (income, expense, net balance).',
+    description:
+      'Retrieves mosque-wide financial ledger summary figures (income, expense, net balance).',
   })
   @ApiOkResponse({ type: TransactionSummaryEnvelopeDto })
   async summary(@CurrentUser() actor: AuthenticatedUser): Promise<TransactionSummaryEnvelopeDto> {

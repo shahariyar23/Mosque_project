@@ -4,6 +4,7 @@ import { LanguageProvider } from "@/components/language-provider";
 import { hindSiliguri, inter, montserrat, playfair, notoSerifBengali } from "./fonts";
 import { AuthProvider } from "@/components/auth-provider";
 import { NoorLoader } from "@/components/loading/NoorLoader";
+import { ToastProvider } from "@/components/ui/toast";
 
 export const metadata: Metadata = {
   title: "Noor Community Mosque | Faith, Knowledge, Community",
@@ -35,7 +36,9 @@ export default function RootLayout({
         */}
         <NoorLoader />
         <AuthProvider>
-          <LanguageProvider>{children}</LanguageProvider>
+          <LanguageProvider>
+            <ToastProvider>{children}</ToastProvider>
+          </LanguageProvider>
         </AuthProvider>
       </body>
     </html>
