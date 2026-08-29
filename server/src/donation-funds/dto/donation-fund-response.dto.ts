@@ -59,6 +59,13 @@ export class DonationFundResponseDto {
   })
   targetAmount!: string | null;
 
+  @ApiPropertyOptional({
+    nullable: true,
+    example: '10000.00',
+    description: 'Initial opening balance for this fund as a decimal string.',
+  })
+  openingBalance!: string | null;
+
   @ApiPropertyOptional({ nullable: true, format: 'date', example: '2026-03-01' })
   startDate!: string | null;
 
@@ -91,6 +98,7 @@ export class DonationFundResponseDto {
       description: fund.description,
       status: fund.status,
       targetAmount: fromMoney(fund.targetAmount),
+      openingBalance: fromMoney(fund.openingBalance),
       startDate: fund.startDate ? fromDateOnly(fund.startDate) : null,
       endDate: fund.endDate ? fromDateOnly(fund.endDate) : null,
       isPublic: fund.isPublic,

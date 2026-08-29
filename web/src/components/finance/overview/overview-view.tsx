@@ -42,14 +42,15 @@ export function FinanceOverviewView() {
   );
 
   if (loading && !summary) return <TableSkeleton />;
-  if (error) return <FinanceErrorState description={error} onRetry={refetch} />;
+  const totalIncomeVal = summary?.income ? parseFloat(summary.income.total) : parseFloat(summary?.donations?.total || "0");
+  const totalIncomeCount = summary?.income ? summary.income.count : (summary?.donations?.count || 0);
 
   const summaryMetrics: SummaryMetric[] = summary ? [
     {
       id: "month-income",
       label: "Total Income",
-      amount: parseFloat(summary.donations.total),
-      hint: `${summary.donations.count} donations`,
+      amount: totalIncomeVal,
+      hint: `${totalIncomeCount} income records`,
       tone: "positive",
       icon: "trending-up",
     },

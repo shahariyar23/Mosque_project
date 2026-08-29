@@ -163,3 +163,57 @@ export function deleteDonationFund(id: string): Promise<void> {
 export function archiveDonationFund(id: string): Promise<DonationFund> {
   return apiPatch<DonationFund>(`/donation-funds/${id}`, { status: "archived" });
 }
+
+export type FundBalance = {
+  fundId: string;
+  fundName: string;
+  currency: string;
+  openingBalance: string;
+  totalIncome: string;
+  totalExpenses: string;
+  incomingTransfers: string;
+  outgoingTransfers: string;
+  availableBalance: string;
+};
+
+export type FundWithBalance = DonationFund & {
+  currency: string;
+  openingBalance: string;
+  totalIncome: string;
+  totalExpenses: string;
+  incomingTransfers: string;
+  outgoingTransfers: string;
+  availableBalance: string;
+};
+
+export type FundsSummary = {
+  currency: string;
+  totalAvailableBalance: string;
+  totalOpeningBalance: string;
+  totalIncome: string;
+  totalExpenses: string;
+  totalTransfers: string;
+  fundCount: number;
+  funds: FundWithBalance[];
+};
+
+/** Retrieves all funds with verified server-computed balances from the ledger. */
+export function fetchFundsWithBalances(): Promise<FundWithBalance[]> {
+  return apiGet<FundWithBalance[]>("/funds");
+}
+
+/** Retrieves single fund details and balance breakdown. */
+export function fetchFundDetails(id: string): Promise<FundWithBalance> {
+  return apiGet<FundWithBalance>(`/funds/${id}`);
+}
+
+/** Retrieves single fund's available balance and transfer breakdown. */
+export function fetchFundBalance(id: string): Promise<FundBalance> {
+  return apiGet<FundBalance>(`/funds/${id}/balance`);
+}
+
+/** Retrieves whole-mosque fund summary across all funds. */
+export function fetchFundsSummary(): Promise<FundsSummary> {
+  return apiGet<FundsSummary>("/funds/summary");
+}
+

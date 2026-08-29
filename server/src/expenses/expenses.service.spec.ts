@@ -3,6 +3,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { ExpenseStatus, PaymentMethod, Prisma } from '@prisma/client';
 
 import type { AuthenticatedUser } from '../common/types/authenticated-user';
+import { FundBalanceService } from '../fund-balance/fund-balance.service';
 import { PrismaService } from '../prisma/prisma.service';
 import type { CreateExpenseDto } from './dto/create-expense.dto';
 import type { UpdateExpenseDto } from './dto/update-expense.dto';
@@ -79,11 +80,17 @@ function newExpense(overrides: Partial<CreateExpenseDto> = {}): CreateExpenseDto
 describe('ExpensesService', () => {
   let service: ExpensesService;
   let prisma: PrismaService;
+  let fundBalanceService: { assertSufficientFundsTx: jest.Mock };
 
   beforeEach(async () => {
+    fundBalanceService = {
+      assertSufficientFundsTx: jest.fn().mockResolvedValue({ availableBalance: new Prisma.Decimal('1000.00') }),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         ExpensesService,
+        { provide: FundBalanceService, useValue: fundBalanceService },
         {
           provide: PrismaService,
           useValue: {
@@ -250,6 +257,43 @@ describe('ExpensesService', () => {
 
       expect(writtenData(expenses().create).status).toBe(ExpenseStatus.paid);
       expect(created.status).toBe(ExpenseStatus.paid);
+    });
+
+    it('validates sufficient funds atomically when a fundId is provided for a paid expense', async () => {
+      expenses().create.mockResolvedValue(row({ status: ExpenseStatus.paid }));
+
+      await service.create(
+        ACTOR,
+        newExpense({ status: ExpenseStatus.paid, fundId: '1b4e28ba-2fa1-11d2-883f-0016d3cca427', amount: '700.00' }),
+      );
+
+      expect(fundBalanceService.assertSufficientFundsTx).toHaveBeenCalledWith(
+        expect.anything(),
+        MOSQUE_ID,
+        '1b4e28ba-2fa1-11d2-883f-0016d3cca427',
+        new Prisma.Decimal('700.00'),
+      );
+    });
+
+    it('rejects paid expense when fund has insufficient funds (Fund = ৳300, Expense = ৳500)', async () => {
+      fundBalanceService.assertSufficientFundsTx.mockRejectedValueOnce(
+        new BadRequestException({
+          code: 'INSUFFICIENT_FUNDS',
+          message: 'Insufficient funds in Maintenance Fund. Available ৳300, required ৳500.',
+        }),
+      );
+
+      await expect(
+        service.create(
+          ACTOR,
+          newExpense({ status: ExpenseStatus.paid, fundId: '1b4e28ba-2fa1-11d2-883f-0016d3cca427', amount: '500.00' }),
+        ),
+      ).rejects.toThrow(
+        new BadRequestException({
+          code: 'INSUFFICIENT_FUNDS',
+          message: 'Insufficient funds in Maintenance Fund. Available ৳300, required ৳500.',
+        }),
+      );
     });
 
     it('does not write any field the DTO did not name', async () => {

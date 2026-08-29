@@ -34,6 +34,9 @@ import { DashboardModule } from './dashboard/dashboard.module';
 import { AuditModule } from './audit/audit.module';
 import { ReceiptsModule } from './receipts/receipts.module';
 import { TransactionsModule } from './transactions/transactions.module';
+import { FundBalanceModule } from './fund-balance/fund-balance.module';
+import { FundTransfersModule } from './fund-transfers/fund-transfers.module';
+import { FundsModule } from './funds/funds.module';
 import { MailModule } from './mail/mail.module';
 
 /**
@@ -109,6 +112,9 @@ import { MailModule } from './mail/mail.module';
     ExpensesModule,
     ReceiptsModule,
     TransactionsModule,
+    FundBalanceModule,
+    FundTransfersModule,
+    FundsModule,
     MailModule,
 
     // Then what the money was meant for and who it went to. Budgets and salaries are independent of each

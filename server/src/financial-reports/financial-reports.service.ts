@@ -1,5 +1,13 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
-import { BudgetStatus, DonationStatus, ExpenseStatus, Prisma, SalaryStatus } from '@prisma/client';
+import {
+  BudgetStatus,
+  DonationStatus,
+  ExpenseStatus,
+  Prisma,
+  SalaryStatus,
+  TransactionStatus,
+  TransactionType,
+} from '@prisma/client';
 
 import type { AuthenticatedUser } from '../common/types/authenticated-user';
 import { CURRENCY_PATTERN, FALLBACK_CURRENCY, normalizeCurrency } from '../common/utils/currency';
@@ -70,7 +78,45 @@ export class FinancialReportsService {
 
     const currency = await this.currencyOf(actor.mosqueId);
 
-    const [donations, expenses, salaries, budgets] = await this.prisma.$transaction([
+    const transactionIncomeWhere: Prisma.TransactionWhereInput = {
+      mosqueId: actor.mosqueId,
+      type: TransactionType.income,
+      status: TransactionStatus.completed,
+      ...(query.from || query.to
+        ? {
+            transactedAt: {
+              ...(query.from ? { gte: toDateOnly(query.from) } : {}),
+              ...(query.to ? { lt: dayAfter(query.to) } : {}),
+            },
+          }
+        : {}),
+    };
+
+    const transactionExpenseWhere: Prisma.TransactionWhereInput = {
+      mosqueId: actor.mosqueId,
+      type: TransactionType.expense,
+      status: TransactionStatus.completed,
+      ...(query.from || query.to
+        ? {
+            transactedAt: {
+              ...(query.from ? { gte: toDateOnly(query.from) } : {}),
+              ...(query.to ? { lt: dayAfter(query.to) } : {}),
+            },
+          }
+        : {}),
+    };
+
+    const [incomeTx, expenseTx, donations, expenses, salaries, budgets] = await this.prisma.$transaction([
+      this.prisma.transaction.aggregate({
+        where: transactionIncomeWhere,
+        _sum: { amount: true },
+        _count: { _all: true },
+      }),
+      this.prisma.transaction.aggregate({
+        where: transactionExpenseWhere,
+        _sum: { amount: true },
+        _count: { _all: true },
+      }),
       this.prisma.donation.aggregate({
         where: this.donationWhere(actor.mosqueId, query, DonationStatus.completed),
         _sum: { amount: true },
@@ -93,28 +139,33 @@ export class FinancialReportsService {
       }),
     ]);
 
-    const received = amountOf(donations);
-    const spent = amountOf(expenses);
-    const paidOut = amountOf(salaries);
+    const txIncomeAmount = amountOf(incomeTx);
+    const donationAmount = amountOf(donations);
+    const received = countOf(incomeTx) > 0 ? txIncomeAmount : donationAmount;
+
+    const txExpenseAmount = amountOf(expenseTx);
+    const expenseAmount = amountOf(expenses);
+    const salaryAmount = amountOf(salaries);
+    const spent = countOf(expenseTx) > 0 ? txExpenseAmount : expenseAmount.add(salaryAmount);
+
     const planned = amountOf(budgets);
     const budgetCount = countOf(budgets);
 
     return {
       range: this.rangeOf(query),
       currency,
-      donations: { total: fromMoney(received), count: countOf(donations) },
-      expenses: { total: fromMoney(spent), count: countOf(expenses) },
-      salaries: { total: fromMoney(paidOut), count: countOf(salaries) },
+      income: { total: fromMoney(received), count: countOf(incomeTx) > 0 ? countOf(incomeTx) : countOf(donations) },
+      donations: { total: fromMoney(donationAmount), count: countOf(donations) },
+      expenses: { total: fromMoney(expenseAmount), count: countOf(expenses) },
+      salaries: { total: fromMoney(salaryAmount), count: countOf(salaries) },
       budget: {
         total: fromMoney(planned),
         count: budgetCount,
-        // `null` rather than `"0.00"` when nothing is in force: there is no plan to have a remainder of, and a
-        // zero would read as "fully spent". Salaries count against it as well as expenses — both are the mosque
-        // spending, and a remaining figure that ignored payroll would be the least useful number on the page.
-        remaining: budgetCount === 0 ? null : fromMoney(planned.sub(spent).sub(paidOut)),
+        // `null` rather than `"0.00"` when nothing is in force
+        remaining: budgetCount === 0 ? null : fromMoney(planned.sub(spent)),
       },
-      // Decimal subtraction, not `-`. Negative when more went out than came in, which is a fact to report.
-      netBalance: fromMoney(received.sub(spent).sub(paidOut)),
+      // Decimal subtraction, not `-`. Negative when more went out than came in.
+      netBalance: fromMoney(received.sub(spent)),
     };
   }
 

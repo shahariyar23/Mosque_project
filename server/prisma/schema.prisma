@@ -526,6 +526,9 @@ model DonationFund {
 
   status FundStatus @default(active)
 
+  /// Opening balance before any transactions.
+  openingBalance Decimal? @default(0) @db.Decimal(14, 2)
+
   /// What the mosque hopes to raise, when it has said. Null means the fund runs open-ended, which is
   /// normal for Zakat and for a general fund.
   targetAmount Decimal? @db.Decimal(14, 2)

@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   ConflictException,
+  HttpException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -12,6 +13,7 @@ import type { AuthenticatedUser } from '../common/types/authenticated-user';
 import { CURRENCY_PATTERN, FALLBACK_CURRENCY, normalizeCurrency } from '../common/utils/currency';
 import { toInstant } from '../common/utils/instant';
 import { fromMoney, toMoney } from '../common/utils/money';
+import { FundBalanceService } from '../fund-balance/fund-balance.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateTransactionDto } from './dto/create-transaction.dto';
 import { TransactionQueryDto } from './dto/transaction-query.dto';
@@ -33,10 +35,12 @@ export class TransactionsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditLogService,
+    private readonly fundBalanceService: FundBalanceService,
   ) {}
 
   /**
    * Records a new financial ledger transaction for the caller's mosque.
+   * Atomically validates sufficient funds for money-out operations (expenses, transfers).
    */
   async create(
     actor: AuthenticatedUser,
@@ -50,28 +54,44 @@ export class TransactionsService {
 
     const currency = await this.resolveCurrency(actor.mosqueId, dto.currency);
     const transactedAt = dto.transactedAt ? toInstant(dto.transactedAt) : new Date();
+    const amountDecimal = toMoney(dto.amount);
 
     try {
-      const created = await this.prisma.transaction.create({
-        data: {
-          mosqueId: actor.mosqueId,
-          type: dto.type,
-          status: TransactionStatus.completed,
-          amount: toMoney(dto.amount),
-          currency,
-          description: dto.description.trim(),
-          category: dto.category?.trim() ?? null,
-          reference: dto.reference?.trim() ?? null,
-          paymentMethod: dto.paymentMethod ?? PaymentMethod.cash,
-          fundId: dto.fundId ?? null,
-          toFundId: dto.toFundId ?? null,
-          donationId: dto.donationId ?? null,
-          expenseId: dto.expenseId ?? null,
-          receiptId: dto.receiptId ?? null,
-          transactedAt,
-          createdById: actor.id,
-        },
-        select: TRANSACTION_SELECT,
+      const created = await this.prisma.$transaction(async (tx) => {
+        // Enforce sufficient funds on source fund for outgoing transactions (expense, transfer)
+        if (
+          (dto.type === TransactionType.expense || dto.type === TransactionType.transfer) &&
+          dto.fundId
+        ) {
+          await this.fundBalanceService.assertSufficientFundsTx(
+            tx,
+            actor.mosqueId,
+            dto.fundId,
+            amountDecimal,
+          );
+        }
+
+        return tx.transaction.create({
+          data: {
+            mosqueId: actor.mosqueId,
+            type: dto.type,
+            status: TransactionStatus.completed,
+            amount: amountDecimal,
+            currency,
+            description: dto.description.trim(),
+            category: dto.category?.trim() ?? null,
+            reference: dto.reference?.trim() ?? null,
+            paymentMethod: dto.paymentMethod ?? PaymentMethod.cash,
+            fundId: dto.fundId ?? null,
+            toFundId: dto.toFundId ?? null,
+            donationId: dto.donationId ?? null,
+            expenseId: dto.expenseId ?? null,
+            receiptId: dto.receiptId ?? null,
+            transactedAt,
+            createdById: actor.id,
+          },
+          select: TRANSACTION_SELECT,
+        });
       });
 
       // Audit log recording
@@ -424,7 +444,8 @@ export class TransactionsService {
       : FALLBACK_CURRENCY;
   }
 
-  private translate(error: unknown): Error {
+  private translate(error: unknown): unknown {
+    if (error instanceof HttpException) return error;
     if (error instanceof Error && 'status' in error) return error;
 
     if (error instanceof Prisma.PrismaClientKnownRequestError) {

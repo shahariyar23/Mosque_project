@@ -34,6 +34,7 @@ const SAMPLE: DonationFundResponseDto = {
   description: 'Obligatory annual charity, distributed locally.',
   status: FundStatus.active,
   targetAmount: '500000.00',
+  openingBalance: '0.00',
   startDate: '2026-03-01',
   endDate: '2026-03-31',
   isPublic: true,

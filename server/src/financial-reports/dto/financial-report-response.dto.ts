@@ -117,6 +117,13 @@ export class FinancialSummaryDto {
   })
   currency!: string;
 
+  @ApiProperty({
+    type: ReportTotalDto,
+    required: false,
+    description: 'Total completed income from all ledger transactions in this window.',
+  })
+  income?: ReportTotalDto;
+
   @ApiProperty({ type: ReportTotalDto, description: 'Money received. `completed` donations only.' })
   donations!: ReportTotalDto;
 

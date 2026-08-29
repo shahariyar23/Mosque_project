@@ -268,16 +268,17 @@ async function sendWithRecovery(input: RequestInput): Promise<unknown> {
 
 /**
  * Reads the payload out of an envelope.
- *
- * A `200` whose envelope has no `data` is treated as a failure rather than returned as `undefined`.
- * Letting it through is how a screen ends up rendering blank with no error to explain it.
+ * Handles standard `{ success: true, data: T }` envelopes, as well as direct JSON payloads.
  */
 function unwrap<T>(body: unknown): T {
-  const envelope = body as Envelope<T> | null;
-  if (!envelope || envelope.data === undefined) {
+  if (body === null || body === undefined) {
     throw new ServiceError("MALFORMED_RESPONSE", "The server sent an unexpected response.");
   }
-  return envelope.data;
+  const envelope = body as Envelope<T>;
+  if (envelope && typeof envelope === "object" && "data" in envelope && envelope.data !== undefined) {
+    return envelope.data as T;
+  }
+  return body as T;
 }
 
 /* ------------------------------------------------------------------ *

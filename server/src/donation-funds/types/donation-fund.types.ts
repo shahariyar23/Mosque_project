@@ -24,6 +24,7 @@ export const DONATION_FUND_SELECT = {
   description: true,
   status: true,
   targetAmount: true,
+  openingBalance: true,
   startDate: true,
   endDate: true,
   isPublic: true,
