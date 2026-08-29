@@ -43,9 +43,24 @@ export const AUDIT_ACTIONS = [
   'APPROVAL_REQUESTED',
   'APPROVAL_APPROVED',
   'APPROVAL_REJECTED',
+  'FUND_CREATED',
+  'FUND_UPDATED',
+  'FUND_BALANCE_ADJUSTED',
   'TRANSACTION_CREATED',
   'TRANSACTION_UPDATED',
   'TRANSACTION_VOIDED',
+  'EXPENSE_CREATED',
+  'EXPENSE_COMPLETED',
+  'EXPENSE_REJECTED_INSUFFICIENT_FUNDS',
+  'SALARY_CREATED',
+  'SALARY_PAID',
+  'SALARY_REJECTED_INSUFFICIENT_FUNDS',
+  'FUND_TRANSFER_CREATED',
+  'FUND_TRANSFER_COMPLETED',
+  'FUND_TRANSFER_REJECTED_INSUFFICIENT_FUNDS',
+  'DONATION_RECORDED',
+  'RECEIPT_ISSUED',
+  'RECEIPT_VOIDED',
 ] as const;
 
 export type AuditAction = (typeof AUDIT_ACTIONS)[number];
@@ -54,7 +69,18 @@ export type AuditAction = (typeof AUDIT_ACTIONS)[number];
  * The kind of thing an action concerned — the brief's `entity`, stored in the schema's `resource`
  * column and named `resource` there because it matches the first half of a permission.
  */
-export const AUDIT_RESOURCES = ['user', 'auth', 'approval', 'transaction'] as const;
+export const AUDIT_RESOURCES = [
+  'user',
+  'auth',
+  'approval',
+  'transaction',
+  'fund',
+  'expense',
+  'salary',
+  'fund_transfer',
+  'donation',
+  'receipt',
+] as const;
 
 export type AuditResource = (typeof AUDIT_RESOURCES)[number];
 

@@ -55,10 +55,11 @@ export type ReceiptQuery = {
 };
 
 export type CreateReceiptInput = {
-  amount: string;
+  transactionId?: string;
+  donationId?: string;
+  amount?: string;
   currency?: string;
   fundId?: string;
-  donationId?: string;
   userId?: string;
   issuedAt?: string;
 };

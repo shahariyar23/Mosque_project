@@ -353,10 +353,26 @@ describe('AuditLogService', () => {
       expect(result.rows).toEqual([]);
     });
 
-    it('filters on the action', async () => {
+    it('filters on the action or operation', async () => {
       await service.findMany(actor(), { action: 'LOGIN_FAILED' });
-
       expect(whereOf(prisma.auditLog.findMany)).toMatchObject({ action: 'LOGIN_FAILED' });
+
+      await service.findMany(actor(), { operation: 'FUND_CREATED' });
+      expect(whereOf(prisma.auditLog.findMany)).toMatchObject({ action: 'FUND_CREATED' });
+    });
+
+    it('filters on fundId or resourceId', async () => {
+      await service.findMany(actor(), { fundId: '11111111-1111-1111-1111-111111111111' });
+      expect(whereOf(prisma.auditLog.findMany)).toMatchObject({
+        resourceId: '11111111-1111-1111-1111-111111111111',
+      });
+    });
+
+    it('filters on status (failure vs success)', async () => {
+      await service.findMany(actor(), { status: 'failure' });
+      expect(whereOf(prisma.auditLog.findMany).action).toMatchObject({
+        in: expect.arrayContaining(['EXPENSE_REJECTED_INSUFFICIENT_FUNDS', 'FUND_TRANSFER_REJECTED_INSUFFICIENT_FUNDS']),
+      });
     });
 
     it('maps the brief’s entity onto the resource column', async () => {

@@ -60,6 +60,14 @@ export class AuditLogQueryDto {
   action?: AuditAction;
 
   @ApiPropertyOptional({
+    description: 'Alias for action — show only one kind of operation.',
+    enum: AUDIT_ACTIONS,
+  })
+  @IsOptional()
+  @IsIn(AUDIT_ACTIONS, { message: `operation must be one of: ${AUDIT_ACTIONS.join(', ')}` })
+  operation?: AuditAction;
+
+  @ApiPropertyOptional({
     description: 'Show only entries about one kind of thing. Reads the `resource` column.',
     enum: AUDIT_RESOURCES,
   })
@@ -74,6 +82,36 @@ export class AuditLogQueryDto {
   @IsOptional()
   @IsUUID()
   userId?: string;
+
+  @ApiPropertyOptional({
+    description: 'Filter entries concerning a specific fund.',
+    format: 'uuid',
+  })
+  @IsOptional()
+  @IsUUID()
+  fundId?: string;
+
+  @ApiPropertyOptional({
+    description: 'Filter entries by specific resource, transaction, or transfer ID.',
+  })
+  @IsOptional()
+  @IsString()
+  resourceId?: string;
+
+  @ApiPropertyOptional({
+    description: 'Filter entries by transaction/transfer/receipt reference.',
+  })
+  @IsOptional()
+  @IsString()
+  reference?: string;
+
+  @ApiPropertyOptional({
+    description: 'Filter entries by outcome: "success" or "failure".',
+    enum: ['success', 'failure'],
+  })
+  @IsOptional()
+  @IsIn(['success', 'failure'])
+  status?: 'success' | 'failure';
 
   @ApiPropertyOptional({
     description: 'Earliest day to include, inclusive. A calendar date, read in UTC.',

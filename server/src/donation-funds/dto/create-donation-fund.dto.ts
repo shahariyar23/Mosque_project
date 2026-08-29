@@ -102,6 +102,17 @@ export class CreateDonationFundDto {
   targetAmount?: string | null;
 
   @ApiPropertyOptional({
+    description: 'Initial opening balance for the fund, as a decimal string.',
+    example: '10000.00',
+    nullable: true,
+  })
+  @IsOptional()
+  @Transform(normalizedMoney)
+  @IsString()
+  @Matches(MONEY_PATTERN, { message: `openingBalance ${MONEY_MESSAGE}` })
+  openingBalance?: string | null;
+
+  @ApiPropertyOptional({
     description: 'When collection opens. Omit for a standing fund with no window.',
     example: '2026-03-01',
     nullable: true,

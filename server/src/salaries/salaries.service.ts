@@ -1,5 +1,5 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import { BadRequestException, HttpException, Injectable, NotFoundException } from '@nestjs/common';
+import { PaymentMethod, Prisma, SalaryStatus, TransactionStatus, TransactionType } from '@prisma/client';
 
 import { type DataScope, effectivePermissions, scopeFor } from '../common/constants/roles';
 import { forbidden } from '../common/guards/authorization';
@@ -8,6 +8,7 @@ import type { AuthenticatedUser } from '../common/types/authenticated-user';
 import { CURRENCY_PATTERN, FALLBACK_CURRENCY, normalizeCurrency } from '../common/utils/currency';
 import { toDateOnly } from '../common/utils/date-only';
 import { toMoney } from '../common/utils/money';
+import { FundBalanceService } from '../fund-balance/fund-balance.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateSalaryRecordDto } from './dto/create-salary-record.dto';
 import { SalaryRecordQueryDto } from './dto/salary-record-query.dto';
@@ -19,47 +20,16 @@ import {
   type SelectedSalaryRecord,
 } from './types/salary.types';
 
-/**
- * Everything the salary endpoints do.
- *
- * Much of it reads like the expenses and budgets services on purpose — the mosque comes from the token and never
- * from the body, reads are scoped in the `where` clause rather than checked after the fact, an unowned row
- * answers 404 rather than 403, money moves as `Decimal` and never as a float, and Prisma errors are translated
- * instead of passed through. `DonationFundsService` gives the reasoning for each.
- *
- * Four things are specific to salaries.
- *
- * **There is no imam model and no staff model.** A salary record points at an existing `User`, so an imam is an
- * ordinary user who happens to have rows in this table, and so is a caretaker or a teacher. Nothing here reads a
- * role to decide who may be paid: a mosque that pays its secretary is not doing anything this module needs to
- * know about.
- *
- * **That the user belongs to the caller's mosque is checked against the database, every time one is named.** The
- * foreign key cannot do it — it can only say "some user exists", not "a user of mine" — so without
- * `assertUserOwned` a treasurer could name a user id belonging to another mosque and attach a salary row to a
- * stranger. That is the whole of *"the User must belong to the same Mosque"*, and it is the reason `userId` is
- * validated as an id and then resolved as a row.
- *
- * **Whose records you see is a query, not a permission.** A treasurer with `salary.view` reads the mosque's
- * payroll; the imam holds only `salary.viewOwn` and reads their own record. Both arrive at the same handler, and
- * `scopeOf` turns the difference into a `userId` in the `where` clause. Nobody is filtered out after the fact.
- *
- * **No payroll runs behind any of this.** Nothing computes tax, deducts anything, derives gross from net, or
- * moves money. `status: paid` is somebody recording a decision taken elsewhere; the reports count it and that is
- * all it does.
- *
- * There is deliberately no `remove`. The spec lists no DELETE route, and `status: cancelled` retires a record
- * without losing it — which is the right behaviour for a row that says a person was paid.
- */
 @Injectable()
 export class SalariesService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly fundBalanceService: FundBalanceService,
+  ) {}
 
   /**
    * Records what somebody is paid.
-   *
-   * The mosque is the caller's, from the token. The user has to be one of that mosque's own, checked below, so
-   * there is no request that can write a salary row against another mosque or against another mosque's person.
+   * Atomically validates sufficient funds if a fundId is provided and status is paid.
    */
   async create(
     actor: AuthenticatedUser,
@@ -70,22 +40,49 @@ export class SalariesService {
     const currency = await this.resolveCurrency(actor.mosqueId, dto.currency);
 
     try {
-      const created = await this.prisma.salaryRecord.create({
-        // Field by field rather than spread from the DTO, and `mosqueId` from the token: a field added to the
-        // DTO later cannot reach the database until someone names it here, and no request body can write a
-        // salary record against another mosque.
-        data: {
-          mosqueId: actor.mosqueId,
-          userId: dto.userId,
-          amount: toMoney(dto.amount),
-          currency,
-          payPeriod: dto.payPeriod,
-          paymentDate: toDateOnly(dto.paymentDate),
-          // Falls back to the column default, `pending`, when the caller does not say.
-          ...(dto.status !== undefined ? { status: dto.status } : {}),
-          notes: dto.notes ?? null,
-        },
-        select: SALARY_SELECT,
+      const created = await this.prisma.$transaction(async (tx) => {
+        if (dto.status === SalaryStatus.paid && dto.fundId) {
+          await this.fundBalanceService.assertSufficientFundsTx(
+            tx,
+            actor.mosqueId,
+            dto.fundId,
+            toMoney(dto.amount),
+          );
+        }
+
+        const salary = await tx.salaryRecord.create({
+          data: {
+            mosqueId: actor.mosqueId,
+            userId: dto.userId,
+            amount: toMoney(dto.amount),
+            currency,
+            payPeriod: dto.payPeriod,
+            paymentDate: toDateOnly(dto.paymentDate),
+            ...(dto.status !== undefined ? { status: dto.status } : {}),
+            notes: dto.notes ?? null,
+          },
+          select: SALARY_SELECT,
+        });
+
+        if (salary.status === SalaryStatus.paid && dto.fundId) {
+          await tx.transaction.create({
+            data: {
+              mosqueId: actor.mosqueId,
+              type: TransactionType.expense,
+              status: TransactionStatus.completed,
+              amount: salary.amount,
+              currency: salary.currency,
+              description: `Salary payment for period ${salary.payPeriod}`,
+              category: 'Salaries',
+              paymentMethod: PaymentMethod.bank_transfer,
+              fundId: dto.fundId,
+              transactedAt: salary.paymentDate,
+              createdById: actor.id,
+            },
+          });
+        }
+
+        return salary;
       });
 
       return SalaryRecordResponseDto.from(created);
@@ -160,15 +157,47 @@ export class SalariesService {
     id: string,
     dto: UpdateSalaryRecordDto,
   ): Promise<SalaryRecordResponseDto> {
-    await this.getOwned(actor.mosqueId, id);
+    const existing = await this.getOwned(actor.mosqueId, id);
 
     try {
-      const updated = await this.prisma.salaryRecord.update({
-        // `id` alone is safe only because `getOwned` has already established that it belongs to the caller's
-        // mosque.
-        where: { id },
-        data: this.toUpdateData(dto),
-        select: SALARY_SELECT,
+      const updated = await this.prisma.$transaction(async (tx) => {
+        const targetStatus = dto.status !== undefined ? dto.status : existing.status;
+        const targetAmount = dto.amount !== undefined ? toMoney(dto.amount) : existing.amount;
+
+        if (targetStatus === SalaryStatus.paid && dto.fundId) {
+          await this.fundBalanceService.assertSufficientFundsTx(
+            tx,
+            actor.mosqueId,
+            dto.fundId,
+            targetAmount,
+          );
+        }
+
+        const salary = await tx.salaryRecord.update({
+          where: { id },
+          data: this.toUpdateData(dto),
+          select: SALARY_SELECT,
+        });
+
+        if (salary.status === SalaryStatus.paid && dto.fundId) {
+          await tx.transaction.create({
+            data: {
+              mosqueId: actor.mosqueId,
+              type: TransactionType.expense,
+              status: TransactionStatus.completed,
+              amount: salary.amount,
+              currency: salary.currency,
+              description: `Salary payment for period ${salary.payPeriod}`,
+              category: 'Salaries',
+              paymentMethod: PaymentMethod.bank_transfer,
+              fundId: dto.fundId,
+              transactedAt: salary.paymentDate,
+              createdById: actor.id,
+            },
+          });
+        }
+
+        return salary;
       });
 
       return SalaryRecordResponseDto.from(updated);
@@ -343,6 +372,8 @@ export class SalariesService {
    * is not the caller's to interpret, and inventing a 4xx for one would hide a bug.
    */
   private translate(error: unknown): unknown {
+    if (error instanceof HttpException) return error;
+    if (error instanceof Error && 'status' in error) return error;
     if (!(error instanceof Prisma.PrismaClientKnownRequestError)) return error;
 
     switch (error.code) {

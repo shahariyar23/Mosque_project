@@ -4,6 +4,7 @@ import { PaymentMethod, Prisma, TransactionStatus, TransactionType } from '@pris
 
 import { AuditLogService } from '../audit/audit-log.service';
 import type { AuthenticatedUser } from '../common/types/authenticated-user';
+import { FundBalanceService } from '../fund-balance/fund-balance.service';
 import { PrismaService } from '../prisma/prisma.service';
 import type { CreateTransactionDto } from './dto/create-transaction.dto';
 import type { UpdateTransactionDto } from './dto/update-transaction.dto';
@@ -91,15 +92,25 @@ describe('TransactionsService', () => {
       expense: { findFirst: jest.fn() },
       receipt: { findFirst: jest.fn() },
       mosqueSettings: { findUnique: jest.fn() },
-      $transaction: jest.fn((ops: any) => Promise.all(ops)),
+      $transaction: jest.fn(async (cbOrOps: any) => {
+        if (typeof cbOrOps === 'function') {
+          return cbOrOps(prisma);
+        }
+        return Promise.all(cbOrOps);
+      }),
     };
     audit = { record: jest.fn().mockResolvedValue(undefined) };
+
+    const fundBalanceService = {
+      assertSufficientFundsTx: jest.fn().mockResolvedValue({ availableBalance: new Prisma.Decimal('1000.00') }),
+    };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         TransactionsService,
         { provide: PrismaService, useValue: prisma },
         { provide: AuditLogService, useValue: audit },
+        { provide: FundBalanceService, useValue: fundBalanceService },
       ],
     }).compile();
 
@@ -134,28 +145,84 @@ describe('TransactionsService', () => {
       );
     });
 
-    it('creates a completed expense transaction of 100 correctly', async () => {
+    it('creates an expense transaction when fund has sufficient balance (Fund = ৳1000, Expense = ৳700)', async () => {
+      prisma.donationFund.findFirst.mockResolvedValue({ id: FUND_ID, mosqueId: MOSQUE_ID });
       prisma.transaction.create.mockResolvedValue(
         mockTransactionRow({
           type: TransactionType.expense,
-          amount: new Prisma.Decimal('100.00'),
-          description: 'Office supplies',
-          category: 'Office',
+          amount: new Prisma.Decimal('700.00'),
+          description: 'Roof repair',
+          fundId: FUND_ID,
         }),
       );
 
       const dto: CreateTransactionDto = {
         type: TransactionType.expense,
-        amount: '100.00',
-        description: 'Office supplies',
-        category: 'Office',
+        amount: '700.00',
+        description: 'Roof repair',
+        fundId: FUND_ID,
       };
 
       const result = await service.create(TREASURER, dto);
 
       expect(result.type).toBe('expense');
-      expect(result.amount).toBe('100.00');
+      expect(result.amount).toBe('700.00');
       expect(result.status).toBe('completed');
+    });
+
+    it('rejects expense transaction when fund has insufficient balance (Fund = ৳300, Expense = ৳500)', async () => {
+      prisma.donationFund.findFirst.mockResolvedValue({ id: FUND_ID, mosqueId: MOSQUE_ID });
+
+      const fundBalanceService = (service as any).fundBalanceService;
+      fundBalanceService.assertSufficientFundsTx.mockRejectedValueOnce(
+        new BadRequestException({
+          code: 'INSUFFICIENT_FUNDS',
+          message: 'Insufficient funds in Maintenance Fund. Available ৳300, required ৳500.',
+        }),
+      );
+
+      const dto: CreateTransactionDto = {
+        type: TransactionType.expense,
+        amount: '500.00',
+        description: 'Sound equipment',
+        fundId: FUND_ID,
+      };
+
+      await expect(service.create(TREASURER, dto)).rejects.toThrow(
+        new BadRequestException({
+          code: 'INSUFFICIENT_FUNDS',
+          message: 'Insufficient funds in Maintenance Fund. Available ৳300, required ৳500.',
+        }),
+      );
+      expect(prisma.transaction.create).not.toHaveBeenCalled();
+    });
+
+    it('rejects transfer transaction when source fund has insufficient balance', async () => {
+      prisma.donationFund.findFirst.mockResolvedValue({ id: FUND_ID, mosqueId: MOSQUE_ID });
+
+      const fundBalanceService = (service as any).fundBalanceService;
+      fundBalanceService.assertSufficientFundsTx.mockRejectedValueOnce(
+        new BadRequestException({
+          code: 'INSUFFICIENT_FUNDS',
+          message: 'Insufficient funds in Maintenance Fund. Available ৳200, required ৳500.',
+        }),
+      );
+
+      const dto: CreateTransactionDto = {
+        type: TransactionType.transfer,
+        amount: '500.00',
+        description: 'Transfer to relief fund',
+        fundId: FUND_ID,
+        toFundId: '8f8c6cfe-6fe5-11d2-883f-0016d3cca888',
+      };
+
+      await expect(service.create(TREASURER, dto)).rejects.toThrow(
+        new BadRequestException({
+          code: 'INSUFFICIENT_FUNDS',
+          message: 'Insufficient funds in Maintenance Fund. Available ৳200, required ৳500.',
+        }),
+      );
+      expect(prisma.transaction.create).not.toHaveBeenCalled();
     });
   });
 

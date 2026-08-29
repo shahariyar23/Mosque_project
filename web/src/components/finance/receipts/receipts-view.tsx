@@ -30,6 +30,7 @@ import {
 } from "@/services/receiptsService";
 import { fetchDonationFunds } from "@/services/donationFundsService";
 import { fetchUsers } from "@/services/userService";
+import { fetchTransactions, type Transaction } from "@/services/transactionsService";
 
 const receiptStatusFilterOptions = [
   { value: "all", label: "All receipts" },
@@ -144,6 +145,8 @@ export function ReceiptsView() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [voidTarget, setVoidTarget] = useState<Receipt | null>(null);
   const [issueOpen, setIssueOpen] = useState(false);
+  const [selectedTxId, setSelectedTxId] = useState<string>("");
+  const [txSearch, setTxSearch] = useState<string>("");
   const [notice, setNotice] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string[]> | undefined>(undefined);
@@ -152,6 +155,28 @@ export function ReceiptsView() {
   const { rows: fundList } = useApiList(fetchDonationFunds, { limit: 100 }, { enabled: can("receipt.view") || can("fund.view") });
   // Fetch users for donor selection
   const { rows: userList } = useApiList(fetchUsers, { limit: 100 }, { enabled: can("receipt.issue") && can("user.view") });
+
+  // Fetch verified income transactions for receipt generation
+  const { rows: completedTransactions, loading: loadingTransactions } = useApiList(
+    fetchTransactions,
+    { type: "income", status: "completed", limit: 100 },
+    { enabled: issueOpen }
+  );
+
+  const sortedTransactions = useMemo(() => {
+    return [...completedTransactions].sort((a, b) => {
+      const aIssued = Boolean(a.receiptId);
+      const bIssued = Boolean(b.receiptId);
+      if (!aIssued && bIssued) return -1; // unissued (available) transactions appear first at top
+      if (aIssued && !bIssued) return 1;  // already issued receipts go down to bottom
+      return new Date(b.transactedAt || b.createdAt).getTime() - new Date(a.transactedAt || a.createdAt).getTime();
+    });
+  }, [completedTransactions]);
+
+  const chosenTx = useMemo(
+    () => sortedTransactions.find((t) => t.id === selectedTxId) || null,
+    [sortedTransactions, selectedTxId]
+  );
 
   const query: ReceiptQuery = {
     page,
@@ -198,26 +223,33 @@ export function ReceiptsView() {
 
   const handleIssueReceipt = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    const formData = new FormData(event.currentTarget);
+
+    if (!chosenTx) {
+      notify({
+        message: "No transaction selected",
+        description: "Please select an existing completed payment transaction to issue a receipt.",
+        tone: "danger",
+      });
+      return;
+    }
 
     try {
       setIsSubmitting(true);
       setFieldErrors(undefined);
 
       const input: CreateReceiptInput = {
-        amount: (formData.get("amount") as string).replace(/,/g, ""),
-        fundId: (formData.get("fundId") as string) || undefined,
-        userId: (formData.get("userId") as string) || undefined,
-        issuedAt: (formData.get("date") as string) ? new Date(formData.get("date") as string).toISOString() : undefined,
+        transactionId: chosenTx.id,
+        donationId: chosenTx.donationId || undefined,
       };
 
       const created = await createReceipt(input);
       setIssueOpen(false);
+      setSelectedTxId("");
       refetch();
       setSelectedId(created.id);
       notify({
         message: "Receipt issued",
-        description: `Receipt ${created.receiptNumber} was issued successfully.`,
+        description: `Receipt ${created.receiptNumber} was issued successfully for ${formatAmount(parseFloat(created.amount))}.`,
         tone: "success",
       });
     } catch (err: any) {
@@ -233,6 +265,17 @@ export function ReceiptsView() {
     } finally {
       setIsSubmitting(false);
     }
+  };
+
+  const handleViewExistingReceipt = (receiptId: string) => {
+    setSelectedId(receiptId);
+    setIssueOpen(false);
+    setSelectedTxId("");
+    notify({
+      message: "Showing Existing Receipt",
+      description: "Loaded the existing receipt from the register.",
+      tone: "info",
+    });
   };
 
   const handleVoidReceipt = async (reason: string) => {
@@ -499,60 +542,130 @@ export function ReceiptsView() {
         open={issueOpen}
         onClose={() => !isSubmitting && setIssueOpen(false)}
         title="Issue a receipt"
-        description="Assigned the next sequential receipt number server-side. Only issue one for verified funds."
+        description="Select an existing completed payment transaction to issue a proof-of-payment receipt."
         size="lg"
         footer={
           <>
             <Button variant="secondary" onClick={() => setIssueOpen(false)} disabled={isSubmitting}>
               Cancel
             </Button>
-            <Button type="submit" form="issue-receipt-form" icon="receipt" disabled={isSubmitting}>
+            <Button
+              type="submit"
+              form="issue-receipt-form"
+              icon="receipt"
+              disabled={isSubmitting || !chosenTx || Boolean(chosenTx.receiptId)}
+            >
               {isSubmitting ? "Issuing..." : "Issue receipt"}
             </Button>
           </>
         }
       >
         <form id="issue-receipt-form" onSubmit={handleIssueReceipt} noValidate className="space-y-4">
-          <div className="grid gap-4 sm:grid-cols-2">
-            <AmountField
-              label="Amount received (BDT)"
-              name="amount"
-              required
-              error={fieldErrors?.amount?.[0]}
-              placeholder="e.g. 1500.00"
-            />
-
-            <TextField
-              label="Date received"
-              name="date"
-              type="date"
-              required
-              defaultValue={new Date().toISOString().split("T")[0]}
-              error={fieldErrors?.issuedAt?.[0]}
-            />
-
+          <div className="space-y-3">
             <SelectField
-              label="Credited to fund"
-              name="fundId"
-              placeholder="Select fund (optional)"
+              label="Select completed income transaction"
+              name="transactionId"
+              required
+              placeholder={loadingTransactions ? "Loading verified transactions..." : "Pick a completed transaction…"}
+              value={selectedTxId}
+              onChange={(e) => setSelectedTxId(e.target.value)}
               options={[
-                { value: "", label: "None / General" },
-                ...fundList.map((f) => ({ value: f.id, label: f.name })),
+                {
+                  value: "",
+                  label: loadingTransactions
+                    ? "-- Loading transactions... --"
+                    : sortedTransactions.length === 0
+                    ? "-- No completed transactions found --"
+                    : "-- Choose a verified payment --",
+                },
+                ...sortedTransactions.map((tx) => ({
+                  value: tx.id,
+                  label: tx.receiptId
+                    ? `🔒 [Already Issued] ${formatShortDate(tx.transactedAt)} · ৳${formatAmount(parseFloat(tx.amount))} ${tx.currency} — ${tx.donation?.donorName || tx.createdBy?.fullName || tx.description || "General Income"} (${tx.fund?.name || "General Fund"})`
+                    : `🟢 [Available] ${formatShortDate(tx.transactedAt)} · ৳${formatAmount(parseFloat(tx.amount))} ${tx.currency} — ${tx.donation?.donorName || tx.createdBy?.fullName || tx.description || "General Income"} (${tx.fund?.name || "General Fund"})`,
+                })),
               ]}
-              error={fieldErrors?.fundId?.[0]}
-            />
-
-            <SelectField
-              label="Registered member / donor"
-              name="userId"
-              placeholder="Select donor account (optional)"
-              options={[
-                { value: "", label: "Anonymous / Walk-in Donor" },
-                ...userList.map((u) => ({ value: u.id, label: `${u.fullName} (${u.email})` })),
-              ]}
-              error={fieldErrors?.userId?.[0]}
+              error={fieldErrors?.transactionId?.[0]}
             />
           </div>
+
+          {!loadingTransactions && completedTransactions.length === 0 && (
+            <div className="rounded-lg border border-[#e2e1d6] bg-[#faf9f4] p-4 text-[13px] text-[#69726d]">
+              <p className="font-semibold text-[#17211d]">No completed income payments found</p>
+              <p className="mt-1 text-[12px]">
+                Receipts can only represent existing completed transactions. When a payment is recorded under{" "}
+                <span className="font-medium text-[#17211d]">Finance → Contributions</span> or{" "}
+                <span className="font-medium text-[#17211d]">Finance → Donations</span>, it will be listed in this dropdown.
+              </p>
+            </div>
+          )}
+
+          {chosenTx ? (
+            <div className="space-y-3 rounded-lg border border-[#e2e1d6] bg-[#faf9f4] p-4 text-[13px]">
+              <div className="flex items-center justify-between border-b border-[#e7e6dc] pb-2">
+                <span className="font-medium text-[#17211d]">Verified Transaction Details</span>
+                <span className="inline-flex items-center rounded-full bg-[#e3f4e9] px-2.5 py-0.5 text-[11px] font-semibold text-[#0d4d3b]">
+                  {chosenTx.status.toUpperCase()}
+                </span>
+              </div>
+
+              {chosenTx.receiptId && (
+                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 rounded-md border border-[#f5c6cb] bg-[#f8d7da] p-3 text-[12px] text-[#721c24]">
+                  <div>
+                    ⚠️ <strong>Notice:</strong> A receipt has already been issued for this transaction (Receipt #{chosenTx.receipt?.receiptNumber || chosenTx.receiptId}).
+                  </div>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="secondary"
+                    onClick={() => handleViewExistingReceipt(chosenTx.receipt?.id || chosenTx.receiptId!)}
+                  >
+                    View existing receipt
+                  </Button>
+                </div>
+              )}
+
+              <dl className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
+                <div>
+                  <dt className="text-[11.5px] font-medium text-[#69726d]">Verified Amount (Read-only)</dt>
+                  <dd className="mt-0.5 text-[14px] font-bold text-[#0d4d3b]">
+                    ৳ {formatAmount(parseFloat(chosenTx.amount))} {chosenTx.currency}
+                  </dd>
+                </div>
+
+                <div>
+                  <dt className="text-[11.5px] font-medium text-[#69726d]">Credited Fund (Read-only)</dt>
+                  <dd className="mt-0.5 font-medium text-[#17211d]">{chosenTx.fund?.name || "General Fund"}</dd>
+                </div>
+
+                <div>
+                  <dt className="text-[11.5px] font-medium text-[#69726d]">Donor / Member (Read-only)</dt>
+                  <dd className="mt-0.5 font-medium text-[#17211d]">
+                    {chosenTx.donation?.donorName || chosenTx.createdBy?.fullName || "Walk-in Contributor"}
+                  </dd>
+                </div>
+
+                <div>
+                  <dt className="text-[11.5px] font-medium text-[#69726d]">Payment Method (Read-only)</dt>
+                  <dd className="mt-0.5 font-medium uppercase text-[#17211d]">{chosenTx.paymentMethod || "Cash"}</dd>
+                </div>
+
+                <div>
+                  <dt className="text-[11.5px] font-medium text-[#69726d]">Payment Date (Read-only)</dt>
+                  <dd className="mt-0.5 font-medium text-[#17211d]">{formatDate(chosenTx.transactedAt)}</dd>
+                </div>
+
+                <div>
+                  <dt className="text-[11.5px] font-medium text-[#69726d]">Category / Purpose</dt>
+                  <dd className="mt-0.5 font-medium text-[#17211d]">{chosenTx.category || chosenTx.description || "General Income"}</dd>
+                </div>
+              </dl>
+            </div>
+          ) : (
+            <div className="rounded-md border border-dashed border-[#d5d4c7] p-5 text-center text-[12.5px] text-[#69726d]">
+              Please select a completed transaction from the list above. Receipts can only document real, completed payments.
+            </div>
+          )}
 
           <dl className="divide-y divide-[#f0efe6] rounded-md border border-[#e2e1d6] bg-[#faf9f4] px-3.5 py-1">
             <SummaryRow label="Issued by" value={user?.name ?? "Treasurer"} />
@@ -561,7 +674,7 @@ export function ReceiptsView() {
           </dl>
 
           <InlineNotice icon="shield">
-            Receipt numbers are assigned in order by the backend and never reused. A voided receipt stays in the register for auditing.
+            Receipts are proof documents and do not modify fund or account balances. Balance is recorded when the transaction is completed.
           </InlineNotice>
         </form>
       </Modal>

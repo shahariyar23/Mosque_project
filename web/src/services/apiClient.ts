@@ -268,16 +268,17 @@ async function sendWithRecovery(input: RequestInput): Promise<unknown> {
 
 /**
  * Reads the payload out of an envelope.
- *
- * A `200` whose envelope has no `data` is treated as a failure rather than returned as `undefined`.
- * Letting it through is how a screen ends up rendering blank with no error to explain it.
+ * Handles standard `{ success: true, data: T }` envelopes, as well as direct JSON payloads.
  */
 function unwrap<T>(body: unknown): T {
-  const envelope = body as Envelope<T> | null;
-  if (!envelope || envelope.data === undefined) {
+  if (body === null || body === undefined) {
     throw new ServiceError("MALFORMED_RESPONSE", "The server sent an unexpected response.");
   }
-  return envelope.data;
+  const envelope = body as Envelope<T>;
+  if (envelope && typeof envelope === "object" && "data" in envelope && envelope.data !== undefined) {
+    return envelope.data as T;
+  }
+  return body as T;
 }
 
 /* ------------------------------------------------------------------ *
@@ -316,21 +317,27 @@ export async function apiDelete(path: string, query?: QueryParams): Promise<void
  * single unpaged page that is the right answer, and it is never larger than the truth.
  */
 export async function apiList<Row>(path: string, query?: QueryParams): Promise<ListResult<Row>> {
-  const body = (await sendWithRecovery({ method: "GET", path, query })) as Envelope<Row[]> | null;
-  const rows = Array.isArray(body?.data) ? body.data : [];
+  const body = (await sendWithRecovery({ method: "GET", path, query })) as any;
+  const rows: Row[] = Array.isArray(body?.data)
+    ? body.data
+    : Array.isArray(body?.data?.rows)
+      ? body.data.rows
+      : Array.isArray(body?.rows)
+        ? body.rows
+        : [];
 
   const requestedPage = Number(query?.page ?? 1);
   const requestedLimit = Number(query?.limit ?? rows.length);
-  const total = body?.meta?.total ?? rows.length;
-  const limit = body?.meta?.limit ?? (Number.isFinite(requestedLimit) ? requestedLimit : rows.length);
+  const total = body?.meta?.total ?? body?.data?.meta?.total ?? rows.length;
+  const limit = body?.meta?.limit ?? body?.data?.meta?.limit ?? (Number.isFinite(requestedLimit) ? requestedLimit : rows.length);
 
   return {
     rows,
     meta: {
-      page: body?.meta?.page ?? (Number.isFinite(requestedPage) ? requestedPage : 1),
+      page: body?.meta?.page ?? body?.data?.meta?.page ?? (Number.isFinite(requestedPage) ? requestedPage : 1),
       limit,
       total,
-      totalPages: body?.meta?.totalPages ?? Math.max(1, limit > 0 ? Math.ceil(total / limit) : 1),
+      totalPages: body?.meta?.totalPages ?? body?.data?.meta?.totalPages ?? Math.max(1, limit > 0 ? Math.ceil(total / limit) : 1),
     },
   };
 }

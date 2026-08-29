@@ -105,6 +105,9 @@ model Mosque {
   salaryRecords    SalaryRecord[]
   receipts         Receipt[]
   transactions     Transaction[]
+  contributionPlans ContributionPlan[]
+  contributionEnrollments ContributionEnrollment[]
+  contributionPeriods ContributionPeriod[]
   users            User[]
   auditLogs        AuditLog[]
   approvalRequests ApprovalRequest[]
@@ -240,6 +243,8 @@ model User {
   /// Receipts made out to this person. Kept even after the receipt is voided, and one more reason a
   /// user row is soft-deleted rather than removed: a receipt names who it was issued to, permanently.
   receipts      Receipt[]
+  contributionEnrollments ContributionEnrollment[]
+  contributionPeriods ContributionPeriod[]
   /// At most one: volunteering is something a person either does or does not, not a list of
   /// enrolments. Optional because most members never volunteer.
   volunteer     Volunteer?
@@ -526,6 +531,9 @@ model DonationFund {
 
   status FundStatus @default(active)
 
+  /// Opening balance before any transactions.
+  openingBalance Decimal? @default(0) @db.Decimal(14, 2)
+
   /// What the mosque hopes to raise, when it has said. Null means the fund runs open-ended, which is
   /// normal for Zakat and for a general fund.
   targetAmount Decimal? @db.Decimal(14, 2)
@@ -545,6 +553,7 @@ model DonationFund {
   receipts          Receipt[]
   transactions      Transaction[] @relation("FundTransactions")
   transfersIncoming Transaction[] @relation("TransferToFund")
+  contributionPlans ContributionPlan[]
 
   // One slug per mosque, not one globally: the slug appears in a public URL, and two mosques are
   // each entitled to a "zakat".
@@ -553,6 +562,137 @@ model DonationFund {
   @@index([mosqueId, status])
   @@index([mosqueId, createdAt])
   @@map("donation_funds")
+}
+
+// ---------------------------------------------------------------------------
+// Recurring Contribution Plans
+// ---------------------------------------------------------------------------
+
+enum ContributionFrequency {
+  monthly
+  quarterly
+  yearly
+}
+
+/// A recurring contribution commitment template (e.g. Standard Monthly, Supporter, Student, Salary Pledge).
+/// Defines a recurring commitment rule. Does not create financial transactions directly on plan creation.
+model ContributionPlan {
+  id       String @id @default(uuid()) @db.Uuid
+  mosqueId String @db.Uuid
+  mosque   Mosque @relation(fields: [mosqueId], references: [id], onDelete: Cascade)
+
+  name        String  @db.VarChar(160)
+  description String? @db.Text
+
+  amount   Decimal               @db.Decimal(14, 2)
+  currency String                @default("BDT") @db.VarChar(8)
+  frequency ContributionFrequency @default(monthly)
+
+  fundId String?       @db.Uuid
+  fund   DonationFund? @relation(fields: [fundId], references: [id], onDelete: Restrict)
+
+  isActive Boolean @default(true)
+
+  createdAt DateTime @default(now()) @db.Timestamptz
+  updatedAt DateTime @updatedAt @db.Timestamptz
+
+  enrollments ContributionEnrollment[]
+  contributionPeriods ContributionPeriod[]
+
+  @@index([mosqueId, isActive])
+  @@index([mosqueId, createdAt])
+  @@map("contribution_plans")
+}
+
+enum ContributionEnrollmentStatus {
+  active
+  paused
+  cancelled
+}
+
+/// A donor/member enrollment into a recurring contribution plan.
+model ContributionEnrollment {
+  id       String @id @default(uuid()) @db.Uuid
+  mosqueId String @db.Uuid
+  mosque   Mosque @relation(fields: [mosqueId], references: [id], onDelete: Cascade)
+
+  userId String @db.Uuid
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  planId String           @db.Uuid
+  plan   ContributionPlan @relation(fields: [planId], references: [id], onDelete: Restrict)
+
+  /// Snapshot amount and currency at time of enrollment
+  amount    Decimal               @db.Decimal(14, 2)
+  currency  String                @default("BDT") @db.VarChar(8)
+  frequency ContributionFrequency @default(monthly)
+
+  startDate DateTime  @default(now()) @db.Timestamptz
+  endDate   DateTime? @db.Timestamptz
+
+  status ContributionEnrollmentStatus @default(active)
+
+  createdAt DateTime @default(now()) @db.Timestamptz
+  updatedAt DateTime @updatedAt @db.Timestamptz
+
+  contributionPeriods ContributionPeriod[]
+
+  @@index([mosqueId, status])
+  @@index([userId, status])
+  @@index([planId, status])
+  @@index([mosqueId, createdAt])
+  @@map("contribution_enrollments")
+}
+
+enum ContributionDueStatus {
+  pending
+  partial
+  paid
+  overdue
+  waived
+}
+
+/// An expected recurring contribution payment period generated for an enrollment.
+/// Expected amounts do NOT affect fund balances or financial ledger transactions until paid.
+model ContributionPeriod {
+  id       String @id @default(uuid()) @db.Uuid
+  mosqueId String @db.Uuid
+  mosque   Mosque @relation(fields: [mosqueId], references: [id], onDelete: Cascade)
+
+  enrollmentId String                 @db.Uuid
+  enrollment   ContributionEnrollment @relation(fields: [enrollmentId], references: [id], onDelete: Cascade)
+
+  userId String @db.Uuid
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  planId String           @db.Uuid
+  plan   ContributionPlan @relation(fields: [planId], references: [id], onDelete: Restrict)
+
+  periodStart DateTime @db.Date
+  periodEnd   DateTime @db.Date
+  dueDate     DateTime @db.Date
+
+  expectedAmount Decimal @db.Decimal(14, 2)
+  paidAmount     Decimal @default(0) @db.Decimal(14, 2)
+  currency       String  @default("BDT") @db.VarChar(8)
+
+  status ContributionDueStatus @default(pending)
+
+  transactionId String?      @db.Uuid
+  transaction   Transaction? @relation(fields: [transactionId], references: [id], onDelete: SetNull)
+
+  paidAt DateTime? @db.Timestamptz
+
+  createdAt DateTime @default(now()) @db.Timestamptz
+  updatedAt DateTime @updatedAt @db.Timestamptz
+
+  @@unique([enrollmentId, periodStart])
+  @@index([mosqueId, status])
+  @@index([userId, status])
+  @@index([planId, status])
+  @@index([mosqueId, dueDate])
+  @@index([mosqueId, createdAt])
+  @@map("contribution_periods")
 }
 
 /// A specific appeal: "Build the new roof", "Ramadan iftar 1447".
@@ -1095,6 +1235,8 @@ model Transaction {
 
   createdAt   DateTime          @default(now()) @db.Timestamptz
   updatedAt   DateTime          @updatedAt @db.Timestamptz
+
+  contributionPeriods ContributionPeriod[]
 
   @@index([mosqueId, type])
   @@index([mosqueId, status])

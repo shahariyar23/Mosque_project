@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   ConflictException,
+  HttpException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -11,6 +12,7 @@ import type { AuthenticatedUser } from '../common/types/authenticated-user';
 import { CURRENCY_PATTERN, FALLBACK_CURRENCY, normalizeCurrency } from '../common/utils/currency';
 import { toDateOnly } from '../common/utils/date-only';
 import { fromMoney, toMoney } from '../common/utils/money';
+import { FundBalanceService } from '../fund-balance/fund-balance.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateExpenseDto } from './dto/create-expense.dto';
 import { ExpenseQueryDto } from './dto/expense-query.dto';
@@ -26,43 +28,32 @@ import {
   type SelectedExpense,
 } from './types/expense.types';
 
-/**
- * Everything the expenses endpoints do.
- *
- * Much of it reads like the funds, campaigns and donations services on purpose — the mosque comes from the
- * token and never from the body, reads are scoped in the `where` clause rather than checked after the fact,
- * an unowned row answers 404 rather than 403, money moves as `Decimal` and never as a float, and Prisma
- * errors are translated instead of passed through. `DonationFundsService` gives the reasoning for each.
- *
- * Three things are specific to expenses.
- *
- * **There is no view/viewOwn split.** Unlike donations, where a member reads their own giving history, an
- * expense has no owner to read it — `createdBy` says who typed it, not whose money it was. `expense.view`
- * either lets someone read the mosque's spending or it does not, so no scope is resolved here.
- *
- * **A delete is only allowed while nothing has happened.** `remove` refuses once an expense is approved,
- * paid or cancelled, and points at `status: cancelled` instead. See the method for why.
- *
- * **Nothing here draws anything down.** No budget line is reduced, no account debited, no approval
- * requested. `status: paid` is somebody recording that the money went out. The figures a report will need
- * are derived from these rows later; there is no running total to keep in step, by design.
- */
 @Injectable()
 export class ExpensesService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly fundBalanceService: FundBalanceService,
+  ) {}
 
   /**
    * Records an expense for the caller's mosque.
-   *
-   * `createdById` is the authenticated caller, not a field of the DTO. Who entered a payment is a fact about
-   * the request, and letting a body assert it would make the one column that answers "who booked this?" the
-   * easiest one to falsify.
+   * Atomically validates sufficient funds if a fundId is provided and expense is paid.
    */
   async create(actor: AuthenticatedUser, dto: CreateExpenseDto): Promise<ExpenseResponseDto> {
     const currency = await this.resolveCurrency(actor.mosqueId, dto.currency);
 
     try {
       const created = await this.prisma.$transaction(async (tx) => {
+        // Enforce sufficient funds if paid from a specific fund
+        if (dto.fundId && dto.status === ExpenseStatus.paid) {
+          await this.fundBalanceService.assertSufficientFundsTx(
+            tx,
+            actor.mosqueId,
+            dto.fundId,
+            toMoney(dto.amount),
+          );
+        }
+
         const expense = await tx.expense.create({
           data: {
             mosqueId: actor.mosqueId,
@@ -93,6 +84,7 @@ export class ExpensesService {
               category: expense.category,
               reference: expense.reference,
               paymentMethod: expense.paymentMethod,
+              fundId: dto.fundId ?? null,
               expenseId: expense.id,
               transactedAt: expense.expenseDate,
               createdById: actor.id,
@@ -172,8 +164,19 @@ export class ExpensesService {
         if (expense.status === ExpenseStatus.paid) {
           const existingTx = await tx.transaction.findFirst({
             where: { mosqueId: actor.mosqueId, expenseId: expense.id },
-            select: { id: true },
+            select: { id: true, fundId: true, amount: true },
           });
+
+          const targetFundId = dto.fundId !== undefined ? dto.fundId : existingTx?.fundId;
+
+          if (targetFundId) {
+            await this.fundBalanceService.assertSufficientFundsTx(
+              tx,
+              actor.mosqueId,
+              targetFundId,
+              expense.amount,
+            );
+          }
 
           if (existingTx) {
             await tx.transaction.update({
@@ -186,6 +189,7 @@ export class ExpensesService {
                 category: expense.category,
                 reference: expense.reference,
                 paymentMethod: expense.paymentMethod,
+                fundId: targetFundId ?? null,
                 transactedAt: expense.expenseDate,
               },
             });
@@ -201,6 +205,7 @@ export class ExpensesService {
                 category: expense.category,
                 reference: expense.reference,
                 paymentMethod: expense.paymentMethod,
+                fundId: targetFundId ?? null,
                 expenseId: expense.id,
                 transactedAt: expense.expenseDate,
                 createdById: actor.id,
@@ -394,6 +399,8 @@ export class ExpensesService {
    * fault is not the caller's to interpret, and inventing a 4xx for one would hide a bug.
    */
   private translate(error: unknown): unknown {
+    if (error instanceof HttpException) return error;
+    if (error instanceof Error && 'status' in error) return error;
     if (!(error instanceof Prisma.PrismaClientKnownRequestError)) return error;
 
     switch (error.code) {

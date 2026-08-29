@@ -100,6 +100,7 @@ const table = (): TableMock => ({
 describe('FinancialReportsService', () => {
   let service: FinancialReportsService;
   let prisma: {
+    transaction: TableMock;
     donation: TableMock;
     expense: TableMock;
     budget: TableMock;
@@ -110,6 +111,7 @@ describe('FinancialReportsService', () => {
 
   beforeEach(async () => {
     prisma = {
+      transaction: table(),
       donation: table(),
       expense: table(),
       budget: table(),

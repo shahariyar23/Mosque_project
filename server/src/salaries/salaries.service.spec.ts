@@ -3,6 +3,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { Prisma, SalaryStatus } from '@prisma/client';
 
 import type { AuthenticatedUser } from '../common/types/authenticated-user';
+import { FundBalanceService } from '../fund-balance/fund-balance.service';
 import { PrismaService } from '../prisma/prisma.service';
 import type { CreateSalaryRecordDto } from './dto/create-salary-record.dto';
 import type { UpdateSalaryRecordDto } from './dto/update-salary-record.dto';
@@ -100,11 +101,17 @@ function newSalary(overrides: Partial<CreateSalaryRecordDto> = {}): CreateSalary
 describe('SalariesService', () => {
   let service: SalariesService;
   let prisma: PrismaService;
+  let fundBalanceService: { assertSufficientFundsTx: jest.Mock };
 
   beforeEach(async () => {
+    fundBalanceService = {
+      assertSufficientFundsTx: jest.fn().mockResolvedValue({ availableBalance: new Prisma.Decimal('50000.00') }),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         SalariesService,
+        { provide: FundBalanceService, useValue: fundBalanceService },
         {
           provide: PrismaService,
           useValue: {
@@ -115,10 +122,18 @@ describe('SalariesService', () => {
               create: jest.fn(),
               update: jest.fn(),
             },
+            transaction: {
+              create: jest.fn().mockResolvedValue({ id: 'tx-sal-1' }),
+            },
             // Resolves by default, so the create tests exercise the write rather than the membership check.
             user: { findFirst: jest.fn().mockResolvedValue({ id: EMPLOYEE_ID }) },
             mosqueSettings: { findUnique: jest.fn().mockResolvedValue({ currency: 'BDT' }) },
-            $transaction: jest.fn((operations: Promise<unknown>[]) => Promise.all(operations)),
+            $transaction: jest.fn(async (cbOrOps: any) => {
+              if (typeof cbOrOps === 'function') {
+                return cbOrOps(prisma);
+              }
+              return Promise.all(cbOrOps);
+            }),
           },
         },
       ],
@@ -217,6 +232,43 @@ describe('SalariesService', () => {
 
       expect(writtenData(salaries().create).status).toBe(SalaryStatus.paid);
       expect(created.status).toBe(SalaryStatus.paid);
+    });
+
+    it('validates sufficient funds atomically when a fundId is provided for a paid salary', async () => {
+      salaries().create.mockResolvedValue(row({ status: SalaryStatus.paid }));
+
+      await service.create(
+        ACTOR,
+        newSalary({ status: SalaryStatus.paid, fundId: '1b4e28ba-2fa1-11d2-883f-0016d3cca427', amount: '35000.00' }),
+      );
+
+      expect(fundBalanceService.assertSufficientFundsTx).toHaveBeenCalledWith(
+        expect.anything(),
+        MOSQUE_ID,
+        '1b4e28ba-2fa1-11d2-883f-0016d3cca427',
+        new Prisma.Decimal('35000.00'),
+      );
+    });
+
+    it('rejects paid salary when fund has insufficient funds (Fund = ৳30000, Salary = ৳35000)', async () => {
+      fundBalanceService.assertSufficientFundsTx.mockRejectedValueOnce(
+        new BadRequestException({
+          code: 'INSUFFICIENT_FUNDS',
+          message: 'Insufficient funds in General Fund. Available ৳30,000, required ৳35,000.',
+        }),
+      );
+
+      await expect(
+        service.create(
+          ACTOR,
+          newSalary({ status: SalaryStatus.paid, fundId: '1b4e28ba-2fa1-11d2-883f-0016d3cca427', amount: '35000.00' }),
+        ),
+      ).rejects.toThrow(
+        new BadRequestException({
+          code: 'INSUFFICIENT_FUNDS',
+          message: 'Insufficient funds in General Fund. Available ৳30,000, required ৳35,000.',
+        }),
+      );
     });
 
     // The write is built field by field, so a column added to the DTO later cannot reach the database until

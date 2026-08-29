@@ -15,6 +15,14 @@ export class CreateReceiptDto {
 
   @ApiPropertyOptional({
     format: 'uuid',
+    description: 'The financial transaction this receipt is issued against, if any.',
+  })
+  @IsOptional()
+  @IsUUID('4', { message: 'transactionId must be a valid UUID v4' })
+  transactionId?: string;
+
+  @ApiPropertyOptional({
+    format: 'uuid',
     description: 'Which fund the money was filed under, if any.',
   })
   @IsOptional()
@@ -29,17 +37,17 @@ export class CreateReceiptDto {
   @IsUUID('4', { message: 'userId must be a valid UUID v4' })
   userId?: string;
 
-  @ApiProperty({
+  @ApiPropertyOptional({
     example: '1500.00',
-    description: 'A non-negative decimal amount with at most 2 decimal places.',
+    description: 'A non-negative decimal amount with at most 2 decimal places. Defaults to verified transaction amount.',
   })
-  @IsNotEmpty({ message: 'amount is required' })
+  @IsOptional()
   @IsString({ message: 'amount must be a string' })
   @Matches(MONEY_PATTERN, {
     message:
       'amount must be a non-negative amount with at most 2 decimal places, for example "1500.00"',
   })
-  amount!: string;
+  amount?: string;
 
   @ApiPropertyOptional({
     example: 'BDT',

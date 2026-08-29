@@ -3,6 +3,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { DonationStatus, PaymentMethod, Prisma } from '@prisma/client';
 
 import type { AuthenticatedUser } from '../common/types/authenticated-user';
+import { MailService } from '../mail/mail.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { DonationsService } from './donations.service';
 import type { CreateDonationDto } from './dto/create-donation.dto';
@@ -120,14 +121,26 @@ describe('DonationsService', () => {
             campaign: {
               findFirst: jest.fn().mockResolvedValue({ id: CAMPAIGN_ID, fundId: FUND_ID }),
             },
+            receipt: {
+              findFirst: jest.fn().mockResolvedValue(null),
+              create: jest.fn().mockResolvedValue({ id: 'r1', receiptNumber: 'REC-2026-00001' }),
+            },
             user: { findFirst: jest.fn().mockResolvedValue({ id: DONOR_ID }) },
             mosqueSettings: { findUnique: jest.fn().mockResolvedValue({ currency: 'BDT' }) },
+            $executeRaw: jest.fn().mockResolvedValue(1),
             $transaction: jest.fn((arg: any) => {
               if (typeof arg === 'function') {
                 return arg(prisma);
               }
               return Promise.all(arg);
             }),
+          },
+        },
+        {
+          provide: MailService,
+          useValue: {
+            sendReceiptIssuedEmail: jest.fn().mockResolvedValue({ success: true }),
+            sendMail: jest.fn().mockResolvedValue({ success: true }),
           },
         },
       ],

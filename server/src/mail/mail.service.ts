@@ -20,6 +20,11 @@ import {
   renderPasswordSuccessText,
   type PasswordSuccessTemplateData,
 } from './templates/password-success.template';
+import {
+  renderReceiptIssuedHtml,
+  renderReceiptIssuedText,
+  type ReceiptIssuedTemplateData,
+} from './templates/receipt-issued.template';
 
 /**
  * Reusable email transport and workflow delivery service using Titan Email SMTP.
@@ -223,6 +228,29 @@ export class MailService {
     return this.sendMail({
       to,
       subject: 'New Sign-In Detected — NOOR',
+      html,
+      text,
+    });
+  }
+
+  /**
+   * Sends an official payment receipt confirmation email.
+   * Fails gracefully if recipient email is empty or mail transport is dormant.
+   */
+  public async sendReceiptIssuedEmail(
+    to: string,
+    data: ReceiptIssuedTemplateData,
+  ): Promise<MailSendResult> {
+    if (!to || !to.trim() || !to.includes('@')) {
+      return { success: false, error: 'No valid recipient email provided.' };
+    }
+
+    const html = renderReceiptIssuedHtml(data);
+    const text = renderReceiptIssuedText(data);
+
+    return this.sendMail({
+      to: to.trim(),
+      subject: `Payment Receipt: ${data.receiptNumber} — ${data.mosqueName || 'NOOR'}`,
       html,
       text,
     });

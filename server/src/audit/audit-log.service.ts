@@ -135,13 +135,50 @@ export class AuditLogService {
   }
 
   private buildWhere(actor: AuthenticatedUser, query: AuditLogQueryDto): Prisma.AuditLogWhereInput {
+    const action = query.action ?? query.operation;
+    const resourceId = query.resourceId ?? query.fundId;
+
     return {
       ...this.mosqueScope(actor),
-      ...(query.action ? { action: query.action } : {}),
+      ...(action ? { action } : {}),
       // The brief's `entity`, which is this column.
       ...(query.entity ? { resource: query.entity } : {}),
       // The brief's `userId`. A filter, not a scope: it cannot widen what the caller may see.
       ...(query.userId ? { actorId: query.userId } : {}),
+      ...(resourceId ? { resourceId } : {}),
+      ...(query.reference
+        ? {
+            OR: [
+              { resourceId: { contains: query.reference, mode: 'insensitive' } },
+              { note: { contains: query.reference, mode: 'insensitive' } },
+            ],
+          }
+        : {}),
+      ...(query.status === 'failure'
+        ? {
+            action: {
+              in: [
+                'LOGIN_FAILED',
+                'APPROVAL_REJECTED',
+                'EXPENSE_REJECTED_INSUFFICIENT_FUNDS',
+                'SALARY_REJECTED_INSUFFICIENT_FUNDS',
+                'FUND_TRANSFER_REJECTED_INSUFFICIENT_FUNDS',
+              ],
+            },
+          }
+        : query.status === 'success'
+          ? {
+              action: {
+                notIn: [
+                  'LOGIN_FAILED',
+                  'APPROVAL_REJECTED',
+                  'EXPENSE_REJECTED_INSUFFICIENT_FUNDS',
+                  'SALARY_REJECTED_INSUFFICIENT_FUNDS',
+                  'FUND_TRANSFER_REJECTED_INSUFFICIENT_FUNDS',
+                ],
+              },
+            }
+          : {}),
       ...(query.from !== undefined || query.to !== undefined
         ? {
             createdAt: {

@@ -67,11 +67,12 @@ export type FinancialSummary = {
   range: ReportRange;
   /** The mosque's configured currency. There are no exchange rates anywhere in this system. */
   currency: string;
+  income?: ReportTotal;
   donations: ReportTotal;
   expenses: ReportTotal;
   salaries: ReportTotal;
   budget: BudgetSummary;
-  /** Donations less expenses less salaries. Negative when more went out than came in. */
+  /** Donations/income less expenses less salaries. Negative when more went out than came in. */
   netBalance: string;
 };
 
@@ -196,3 +197,6 @@ export function fetchBudgetReport(window?: ReportWindow): Promise<BudgetReport> 
 export function fetchSalaryReport(window?: ReportWindow): Promise<SalaryReport> {
   return apiGet<SalaryReport>("/financial-reports/salary", windowQuery(window));
 }
+
+export { fetchFundsSummary, fetchFundsWithBalances, type FundsSummary, type FundWithBalance } from "./donationFundsService";
+

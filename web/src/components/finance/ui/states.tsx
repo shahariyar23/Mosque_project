@@ -102,7 +102,7 @@ export function InlineNotice({
       <span className="mt-0.5 shrink-0">
         <Icon name={icon} size={16} />
       </span>
-      <p>{children}</p>
+      <div className="min-w-0 flex-1">{children}</div>
     </div>
   );
 }

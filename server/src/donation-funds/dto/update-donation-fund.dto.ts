@@ -96,4 +96,15 @@ export class UpdateDonationFundDto {
   @IsOptional()
   @IsBoolean()
   isPublic?: boolean;
+
+  @ApiPropertyOptional({
+    description: 'Initial opening balance for the fund, as a decimal string.',
+    example: '10000.00',
+    nullable: true,
+  })
+  @IsOptional()
+  @Transform(normalizedMoney)
+  @IsString()
+  @Matches(MONEY_PATTERN, { message: `openingBalance ${MONEY_MESSAGE}` })
+  openingBalance?: string | null;
 }

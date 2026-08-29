@@ -84,6 +84,7 @@ export class DonationFundsService {
           description: dto.description ?? null,
           status: dto.status,
           targetAmount: dto.targetAmount ? toMoney(dto.targetAmount) : null,
+          openingBalance: dto.openingBalance ? toMoney(dto.openingBalance) : null,
           startDate: dto.startDate ? toDateOnly(dto.startDate) : null,
           endDate: dto.endDate ? toDateOnly(dto.endDate) : null,
           isPublic: dto.isPublic,
@@ -319,6 +320,9 @@ export class DonationFundsService {
     if (dto.status !== undefined) data.status = dto.status;
     if (dto.targetAmount !== undefined) {
       data.targetAmount = dto.targetAmount === null ? null : toMoney(dto.targetAmount);
+    }
+    if (dto.openingBalance !== undefined) {
+      data.openingBalance = dto.openingBalance === null ? null : toMoney(dto.openingBalance);
     }
     if (dto.startDate !== undefined) {
       data.startDate = dto.startDate === null ? null : toDateOnly(dto.startDate);
