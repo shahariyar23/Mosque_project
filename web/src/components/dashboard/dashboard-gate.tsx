@@ -27,9 +27,9 @@ import { useRequireAuth } from "@/components/auth/route-guards";
 export function DashboardGate({ children }: { children: ReactNode }) {
   const gate = useRequireAuth();
 
-  // `denied` renders the same holding screen as `pending`: the redirect is already in flight, and
-  // flashing "you must sign in" at someone who is about to be shown a sign-in form is noise.
-  if (gate.state !== "granted") return <DashboardPending />;
+  // While checking auth in parallel, return null so the branded NoorLoader smoothly handles the entrance
+  // without clashing with a duplicate plain spinner screen.
+  if (gate.state !== "granted") return null;
 
   const { session } = gate;
 
@@ -41,30 +41,6 @@ export function DashboardGate({ children }: { children: ReactNode }) {
     <DashboardSessionProvider session={session}>
       <DashboardShell>{children}</DashboardShell>
     </DashboardSessionProvider>
-  );
-}
-
-/**
- * Shown while the session is being recovered from the refresh cookie.
- *
- * Says nothing about the outcome, because at this point the outcome is not known. Anything more
- * confident would be wrong half the time.
- */
-function DashboardPending() {
-  return (
-    <main className="grid min-h-dvh place-items-center bg-[#f8f6ef] px-4 py-10">
-      <div
-        className="flex flex-col items-center gap-3 text-[#69726d]"
-        role="status"
-        aria-live="polite"
-      >
-        <span
-          aria-hidden="true"
-          className="h-7 w-7 animate-spin rounded-full border-2 border-[#d8dcd5] border-t-[#0d4d3b]"
-        />
-        <p className="text-[13px]">Checking your session…</p>
-      </div>
-    </main>
   );
 }
 

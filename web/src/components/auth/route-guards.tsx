@@ -98,37 +98,6 @@ export function useRequireAuth(): AuthGate {
  * length of one `/auth/refresh` call the app genuinely does not know. Rendering the sign-in form during
  * that window tells a signed-in visitor they are signed out and then yanks the page out from under them.
  */
-function SessionPending() {
-  return (
-    <div
-      className="grid min-h-screen place-items-center bg-[#0b2b22] px-6 text-white"
-      role="status"
-      aria-live="polite"
-    >
-      <div className="flex flex-col items-center gap-3">
-        <span
-          className="h-8 w-8 animate-spin rounded-full border-2 border-white/25 border-t-[#e0be79]"
-          aria-hidden="true"
-        />
-        <p className="text-sm text-white/70">Checking your session…</p>
-      </div>
-    </div>
-  );
-}
-
-/**
- * Keeps a signed-in visitor off the sign-in and sign-up pages.
- *
- * Waits for the session to settle before rendering anything, and renders nothing but the pending state for
- * as long as a session exists. The alternative — show the form at once and redirect a beat later — is what
- * let a signed-in visitor sit on `/signin` looking at a form they had no business seeing, so the brief wait
- * is the requirement rather than a cost.
- *
- * One consequence worth knowing: this also fires for a sign-in completed *on this page*, so the form's
- * success screen is passed over and the visitor lands on `next` (or the homepage) already signed in. The
- * navbar changing to their avatar is the confirmation. Distinguishing "arrived signed in" from "just signed
- * in" would need a value latched across renders, and a ref cannot be read during render.
- */
 export function RequireGuest({ children }: { children: ReactNode }) {
   const { session, loading } = useAuth();
   const router = useRouter();
@@ -138,7 +107,7 @@ export function RequireGuest({ children }: { children: ReactNode }) {
     router.replace(readNextParam() ?? "/");
   }, [loading, session, router]);
 
-  if (loading || session) return <SessionPending />;
+  if (loading || session) return null;
 
   return <>{children}</>;
 }
