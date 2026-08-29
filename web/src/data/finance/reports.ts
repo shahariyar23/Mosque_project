@@ -46,6 +46,16 @@ export const reportDefinitions: ReportCard[] = [
     rangeHint: "Any date range",
   },
   {
+    id: "RPT-BUDGET-VS-ACTUAL",
+    name: "Budget vs Actual Statement",
+    description:
+      "Budgets in force over a window, compared against actual expenditures with remaining headroom per category.",
+    category: "Statements",
+    icon: "chart",
+    lastGenerated: "2026-08-25",
+    rangeHint: "Current month, quarter or year",
+  },
+  {
     id: "RPT-DONATION-SUMMARY",
     name: "Donation Summary",
     description:

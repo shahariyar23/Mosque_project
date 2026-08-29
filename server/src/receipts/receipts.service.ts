@@ -13,6 +13,7 @@ import {
   TransactionType,
 } from '@prisma/client';
 
+import { AuditLogService } from '../audit/audit-log.service';
 import { type DataScope, effectivePermissions, scopeFor } from '../common/constants/roles';
 import { forbidden } from '../common/guards/authorization';
 import { MAX_PAGE_SIZE } from '../common/pagination/page';
@@ -23,6 +24,7 @@ import { toMoney } from '../common/utils/money';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateReceiptDto } from './dto/create-receipt.dto';
 import { ReceiptQueryDto } from './dto/receipt-query.dto';
+import { MailService } from '../mail/mail.service';
 import { ReceiptListMetaDto, ReceiptResponseDto } from './dto/receipt-response.dto';
 import { VoidReceiptDto } from './dto/void-receipt.dto';
 import {
@@ -33,43 +35,118 @@ import {
 
 @Injectable()
 export class ReceiptsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly auditLogService: AuditLogService,
+    private readonly mailService: MailService,
+  ) {}
 
   /**
-   * Issues a new receipt atomically for the actor's mosque and links it to the financial ledger transaction.
+   * Issues a new receipt atomically for the actor's mosque and links it to the verified financial ledger transaction.
    *
    * Sequential numbering format: `REC-YYYY-NNNNN` (e.g. `REC-2026-00001`).
    *
    * Accounting Principles:
-   * 1. Receipt != Separate Income. A receipt is proof of an underlying payment event.
-   * 2. Existing Donation: Links receipt to the existing donation and its existing financial transaction.
-   *    Confirms the donation if pending, and NEVER creates duplicate income.
-   * 3. Standalone Direct Receipt: Creates the donation, the single corresponding income transaction,
-   *    and the receipt atomically.
-   * 4. Voiding & Reversal: Voiding a receipt marks it voided and reverses the associated ledger transaction (status = cancelled).
+   * 1. Receipt = proof/document only.
+   * 2. Transaction = actual financial event.
+   * 3. A receipt can ONLY represent an existing completed/verified payment.
+   * 4. The receipt amount, fund, donor, and currency are derived from the authoritative transaction.
+   * 5. Creating a receipt NEVER creates additional transactions or alters fund/account balances.
+   * 6. Duplicate receipts for the same transaction are rejected.
    */
   async create(actor: AuthenticatedUser, dto: CreateReceiptDto): Promise<ReceiptResponseDto> {
-    if (dto.fundId) await this.assertFundOwned(actor.mosqueId, dto.fundId);
-    if (dto.userId) await this.assertDonorOwned(actor.mosqueId, dto.userId);
-    if (dto.donationId) await this.assertDonationOwned(actor.mosqueId, dto.donationId);
+    const permissions = effectivePermissions(actor);
+    if (!permissions.includes('receipt.issue') && !permissions.includes('finance.manage')) {
+      throw forbidden();
+    }
 
-    const currency = await this.resolveCurrency(actor.mosqueId, dto.currency);
+    if (!dto.transactionId && !dto.donationId) {
+      throw new BadRequestException({
+        code: 'TRANSACTION_REQUIRED',
+        message: 'A valid completed transaction or donation ID is required to issue a receipt.',
+      });
+    }
+
     const issuedAt = dto.issuedAt ? toInstant(dto.issuedAt) : new Date();
     const year = issuedAt.getFullYear();
     const prefix = `REC-${year}-`;
     const lockKey = `receipt_seq:${actor.mosqueId}:${year}`;
 
     try {
-      const created = await this.prisma.$transaction(async (tx) => {
+      const created = await this.prisma.$transaction(
+        async (tx) => {
         // 1. Acquire PostgreSQL transaction-level advisory lock for (mosqueId, year)
         await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${lockKey}))`;
 
         let linkedDonationId = dto.donationId ?? null;
         let resolvedFundId = dto.fundId ?? null;
+        let resolvedUserId = dto.userId ?? null;
         let linkedTransactionId: string | null = null;
+        let receiptAmount: Prisma.Decimal;
+        let receiptCurrency: string;
 
-        // 2. Handle existing donation vs standalone payment
-        if (dto.donationId) {
+        // 2. Handle existing transaction vs existing donation
+        if (dto.transactionId) {
+          const transaction = await tx.transaction.findFirst({
+            where: { id: dto.transactionId, mosqueId: actor.mosqueId },
+            select: {
+              id: true,
+              type: true,
+              status: true,
+              amount: true,
+              currency: true,
+              fundId: true,
+              donationId: true,
+              receiptId: true,
+              donation: { select: { userId: true } },
+            },
+          });
+
+          if (!transaction) {
+            throw new BadRequestException({
+              code: 'TRANSACTION_NOT_FOUND',
+              message: 'Transaction not found for this mosque.',
+            });
+          }
+
+          if (transaction.status !== TransactionStatus.completed) {
+            throw new BadRequestException({
+              code: 'TRANSACTION_NOT_COMPLETED',
+              message: 'Receipts can only be issued for completed financial transactions.',
+            });
+          }
+
+          if (transaction.type !== TransactionType.income) {
+            throw new BadRequestException({
+              code: 'INVALID_TRANSACTION_TYPE',
+              message: 'Receipts can only be issued for income transactions.',
+            });
+          }
+
+          if (transaction.receiptId) {
+            const existingReceipt = await tx.receipt.findFirst({
+              where: {
+                id: transaction.receiptId,
+                mosqueId: actor.mosqueId,
+                status: ReceiptStatus.issued,
+              },
+              select: { receiptNumber: true },
+            });
+            if (existingReceipt) {
+              throw new BadRequestException({
+                code: 'RECEIPT_ALREADY_EXISTS_FOR_TRANSACTION',
+                message: 'A receipt already exists for this transaction.',
+              });
+            }
+          }
+
+          linkedTransactionId = transaction.id;
+          resolvedFundId = resolvedFundId ?? transaction.fundId;
+          linkedDonationId = linkedDonationId ?? transaction.donationId;
+          resolvedUserId = resolvedUserId ?? transaction.donation?.userId ?? null;
+          receiptAmount = transaction.amount;
+          receiptCurrency = transaction.currency;
+        } else if (dto.donationId) {
           const donation = await tx.donation.findFirst({
             where: { id: dto.donationId, mosqueId: actor.mosqueId },
             select: {
@@ -105,8 +182,8 @@ export class ReceiptsService {
 
           if (existingActive) {
             throw new BadRequestException({
-              code: 'RECEIPT_ALREADY_ISSUED',
-              message: `An active receipt (${existingActive.receiptNumber}) is already issued for this donation. Void it first to reissue.`,
+              code: 'RECEIPT_ALREADY_EXISTS_FOR_TRANSACTION',
+              message: 'A receipt already exists for this transaction.',
             });
           }
 
@@ -119,6 +196,9 @@ export class ReceiptsService {
           }
 
           resolvedFundId = resolvedFundId ?? donation.fundId;
+          resolvedUserId = resolvedUserId ?? donation.userId;
+          receiptAmount = donation.amount;
+          receiptCurrency = donation.currency;
 
           // Check if a transaction already exists for this donation to avoid double-counting
           const existingTx = await tx.transaction.findFirst({
@@ -157,62 +237,10 @@ export class ReceiptsService {
             linkedTransactionId = newTx.id;
           }
         } else {
-          // Standalone receipt: resolve fund
-          if (!resolvedFundId) {
-            const defaultFund = await tx.donationFund.findFirst({
-              where: { mosqueId: actor.mosqueId, status: 'active' },
-              orderBy: { createdAt: 'asc' },
-              select: { id: true },
-            });
-            resolvedFundId = defaultFund?.id ?? null;
-          }
-
-          if (!resolvedFundId) {
-            throw new BadRequestException({
-              code: 'FUND_REQUIRED',
-              message:
-                'A donation fund is required to issue a receipt and record the income transaction.',
-            });
-          }
-
-          // Create the single donation record
-          const newDonation = await tx.donation.create({
-            data: {
-              mosqueId: actor.mosqueId,
-              fundId: resolvedFundId,
-              userId: dto.userId ?? null,
-              amount: toMoney(dto.amount),
-              currency,
-              paymentMethod: PaymentMethod.cash,
-              status: DonationStatus.completed,
-              donatedAt: issuedAt,
-              notes: 'Created via receipt issuance',
-            },
-            select: { id: true },
+          throw new BadRequestException({
+            code: 'TRANSACTION_REQUIRED',
+            message: 'A valid completed transaction or donation ID is required to issue a receipt.',
           });
-
-          linkedDonationId = newDonation.id;
-
-          // Create the single corresponding income ledger transaction
-          const newTx = await tx.transaction.create({
-            data: {
-              mosqueId: actor.mosqueId,
-              type: TransactionType.income,
-              status: TransactionStatus.completed,
-              amount: toMoney(dto.amount),
-              currency,
-              description: `Receipt payment received`,
-              category: 'Donation',
-              paymentMethod: PaymentMethod.cash,
-              fundId: resolvedFundId,
-              donationId: newDonation.id,
-              transactedAt: issuedAt,
-              createdById: actor.id,
-            },
-            select: { id: true },
-          });
-
-          linkedTransactionId = newTx.id;
         }
 
         // 3. Query highest current sequence number for this mosque and year
@@ -244,16 +272,16 @@ export class ReceiptsService {
           });
         }
 
-        // 5. Create receipt document record
+        // 5. Create receipt document record using authoritative amount & currency
         const receipt = await tx.receipt.create({
           data: {
             mosqueId: actor.mosqueId,
             receiptNumber,
             donationId: linkedDonationId,
             fundId: resolvedFundId,
-            userId: dto.userId ?? null,
-            amount: toMoney(dto.amount),
-            currency,
+            userId: resolvedUserId,
+            amount: receiptAmount,
+            currency: receiptCurrency,
             status: ReceiptStatus.issued,
             issuedAt,
           },
@@ -272,7 +300,31 @@ export class ReceiptsService {
         }
 
         return receipt;
+      },
+      {
+        maxWait: 10000,
+        timeout: 20000,
+      },
+    );
+
+      // 7. Audit log the receipt issuance
+      await this.auditLogService.record({
+        mosqueId: actor.mosqueId,
+        actorId: actor.id,
+        actorName: actor.email,
+        actorRole: actor.role,
+        action: 'RECEIPT_ISSUED',
+        resource: 'receipt',
+        resourceId: created.id,
+        changes: {
+          receiptNumber: created.receiptNumber,
+          amount: created.amount.toString(),
+        },
+        note: `Issued receipt ${created.receiptNumber}`,
       });
+
+      // 8. If recipient has an email address, send receipt email asynchronously
+      this.sendReceiptEmailIfPresent(actor.mosqueId, created).catch(() => undefined);
 
       return ReceiptResponseDto.from(created);
     } catch (error) {
@@ -335,6 +387,11 @@ export class ReceiptsService {
     id: string,
     dto: VoidReceiptDto,
   ): Promise<ReceiptResponseDto> {
+    const permissions = effectivePermissions(actor);
+    if (!permissions.includes('transaction.void') && !permissions.includes('finance.manage')) {
+      throw forbidden();
+    }
+
     const receipt = await this.getOwned(actor.mosqueId, id);
 
     if (receipt.status === ReceiptStatus.voided) {
@@ -385,6 +442,22 @@ export class ReceiptsService {
           },
           select: RECEIPT_SELECT,
         });
+      });
+
+      // Audit log the receipt voiding
+      await this.auditLogService.record({
+        mosqueId: actor.mosqueId,
+        actorId: actor.id,
+        actorName: actor.email,
+        actorRole: actor.role,
+        action: 'RECEIPT_VOIDED',
+        resource: 'receipt',
+        resourceId: updated.id,
+        changes: {
+          receiptNumber: updated.receiptNumber,
+          voidReason: dto.voidReason.trim(),
+        },
+        note: `Voided receipt ${updated.receiptNumber}: ${dto.voidReason.trim()}`,
       });
 
       return ReceiptResponseDto.from(updated);
@@ -501,6 +574,20 @@ export class ReceiptsService {
     }
   }
 
+  private async assertTransactionOwned(mosqueId: string, transactionId: string): Promise<void> {
+    const transaction = await this.prisma.transaction.findFirst({
+      where: { id: transactionId, mosqueId },
+      select: { id: true },
+    });
+
+    if (!transaction) {
+      throw new BadRequestException({
+        code: 'TRANSACTION_NOT_FOUND',
+        message: 'transactionId does not match a financial transaction of this mosque.',
+      });
+    }
+  }
+
   private async resolveCurrency(mosqueId: string, sent: string | undefined): Promise<string> {
     if (sent) return sent;
 
@@ -535,5 +622,41 @@ export class ReceiptsService {
     }
 
     return error instanceof Error ? error : new Error(String(error));
+  }
+
+  private async sendReceiptEmailIfPresent(
+    mosqueId: string,
+    receipt: SelectedReceipt,
+  ): Promise<void> {
+    const recipientEmail = receipt.donor?.email || receipt.donation?.donorEmail;
+    if (!recipientEmail || !recipientEmail.trim() || !recipientEmail.includes('@')) {
+      return;
+    }
+
+    try {
+      const mosque = await this.prisma.mosque.findUnique({
+        where: { id: mosqueId },
+        select: { name: true, addressLine: true, website: true, email: true },
+      });
+
+      const donorName =
+        receipt.donor?.fullName || receipt.donation?.donorName || 'Valued Contributor';
+
+      await this.mailService.sendReceiptIssuedEmail(recipientEmail, {
+        receiptNumber: receipt.receiptNumber,
+        amount: receipt.amount.toString(),
+        currency: receipt.currency,
+        fundName: receipt.fund?.name || 'General Fund',
+        donorName,
+        paymentMethod: receipt.donation?.paymentMethod || 'CASH',
+        issuedAt: receipt.issuedAt.toISOString().split('T')[0],
+        mosqueName: mosque?.name || undefined,
+        mosqueAddress: mosque?.addressLine || undefined,
+        websiteUrl: mosque?.website || undefined,
+        supportEmail: mosque?.email || undefined,
+      });
+    } catch {
+      // Graceful ignore - receipt issuance must never fail on email transport issue
+    }
   }
 }

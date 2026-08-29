@@ -88,18 +88,27 @@ export const donationStatusTone: Record<string, Tone> = {
   failed: "danger",
 };
 
-export const contributionStatusTone: Record<ContributionStatus, Tone> = {
+export const contributionStatusTone: Record<string, Tone> = {
   Paid: "success",
   Pending: "pending",
   Overdue: "danger",
   Skipped: "neutral",
+  paid: "success",
+  partial: "pending",
+  pending: "pending",
+  overdue: "danger",
+  waived: "neutral",
 };
 
-export const contributionPlanStatusTone: Record<ContributionPlanStatus, Tone> = {
+export const contributionPlanStatusTone: Record<string, Tone> = {
   Active: "success",
   Paused: "pending",
   Completed: "info",
   Cancelled: "neutral",
+  active: "success",
+  paused: "pending",
+  completed: "info",
+  cancelled: "neutral",
 };
 
 export const expenseStatusTone: Record<string, Tone> = {

@@ -37,6 +37,7 @@ import { TransactionsModule } from './transactions/transactions.module';
 import { FundBalanceModule } from './fund-balance/fund-balance.module';
 import { FundTransfersModule } from './fund-transfers/fund-transfers.module';
 import { FundsModule } from './funds/funds.module';
+import { ContributionsModule } from './contributions/contributions.module';
 import { MailModule } from './mail/mail.module';
 
 /**
@@ -115,6 +116,7 @@ import { MailModule } from './mail/mail.module';
     FundBalanceModule,
     FundTransfersModule,
     FundsModule,
+    ContributionsModule,
     MailModule,
 
     // Then what the money was meant for and who it went to. Budgets and salaries are independent of each

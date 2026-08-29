@@ -267,13 +267,6 @@ export const NAVIGATION: NavGroup[] = [
         ownLabelBn: "আমার বেতন",
       },
       {
-        label: "Recurring",
-        labelBn: "নিয়মিত",
-        href: "/dashboard/finance/recurring",
-        icon: "rotate",
-        permission: "contribution.manage",
-      },
-      {
         label: "Receipts",
         labelBn: "রসিদ",
         href: "/dashboard/finance/receipts",

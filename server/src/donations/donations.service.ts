@@ -1,5 +1,5 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
-import { DonationStatus, Prisma, TransactionStatus, TransactionType } from '@prisma/client';
+import { DonationStatus, PaymentMethod, Prisma, ReceiptStatus, TransactionStatus, TransactionType } from '@prisma/client';
 
 import { type DataScope, effectivePermissions, scopeFor } from '../common/constants/roles';
 import { forbidden } from '../common/guards/authorization';
@@ -47,9 +47,14 @@ import {
  * **There is no delete.** A donation entered in error is corrected with `PATCH`, or withdrawn with
  * `status: cancelled`. A financial record that can vanish is one nobody can audit.
  */
+import { MailService } from '../mail/mail.service';
+
 @Injectable()
 export class DonationsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly mailService: MailService,
+  ) {}
 
   /**
    * Records a donation for the caller's mosque.
@@ -86,8 +91,49 @@ export class DonationsService {
           select: DONATION_SELECT,
         });
 
-        // If donation is completed on creation, record the income ledger transaction atomically
+        // If donation is completed on creation, record the income ledger transaction and receipt atomically
         if (donation.status === DonationStatus.completed) {
+          const donatedDate = donation.donatedAt || new Date();
+          const year = donatedDate.getFullYear();
+          const prefix = `REC-${year}-`;
+          const lockKey = `receipt_seq:${actor.mosqueId}:${year}`;
+
+          await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${lockKey}))`;
+
+          const latest = await tx.receipt.findFirst({
+            where: {
+              mosqueId: actor.mosqueId,
+              receiptNumber: { startsWith: prefix },
+            },
+            orderBy: { receiptNumber: 'desc' },
+            select: { receiptNumber: true },
+          });
+
+          let nextSeq = 1;
+          if (latest?.receiptNumber) {
+            const parts = latest.receiptNumber.split('-');
+            const parsed = parseInt(parts[parts.length - 1] ?? '0', 10);
+            if (!Number.isNaN(parsed) && parsed > 0) {
+              nextSeq = parsed + 1;
+            }
+          }
+
+          const receiptNumber = `${prefix}${String(nextSeq).padStart(5, '0')}`;
+
+          const receipt = await tx.receipt.create({
+            data: {
+              mosqueId: actor.mosqueId,
+              receiptNumber,
+              donationId: donation.id,
+              fundId: donation.fund.id,
+              userId: donation.donor?.id ?? null,
+              amount: donation.amount,
+              currency: donation.currency,
+              status: ReceiptStatus.issued,
+              issuedAt: donatedDate,
+            },
+          });
+
           await tx.transaction.create({
             data: {
               mosqueId: actor.mosqueId,
@@ -98,18 +144,61 @@ export class DonationsService {
               description:
                 donation.notes || `Donation received (${donation.reference || donation.id})`,
               category: 'Donation',
-              reference: donation.reference,
+              reference: receiptNumber,
               paymentMethod: donation.paymentMethod,
               fundId: donation.fund.id,
               donationId: donation.id,
-              transactedAt: donation.donatedAt,
+              receiptId: receipt.id,
+              transactedAt: donatedDate,
               createdById: actor.id,
             },
+          });
+
+          await tx.donation.update({
+            where: { id: donation.id },
+            data: { reference: receiptNumber },
           });
         }
 
         return donation;
+      }, {
+        maxWait: 10000,
+        timeout: 20000,
       });
+
+      // If donation is completed and donor has an email, dispatch receipt email
+      const recipientEmail = created.donorEmail;
+      if (
+        created.status === DonationStatus.completed &&
+        recipientEmail &&
+        recipientEmail.trim() &&
+        recipientEmail.includes('@')
+      ) {
+        (async () => {
+          try {
+            const mosque = await this.prisma.mosque.findUnique({
+              where: { id: actor.mosqueId },
+              select: { name: true, addressLine: true, website: true, email: true },
+            });
+
+            await this.mailService.sendReceiptIssuedEmail(recipientEmail.trim(), {
+              receiptNumber: created.reference || `REC-${new Date().getFullYear()}-00000`,
+              amount: created.amount.toString(),
+              currency: created.currency,
+              fundName: created.fund?.name || 'General Fund',
+              donorName: created.donorName || created.donor?.fullName || 'Valued Donor',
+              paymentMethod: created.paymentMethod,
+              issuedAt: (created.donatedAt || new Date()).toISOString().split('T')[0],
+              mosqueName: mosque?.name || undefined,
+              mosqueAddress: mosque?.addressLine || undefined,
+              websiteUrl: mosque?.website || undefined,
+              supportEmail: mosque?.email || undefined,
+            });
+          } catch {
+            // Graceful ignore
+          }
+        })().catch(() => undefined);
+      }
 
       return DonationResponseDto.from(created);
     } catch (error) {

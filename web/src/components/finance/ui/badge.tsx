@@ -99,12 +99,39 @@ export function DonationStatusBadge({ status }: { status: any }) {
   return <Badge tone={tone}>{label}</Badge>;
 }
 
-export function ContributionStatusBadge({ status }: { status: ContributionStatus }) {
-  return <Badge tone={contributionStatusTone[status]}>{status}</Badge>;
+const contributionStatusLabels: Record<string, string> = {
+  paid: "Paid",
+  partial: "Partial",
+  pending: "Pending",
+  overdue: "Overdue",
+  waived: "Waived",
+  Paid: "Paid",
+  Pending: "Pending",
+  Overdue: "Overdue",
+  Skipped: "Skipped",
+};
+
+export function ContributionStatusBadge({ status }: { status: any }) {
+  const tone = contributionStatusTone[status] ?? "neutral";
+  const label = contributionStatusLabels[status] ?? status;
+  return <Badge tone={tone}>{label}</Badge>;
 }
 
-export function ContributionPlanStatusBadge({ status }: { status: ContributionPlanStatus }) {
-  return <Badge tone={contributionPlanStatusTone[status]}>{status}</Badge>;
+const contributionPlanStatusLabels: Record<string, string> = {
+  active: "Active",
+  paused: "Paused",
+  completed: "Completed",
+  cancelled: "Cancelled",
+  Active: "Active",
+  Paused: "Paused",
+  Completed: "Completed",
+  Cancelled: "Cancelled",
+};
+
+export function ContributionPlanStatusBadge({ status }: { status: any }) {
+  const tone = contributionPlanStatusTone[status] ?? "neutral";
+  const label = contributionPlanStatusLabels[status] ?? status;
+  return <Badge tone={tone}>{label}</Badge>;
 }
 
 const fundStatusLabels: Record<string, string> = {

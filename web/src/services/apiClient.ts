@@ -317,21 +317,27 @@ export async function apiDelete(path: string, query?: QueryParams): Promise<void
  * single unpaged page that is the right answer, and it is never larger than the truth.
  */
 export async function apiList<Row>(path: string, query?: QueryParams): Promise<ListResult<Row>> {
-  const body = (await sendWithRecovery({ method: "GET", path, query })) as Envelope<Row[]> | null;
-  const rows = Array.isArray(body?.data) ? body.data : [];
+  const body = (await sendWithRecovery({ method: "GET", path, query })) as any;
+  const rows: Row[] = Array.isArray(body?.data)
+    ? body.data
+    : Array.isArray(body?.data?.rows)
+      ? body.data.rows
+      : Array.isArray(body?.rows)
+        ? body.rows
+        : [];
 
   const requestedPage = Number(query?.page ?? 1);
   const requestedLimit = Number(query?.limit ?? rows.length);
-  const total = body?.meta?.total ?? rows.length;
-  const limit = body?.meta?.limit ?? (Number.isFinite(requestedLimit) ? requestedLimit : rows.length);
+  const total = body?.meta?.total ?? body?.data?.meta?.total ?? rows.length;
+  const limit = body?.meta?.limit ?? body?.data?.meta?.limit ?? (Number.isFinite(requestedLimit) ? requestedLimit : rows.length);
 
   return {
     rows,
     meta: {
-      page: body?.meta?.page ?? (Number.isFinite(requestedPage) ? requestedPage : 1),
+      page: body?.meta?.page ?? body?.data?.meta?.page ?? (Number.isFinite(requestedPage) ? requestedPage : 1),
       limit,
       total,
-      totalPages: body?.meta?.totalPages ?? Math.max(1, limit > 0 ? Math.ceil(total / limit) : 1),
+      totalPages: body?.meta?.totalPages ?? body?.data?.meta?.totalPages ?? Math.max(1, limit > 0 ? Math.ceil(total / limit) : 1),
     },
   };
 }

@@ -7,6 +7,9 @@ import { PrismaService } from '../prisma/prisma.service';
 import type { CreateReceiptDto } from './dto/create-receipt.dto';
 import type { VoidReceiptDto } from './dto/void-receipt.dto';
 import { ReceiptsService } from './receipts.service';
+import { MailService } from '../mail/mail.service';
+
+import { AuditLogService } from '../audit/audit-log.service';
 
 const MOSQUE_ID = 'c0a80121-7ac0-11d1-898c-00c04fd8d5c0';
 const RECEIPT_ID = '7e8c6cfe-6fe5-11d2-883f-0016d3cca444';
@@ -54,6 +57,7 @@ function mockReceiptRow(overrides: Record<string, unknown> = {}) {
 
 describe('ReceiptsService - Financial Ledger & Transaction Integration', () => {
   let service: ReceiptsService;
+  let auditLogService: { record: jest.Mock };
   let prisma: {
     receipt: {
       findFirst: jest.Mock;
@@ -79,6 +83,10 @@ describe('ReceiptsService - Financial Ledger & Transaction Integration', () => {
   };
 
   beforeEach(async () => {
+    auditLogService = {
+      record: jest.fn().mockResolvedValue(undefined),
+    };
+
     prisma = {
       receipt: {
         findFirst: jest.fn(),
@@ -115,41 +123,31 @@ describe('ReceiptsService - Financial Ledger & Transaction Integration', () => {
     };
 
     const module: TestingModule = await Test.createTestingModule({
-      providers: [ReceiptsService, { provide: PrismaService, useValue: prisma }],
+      providers: [
+        ReceiptsService,
+        { provide: PrismaService, useValue: prisma },
+        { provide: AuditLogService, useValue: auditLogService },
+        {
+          provide: MailService,
+          useValue: {
+            sendReceiptIssuedEmail: jest.fn().mockResolvedValue({ success: true }),
+            sendMail: jest.fn().mockResolvedValue({ success: true }),
+          },
+        },
+      ],
     }).compile();
 
     service = module.get<ReceiptsService>(ReceiptsService);
   });
 
   describe('create (Receipt != Separate Income)', () => {
-    it('creates exactly one income transaction when issuing a standalone receipt', async () => {
-      prisma.receipt.findFirst.mockResolvedValue(null);
-      prisma.receipt.create.mockImplementation(({ data }: any) => {
-        return mockReceiptRow({
-          receiptNumber: data.receiptNumber,
-          amount: data.amount,
-        });
-      });
-
+    it('rejects creating a receipt without a transaction or donation ID', async () => {
       const dto: CreateReceiptDto = {
         amount: '1500.00',
         fundId: FUND_ID,
-        issuedAt: '2026-08-26T12:00:00.000Z',
       };
 
-      const result = await service.create(TREASURER, dto);
-
-      expect(result.receiptNumber).toBe('REC-2026-00001');
-      expect(result.amount).toBe('1500.00');
-      // Created exactly 1 donation and 1 income transaction
-      expect(prisma.donation.create).toHaveBeenCalledTimes(1);
-      expect(prisma.transaction.create).toHaveBeenCalledTimes(1);
-      expect(prisma.transaction.update).toHaveBeenCalledWith(
-        expect.objectContaining({
-          where: { id: TRANSACTION_ID },
-          data: expect.objectContaining({ receiptId: RECEIPT_ID }),
-        }),
-      );
+      await expect(service.create(TREASURER, dto)).rejects.toThrow(BadRequestException);
     });
 
     it('attaches to existing donation transaction without creating a duplicate income transaction', async () => {
@@ -217,6 +215,47 @@ describe('ReceiptsService - Financial Ledger & Transaction Integration', () => {
       };
 
       await expect(service.create(TREASURER, dto)).rejects.toThrow(BadRequestException);
+    });
+
+    it('attaches to existing verified transaction without duplicating transaction or donation', async () => {
+      prisma.transaction.findFirst.mockResolvedValue({
+        id: TRANSACTION_ID,
+        mosqueId: MOSQUE_ID,
+        type: 'income',
+        status: 'completed',
+        amount: new Prisma.Decimal('2000.00'),
+        currency: 'BDT',
+        fundId: FUND_ID,
+        donationId: null,
+        receiptId: null,
+      });
+      prisma.receipt.findFirst.mockResolvedValueOnce({ receiptNumber: 'REC-2026-00010' }); // latest
+
+      prisma.receipt.create.mockImplementation(({ data }: any) => {
+        return mockReceiptRow({ receiptNumber: data.receiptNumber, amount: data.amount });
+      });
+
+      const dto: CreateReceiptDto = {
+        transactionId: TRANSACTION_ID,
+        issuedAt: '2026-08-26T12:00:00.000Z',
+      };
+
+      const result = await service.create(TREASURER, dto);
+
+      expect(result.receiptNumber).toBe('REC-2026-00011');
+      expect(prisma.donation.create).not.toHaveBeenCalled();
+      expect(prisma.transaction.create).not.toHaveBeenCalled();
+      expect(auditLogService.record).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: 'RECEIPT_ISSUED',
+        }),
+      );
+      expect(prisma.transaction.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: TRANSACTION_ID },
+          data: expect.objectContaining({ receiptId: RECEIPT_ID }),
+        }),
+      );
     });
   });
 

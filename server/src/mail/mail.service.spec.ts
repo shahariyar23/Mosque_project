@@ -164,4 +164,43 @@ describe('MailService - Titan Email SMTP Transport', () => {
       expect(sendResult.error).toContain('not configured');
     });
   });
+
+  describe('sendReceiptIssuedEmail', () => {
+    it('dispatches payment receipt email with formatted HTML and plain text', async () => {
+      const result = await service.sendReceiptIssuedEmail('fatima@example.com', {
+        receiptNumber: 'REC-2026-00001',
+        amount: '1500.00',
+        currency: 'BDT',
+        fundName: 'Imam Salary Fund',
+        donorName: 'Fatima Member',
+        paymentMethod: 'CASH',
+        issuedAt: '2026-08-29',
+        mosqueName: 'NOOR Central Mosque',
+      });
+
+      expect(result.success).toBe(true);
+      expect(mockTransporter.sendMail).toHaveBeenCalledWith(
+        expect.objectContaining({
+          to: 'fatima@example.com',
+          subject: 'Payment Receipt: REC-2026-00001 — NOOR Central Mosque',
+        }),
+      );
+    });
+
+    it('gracefully skips without calling transporter when email is empty or invalid', async () => {
+      const result = await service.sendReceiptIssuedEmail('', {
+        receiptNumber: 'REC-2026-00001',
+        amount: '1500.00',
+        currency: 'BDT',
+        fundName: 'Imam Salary Fund',
+        donorName: 'Fatima Member',
+        paymentMethod: 'CASH',
+        issuedAt: '2026-08-29',
+      });
+
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('No valid recipient email');
+      expect(mockTransporter.sendMail).not.toHaveBeenCalled();
+    });
+  });
 });
