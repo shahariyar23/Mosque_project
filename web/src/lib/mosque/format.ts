@@ -9,8 +9,26 @@ import type { AgeGroup, ClockTime, IsoDate, PrayerSlot } from "@/lib/mosque/type
  * through `formatClockTime` so the 12/24-hour setting is honoured in exactly one place.
  */
 
-/** The reference "today" for the whole demo. One constant so no screen drifts from another. */
+/** The fallback reference "today" for static mocks. */
 export const REFERENCE_DATE: IsoDate = "2026-08-23";
+
+/**
+ * Today's date in "YYYY-MM-DD" format in the specified timezone (default: Asia/Dhaka).
+ * Computes the real current calendar date without UTC timezone drift.
+ */
+export function getTodayInTimezone(timezone: string = "Asia/Dhaka"): IsoDate {
+  try {
+    const formatter = new Intl.DateTimeFormat("en-CA", {
+      timeZone: timezone,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    });
+    return formatter.format(new Date());
+  } catch {
+    return new Date().toISOString().slice(0, 10);
+  }
+}
 
 /** Minutes since midnight for a "HH:MM" string. Returns 0 for anything malformed. */
 export function toMinutes(time: ClockTime): number {

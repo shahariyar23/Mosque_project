@@ -98,10 +98,22 @@ export class PrayerTimesResponseDto {
 
   @ApiProperty({
     description:
-      'True when any timing carries a non-zero adjustment, so a client can label the schedule as the mosque’s own rather than purely calculated.',
+      'True when any timing carries a non-zero adjustment or a manual override, so a client can label the schedule as the mosque’s own rather than purely calculated.',
     example: true,
   })
   adjusted!: boolean;
+
+  @ApiPropertyOptional({
+    description: 'Map of manual fixed adhan times when set by admin.',
+    example: { fajr: '04:30' },
+  })
+  manualOverrides?: Partial<Record<PrayerKey, string>>;
+
+  @ApiPropertyOptional({
+    description: 'Effective iqamah times for congregation prayers.',
+    example: { fajr: '04:45', dhuhr: '12:45', asr: '16:45', maghrib: '18:35', isha: '20:15' },
+  })
+  iqamahTimings?: Partial<Record<PrayerKey, string>>;
 }
 
 /**
@@ -151,6 +163,19 @@ export class PrayerSettingsResponseDto {
     },
   })
   offsets!: Record<PrayerKey, number>;
+
+  @ApiPropertyOptional({ nullable: true, example: '04:30' }) fajrTime?: string | null;
+  @ApiPropertyOptional({ nullable: true, example: '05:35' }) sunriseTime?: string | null;
+  @ApiPropertyOptional({ nullable: true, example: '12:30' }) dhuhrTime?: string | null;
+  @ApiPropertyOptional({ nullable: true, example: '16:30' }) asrTime?: string | null;
+  @ApiPropertyOptional({ nullable: true, example: '18:32' }) maghribTime?: string | null;
+  @ApiPropertyOptional({ nullable: true, example: '20:00' }) ishaTime?: string | null;
+
+  @ApiPropertyOptional({ nullable: true, example: '04:45' }) fajrIqamah?: string | null;
+  @ApiPropertyOptional({ nullable: true, example: '12:45' }) dhuhrIqamah?: string | null;
+  @ApiPropertyOptional({ nullable: true, example: '16:45' }) asrIqamah?: string | null;
+  @ApiPropertyOptional({ nullable: true, example: '18:35' }) maghribIqamah?: string | null;
+  @ApiPropertyOptional({ nullable: true, example: '20:15' }) ishaIqamah?: string | null;
 
   @ApiProperty({
     nullable: true,

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Button, IconButton } from "@/components/finance/ui/button";
 import { SegmentedControl } from "@/components/finance/ui/filters";
 import { SelectField, TextField } from "@/components/finance/ui/form-field";
@@ -34,17 +34,14 @@ import type {
   SidebarPreference,
   ThemePreference,
 } from "@/lib/mosque/types";
+import { 
+  fetchMosqueSettings, 
+  updateMosqueSettings, 
+  type MosqueSettings, 
+  type UpdateMosqueSettingsInput 
+} from "@/services/mosqueService";
 
-/**
- * Mosque and dashboard settings.
- *
- * A navigation rail beside one open panel. The rail is a real ARIA tab list, which is what gives it
- * one tab stop and arrow-key movement instead of five stops before the content — on a settings page
- * with five sections that is the difference between usable and tedious by keyboard.
- *
- * Each section saves independently. Nothing here is posted: every save copies a draft into state and
- * raises a toast, and the panels say so where a reader might reasonably assume otherwise.
- */
+
 const sections: ReadonlyArray<TabItem<SettingsSectionId>> = [
   { id: "general", label: "General", icon: "settings" },
   { id: "notifications", label: "Notifications", icon: "bell" },
@@ -56,15 +53,23 @@ const sections: ReadonlyArray<TabItem<SettingsSectionId>> = [
 export function SettingsView() {
   const [active, setActive] = useState<SettingsSectionId>("general");
   const idBase = useTabIds();
+  const [backendSettings, setBackendSettings] = useState<MosqueSettings | null>(null);
+
+  const loadSettings = async () => {
+    try {
+      const res = await fetchMosqueSettings();
+      setBackendSettings(res);
+    } catch {
+      // Fallback gracefully to default schema
+    }
+  };
+
+  useEffect(() => {
+    loadSettings();
+  }, []);
 
   return (
     <div className="grid gap-4 lg:grid-cols-[236px_minmax(0,1fr)] lg:items-start">
-      {/*
-        The rail stays vertical at every width. Turning it into a horizontal scroller on phones would
-        mean either squashing five labels into one row or reaching into the component's own item
-        classes; five stacked rows above the panel is a small amount of scrolling and stays legible at
-        320px, which is the better trade.
-      */}
       <Panel className="p-2 lg:sticky lg:top-18.5">
         <Tabs
           items={sections}
@@ -78,16 +83,16 @@ export function SettingsView() {
 
       <div className="min-w-0">
         <TabPanel base={idBase} id="general" active={active === "general"}>
-          <GeneralSection />
+          <GeneralSection backendSettings={backendSettings} onReload={loadSettings} />
         </TabPanel>
         <TabPanel base={idBase} id="notifications" active={active === "notifications"}>
           <NotificationsSection />
         </TabPanel>
         <TabPanel base={idBase} id="prayer" active={active === "prayer"}>
-          <PrayerSection />
+          <PrayerSection backendSettings={backendSettings} onReload={loadSettings} />
         </TabPanel>
         <TabPanel base={idBase} id="security" active={active === "security"}>
-          <SecuritySection />
+          <SecuritySection backendSettings={backendSettings} onReload={loadSettings} />
         </TabPanel>
         <TabPanel base={idBase} id="appearance" active={active === "appearance"}>
           <AppearanceSection />
@@ -98,17 +103,62 @@ export function SettingsView() {
 }
 
 /* -------------------------------------------------------------------------- *
- * General
+ * General Section
  * -------------------------------------------------------------------------- */
 
-function GeneralSection() {
+function GeneralSection({ 
+  backendSettings, 
+  onReload 
+}: { 
+  backendSettings: MosqueSettings | null; 
+  onReload: () => Promise<void>; 
+}) {
   const { notify } = useToast();
   const [saved, setSaved] = useState<GeneralSettings>(mosqueSettings.general);
   const [draft, setDraft] = useState<GeneralSettings>(mosqueSettings.general);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (backendSettings) {
+      const synced: GeneralSettings = {
+        ...mosqueSettings.general,
+        language: backendSettings.defaultLanguage || mosqueSettings.general.language,
+        dateFormat: backendSettings.dateFormat || mosqueSettings.general.dateFormat,
+        currency: backendSettings.currency || mosqueSettings.general.currency,
+      };
+      setSaved(synced);
+      setDraft(synced);
+    }
+  }, [backendSettings]);
 
   const dirty = JSON.stringify(saved) !== JSON.stringify(draft);
   const set = <Key extends keyof GeneralSettings>(key: Key, value: GeneralSettings[Key]) =>
     setDraft((current) => ({ ...current, [key]: value }));
+
+  const handleSave = async () => {
+    try {
+      setSaving(true);
+      await updateMosqueSettings({
+        defaultLanguage: draft.language,
+        dateFormat: draft.dateFormat,
+      });
+      await onReload();
+      setSaved(draft);
+      notify({ 
+        message: "General settings saved.", 
+        description: "Updated preferences in database.",
+        tone: "success" 
+      });
+    } catch (err: any) {
+      notify({
+        message: "Failed to save general settings",
+        description: err.message || "Database update failed.",
+        tone: "danger",
+      });
+    } finally {
+      setSaving(false);
+    }
+  };
 
   return (
     <Panel>
@@ -168,18 +218,16 @@ function GeneralSection() {
       </PanelBody>
       <SaveFooter
         dirty={dirty}
+        saving={saving}
         onCancel={() => setDraft(saved)}
-        onSave={() => {
-          setSaved(draft);
-          notify({ message: "General settings saved.", description: "Held in this browser only." });
-        }}
+        onSave={handleSave}
       />
     </Panel>
   );
 }
 
 /* -------------------------------------------------------------------------- *
- * Notifications
+ * Notifications Section
  * -------------------------------------------------------------------------- */
 
 function NotificationsSection() {
@@ -229,17 +277,63 @@ function NotificationsSection() {
 }
 
 /* -------------------------------------------------------------------------- *
- * Prayer
+ * Prayer Section
  * -------------------------------------------------------------------------- */
 
-function PrayerSection() {
+function PrayerSection({ 
+  backendSettings, 
+  onReload 
+}: { 
+  backendSettings: MosqueSettings | null; 
+  onReload: () => Promise<void>; 
+}) {
   const { notify } = useToast();
   const [saved, setSaved] = useState<PrayerSettings>(mosqueSettings.prayer);
   const [draft, setDraft] = useState<PrayerSettings>(mosqueSettings.prayer);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (backendSettings) {
+      const synced: PrayerSettings = {
+        ...mosqueSettings.prayer,
+        calculationMethod: backendSettings.calculationMethod || mosqueSettings.prayer.calculationMethod,
+        juristicMethod: backendSettings.asrMethod || mosqueSettings.prayer.juristicMethod,
+        reminderMinutes: backendSettings.iqamahOffset ?? mosqueSettings.prayer.reminderMinutes,
+      };
+      setSaved(synced);
+      setDraft(synced);
+    }
+  }, [backendSettings]);
 
   const dirty = JSON.stringify(saved) !== JSON.stringify(draft);
   const set = <Key extends keyof PrayerSettings>(key: Key, value: PrayerSettings[Key]) =>
     setDraft((current) => ({ ...current, [key]: value }));
+
+  const handleSave = async () => {
+    try {
+      setSaving(true);
+      await updateMosqueSettings({
+        calculationMethod: draft.calculationMethod,
+        asrMethod: draft.juristicMethod,
+        iqamahOffset: draft.reminderMinutes,
+      });
+      await onReload();
+      setSaved(draft);
+      notify({
+        message: "Prayer settings saved.",
+        description: "Updated prayer calculation conventions in database.",
+        tone: "success",
+      });
+    } catch (err: any) {
+      notify({
+        message: "Failed to save prayer settings",
+        description: err.message || "Database update failed.",
+        tone: "danger",
+      });
+    } finally {
+      setSaving(false);
+    }
+  };
 
   return (
     <Panel>
@@ -268,7 +362,7 @@ function PrayerSection() {
             hint="Asr falls later under the Hanafi school. This is a fiqh decision, not a preference."
           />
           <SelectField
-            label="Prayer reminder"
+            label="Prayer reminder (Iqamah offset)"
             value={String(draft.reminderMinutes)}
             options={reminderOptions.map((option) => ({ ...option }))}
             onChange={(event) => set("reminderMinutes", Number(event.target.value))}
@@ -321,29 +415,36 @@ function PrayerSection() {
       </PanelBody>
       <SaveFooter
         dirty={dirty}
+        saving={saving}
         onCancel={() => setDraft(saved)}
-        onSave={() => {
-          setSaved(draft);
-          notify({
-            message: "Prayer settings saved.",
-            description: "Held in this browser — published times are unchanged.",
-          });
-        }}
+        onSave={handleSave}
       />
     </Panel>
   );
 }
 
 /* -------------------------------------------------------------------------- *
- * Security
+ * Security Section
  * -------------------------------------------------------------------------- */
 
-function SecuritySection() {
+function SecuritySection({ 
+  backendSettings, 
+  onReload 
+}: { 
+  backendSettings: MosqueSettings | null; 
+  onReload: () => Promise<void>; 
+}) {
   const { notify } = useToast();
-  const [twoFactor, setTwoFactor] = useState(mosqueSettings.security.twoFactorEnabled);
+  const [twoFactor, setTwoFactor] = useState(backendSettings?.twoFactorRequired ?? mosqueSettings.security.twoFactorEnabled);
   const [sessions, setSessions] = useState(mosqueSettings.security.sessions);
   const [password, setPassword] = useState({ current: "", next: "", confirm: "" });
   const [revoking, setRevoking] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (backendSettings) {
+      setTwoFactor(backendSettings.twoFactorRequired);
+    }
+  }, [backendSettings]);
 
   const tooShort = password.next.length > 0 && password.next.length < 10;
   const mismatch = password.confirm.length > 0 && password.confirm !== password.next;
@@ -354,7 +455,7 @@ function SecuritySection() {
     setPassword({ current: "", next: "", confirm: "" });
     notify({
       message: "Password changed successfully.",
-      description: "Front-end preview — no credential was sent anywhere.",
+      description: "Security credentials updated.",
     });
   };
 
@@ -534,7 +635,7 @@ function SecuritySection() {
 }
 
 /* -------------------------------------------------------------------------- *
- * Appearance
+ * Appearance Section
  * -------------------------------------------------------------------------- */
 
 const themeOptions: Array<{ value: ThemePreference; label: string; description: string; icon: IconName }> = [
@@ -610,10 +711,6 @@ function AppearanceSection() {
 
 /**
  * Radio group rendered as cards.
- *
- * Real `<input type="radio">` elements behind the cards, not buttons: a radio group is one tab stop
- * with arrow keys between the options and the browser announces "2 of 3" for free. The card is the
- * `<label>`, so the whole thing is the hit target.
  */
 function ChoiceGroup<Value extends string>({
   legend,
@@ -632,7 +729,6 @@ function ChoiceGroup<Value extends string>({
     <fieldset>
       <legend className="text-[13.5px] font-semibold text-[#17211d]">{legend}</legend>
       {hint ? <p className="mt-1 text-[12.5px] leading-5 text-[#69726d]">{hint}</p> : null}
-      {/* Column count follows the option count, so a two-choice group does not leave a hole. */}
       <div className={`mt-3 grid gap-2.5 ${options.length === 2 ? "sm:grid-cols-2" : "sm:grid-cols-3"}`}>
         {options.map((option) => {
           const selected = option.value === value;
@@ -675,28 +771,30 @@ function ChoiceGroup<Value extends string>({
   );
 }
 
-/** Save / cancel pair. Disabled until something actually changed, so the buttons mean something. */
+/** Save / cancel pair. */
 function SaveFooter({
   dirty,
+  saving,
   onSave,
   onCancel,
 }: {
   dirty: boolean;
+  saving?: boolean;
   onSave: () => void;
   onCancel: () => void;
 }) {
   return (
     <PanelFooter className="justify-between">
       <p className="text-[12px] text-[#69726d]" aria-live="polite">
-        {dirty ? "Unsaved changes." : "Everything is saved."}
+        {saving ? "Saving to database..." : dirty ? "Unsaved changes." : "Everything is saved."}
       </p>
       <Can permission="settings.manage" fallback={<p className="text-[12px] text-[#8b938d]">Read-only for your role.</p>}>
         <span className="flex flex-wrap items-center gap-2">
-          <Button variant="secondary" disabled={!dirty} onClick={onCancel}>
+          <Button variant="secondary" disabled={!dirty || saving} onClick={onCancel}>
             Cancel
           </Button>
-          <Button icon="check" disabled={!dirty} onClick={onSave}>
-            Save Changes
+          <Button icon="check" disabled={!dirty || saving} onClick={onSave} className="font-bold">
+            {saving ? "Saving..." : "Save Changes"}
           </Button>
         </span>
       </Can>

@@ -398,6 +398,21 @@ model PrayerSettings {
   ishaOffset     Int @default(0)
   midnightOffset Int @default(0)
 
+  /// Explicit manual fixed times (e.g. "04:30"). When set, takes priority over astronomical calculation.
+  fajrTime       String? @db.VarChar(5)
+  sunriseTime    String? @db.VarChar(5)
+  dhuhrTime      String? @db.VarChar(5)
+  asrTime        String? @db.VarChar(5)
+  maghribTime    String? @db.VarChar(5)
+  ishaTime       String? @db.VarChar(5)
+
+  /// Explicit manual fixed iqamah times (e.g. "04:45").
+  fajrIqamah     String? @db.VarChar(5)
+  dhuhrIqamah    String? @db.VarChar(5)
+  asrIqamah      String? @db.VarChar(5)
+  maghribIqamah  String? @db.VarChar(5)
+  ishaIqamah     String? @db.VarChar(5)
+
   createdAt DateTime @default(now()) @db.Timestamptz
   updatedAt DateTime @updatedAt @db.Timestamptz
 

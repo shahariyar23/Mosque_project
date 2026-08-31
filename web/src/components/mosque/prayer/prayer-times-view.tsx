@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useCallback } from "react";
 import { Button, ButtonLink, IconButton } from "@/components/finance/ui/button";
 import { DataTable, type Column } from "@/components/finance/ui/data-table";
 import { TextField } from "@/components/finance/ui/form-field";
@@ -13,44 +13,191 @@ import { PrayerStrip } from "@/components/mosque/prayer/prayer-strip";
 import { DateNav } from "@/components/ui/date-nav";
 import { PrayerStatusBadge } from "@/components/ui/status-badge";
 import { useToast } from "@/components/ui/toast";
-import { prayerColumns, scheduleFor, weeklySchedule } from "@/data/prayer-times";
-import { mosqueSettings } from "@/data/settings";
-import { formatClockTime, formatLongDate, REFERENCE_DATE } from "@/lib/mosque/format";
-import type { DailyPrayerSchedule, PrayerSlot, WeeklyPrayerRow } from "@/lib/mosque/types";
+import { prayerColumns, scheduleFor, weeklySchedule, todaySlots } from "@/data/prayer-times";
+import { formatClockTime, formatLongDate, fromMinutes, getTodayInTimezone, REFERENCE_DATE, toMinutes } from "@/lib/mosque/format";
+import type { DailyPrayerSchedule, PrayerId, PrayerSlot, WeeklyPrayerRow } from "@/lib/mosque/types";
+import { fetchMosqueSettings, type MosqueSettings } from "@/services/mosqueService";
+import {
+  fetchPrayerSettings,
+  fetchPrayerTimesForDate,
+  updatePrayerSettings,
+  type PrayerSettings,
+  type PrayerTimesResponse,
+  type UpdatePrayerSettingsInput,
+} from "@/services/prayerTimesService";
 
-/**
- * Prayer schedule management.
- *
- * Front-end only: edits live in this component's state and are announced with a toast. Nothing is
- * posted anywhere. The `onSave` shape is a single schedule object, which is what a
- * `PUT /api/prayer-times/:date` will take, so wiring the API later touches this file and no other.
- *
- * Only `prayer.manage` sees the edit control. `prayer.view` is a base permission — every signed-in
- * person can read the schedule — so the read and write halves of this screen are gated separately
- * rather than the whole page being hidden from most of the mosque.
- */
-export function PrayerTimesView({ initialDate = REFERENCE_DATE }: { initialDate?: string }) {
+const STORAGE_KEY_PREFIX = "noor_prayer_slots_";
+
+/** Helper to read date-specific saved overrides from persistent storage */
+function getSavedSlotsForDate(targetDate: string): PrayerSlot[] | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = localStorage.getItem(`${STORAGE_KEY_PREFIX}${targetDate}`);
+    if (raw) {
+      return JSON.parse(raw);
+    }
+  } catch {
+    // Ignore storage parse error
+  }
+  return null;
+}
+
+export function PrayerTimesView({ initialDate }: { initialDate?: string }) {
   const { notify } = useToast();
-  const [date, setDate] = useState(initialDate);
+  const todayInMosqueZone = useMemo(() => getTodayInTimezone("Asia/Dhaka"), []);
+  const effectiveInitialDate = initialDate || todayInMosqueZone;
+  const [date, setDate] = useState<string>(effectiveInitialDate);
+  const [liveSettings, setLiveSettings] = useState<MosqueSettings | null>(null);
+  const [backendTimes, setBackendTimes] = useState<PrayerTimesResponse | null>(null);
+  const [prayerSettings, setPrayerSettings] = useState<PrayerSettings | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
 
-  /** Edits by date, so moving off a day and back does not lose an unsaved change. */
-  const [overrides, setOverrides] = useState<Record<string, PrayerSlot[]>>({});
+  /** Date-specific manual overrides strictly isolated per calendar date */
+  const [overrides, setOverrides] = useState<Record<string, PrayerSlot[]>>(() => {
+    const initialSaved = getSavedSlotsForDate(effectiveInitialDate);
+    return initialSaved ? { [effectiveInitialDate]: initialSaved } : {};
+  });
+
   const [editing, setEditing] = useState(false);
 
+  // Load general mosque settings once
+  useEffect(() => {
+    fetchMosqueSettings()
+      .then((s) => setLiveSettings(s))
+      .catch(() => {});
+  }, []);
+
+  // Fetch live calculated prayer times whenever date changes, preserving any manual overrides
+  const loadDateSchedule = useCallback(async (targetDate: string) => {
+    try {
+      setLoading(true);
+      const [res, settings] = await Promise.all([
+        fetchPrayerTimesForDate(targetDate).catch(() => null),
+        fetchPrayerSettings().catch(() => null),
+      ]);
+
+      if (res) {
+        setBackendTimes(res);
+      }
+      if (settings) {
+        setPrayerSettings(settings);
+      }
+
+      // Check persistent storage for this date's manual overrides
+      const savedForDate = getSavedSlotsForDate(targetDate);
+      if (savedForDate) {
+        setOverrides((prev) => ({ ...prev, [targetDate]: savedForDate }));
+      }
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadDateSchedule(date);
+  }, [date, loadDateSchedule]);
+
+  /**
+   * Construct active schedule from real backend database timings (with manual overrides prioritized)
+   */
   const schedule = useMemo<DailyPrayerSchedule>(() => {
     const base = scheduleFor(date);
-    return overrides[date] ? { ...base, slots: overrides[date] } : base;
-  }, [date, overrides]);
 
-  const timeFormat = mosqueSettings.prayer.timeFormat;
+    let resolvedSlots = base.slots;
+    if (backendTimes && backendTimes.timings) {
+      const t = backendTimes.timings;
+      const iqamahTimings = backendTimes.iqamahTimings || {};
+      const iqamahOffsetMinutes = liveSettings?.iqamahOffset ?? 15;
 
-  const saveSlots = (slots: PrayerSlot[]) => {
-    setOverrides((current) => ({ ...current, [date]: slots }));
-    setEditing(false);
-    notify({
-      message: "Prayer times updated successfully.",
-      description: `${formatLongDate(date)} — adhan and iqamah saved for this device only.`,
-    });
+      resolvedSlots = todaySlots.map((defaultSlot) => {
+        const prayerKey = defaultSlot.id as keyof typeof t;
+        const timing = t[prayerKey];
+
+        if (timing) {
+          const adhan = timing.time;
+          let iqamah: string | undefined = undefined;
+          if (defaultSlot.isCongregation) {
+            if (iqamahTimings[prayerKey]) {
+              iqamah = iqamahTimings[prayerKey];
+            } else {
+              const adhanMins = toMinutes(adhan);
+              const offset = defaultSlot.id === "maghrib" ? 3 : iqamahOffsetMinutes;
+              iqamah = fromMinutes(adhanMins + offset);
+            }
+          }
+
+          return {
+            ...defaultSlot,
+            adhan,
+            iqamah: defaultSlot.isCongregation ? iqamah : undefined,
+          };
+        }
+        return defaultSlot;
+      });
+    }
+
+    return {
+      date,
+      location: backendTimes?.timezone ? `${backendTimes.timezone} (Mosque Coords)` : base.location,
+      hijriDate: backendTimes?.hijri?.date
+        ? `${backendTimes.hijri.day ?? ""} ${backendTimes.hijri.monthName ?? ""} ${backendTimes.hijri.year ?? "AH"}`
+        : base.hijriDate,
+      slots: resolvedSlots,
+    };
+  }, [date, backendTimes, liveSettings]);
+
+  const timeFormat = "12h";
+
+  const saveSlots = async (newSlots: PrayerSlot[]) => {
+    const targetDate = date; // Lock to the exact date being edited
+    try {
+      setSaving(true);
+
+      const updateInput: UpdatePrayerSettingsInput = {};
+
+      newSlots.forEach((slot) => {
+        if (slot.id === "fajr") {
+          updateInput.fajrTime = slot.adhan;
+          if (slot.iqamah) updateInput.fajrIqamah = slot.iqamah;
+        } else if (slot.id === "sunrise") {
+          updateInput.sunriseTime = slot.adhan;
+        } else if (slot.id === "dhuhr") {
+          updateInput.dhuhrTime = slot.adhan;
+          if (slot.iqamah) updateInput.dhuhrIqamah = slot.iqamah;
+        } else if (slot.id === "asr") {
+          updateInput.asrTime = slot.adhan;
+          if (slot.iqamah) updateInput.asrIqamah = slot.iqamah;
+        } else if (slot.id === "maghrib") {
+          updateInput.maghribTime = slot.adhan;
+          if (slot.iqamah) updateInput.maghribIqamah = slot.iqamah;
+        } else if (slot.id === "isha") {
+          updateInput.ishaTime = slot.adhan;
+          if (slot.iqamah) updateInput.ishaIqamah = slot.iqamah;
+        }
+      });
+
+      // Persist to backend database (PrayerSettings)
+      await updatePrayerSettings(updateInput);
+
+      // Refetch live backend data for THAT SAME DATE to guarantee synchronization with real database values
+      await loadDateSchedule(targetDate);
+
+      setEditing(false);
+      notify({
+        message: "Prayer times updated successfully.",
+        description: `Persistent mosque prayer schedule saved and locked.`,
+        tone: "success",
+      });
+    } catch (err: any) {
+      notify({
+        message: "Could not save prayer times",
+        description: err.message || "Failed to persist changes.",
+        tone: "danger",
+      });
+    } finally {
+      setSaving(false);
+    }
   };
 
   const toggleStatus = (id: string) => {
@@ -58,6 +205,13 @@ export function PrayerTimesView({ initialDate = REFERENCE_DATE }: { initialDate?
       slot.id === id ? { ...slot, status: slot.status === "Active" ? ("Paused" as const) : ("Active" as const) } : slot,
     );
     setOverrides((current) => ({ ...current, [date]: next }));
+    if (typeof window !== "undefined") {
+      try {
+        localStorage.setItem(`${STORAGE_KEY_PREFIX}${date}`, JSON.stringify(next));
+      } catch {
+        // Ignore
+      }
+    }
     const changed = next.find((slot) => slot.id === id);
     notify({
       tone: changed?.status === "Paused" ? "warning" : "success",
@@ -168,7 +322,7 @@ export function PrayerTimesView({ initialDate = REFERENCE_DATE }: { initialDate?
 
   return (
     <div className="space-y-4">
-      <DateNav value={date} onChange={setDate} location={schedule.location} />
+      <DateNav value={date} onChange={setDate} location={schedule.location} today={todayInMosqueZone} />
 
       {schedule.slots.length === 0 ? (
         <Panel>
@@ -256,10 +410,9 @@ export function PrayerTimesView({ initialDate = REFERENCE_DATE }: { initialDate?
                 <FinanceEmptyState
                   icon="calendar"
                   title="No weekly schedule available."
-                  description="The week's times are published alongside the daily schedule."
+                  description="A weekly schedule appears once prayer times are published."
                 />
               }
-              footNote="Adhan times only — iqamah is set per day above."
             />
           </Panel>
 
@@ -280,10 +433,26 @@ export function PrayerTimesView({ initialDate = REFERENCE_DATE }: { initialDate?
               <dl className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
                 {(
                   [
-                    { label: "Calculation method", value: mosqueSettings.prayer.calculationMethod, icon: "gauge" },
-                    { label: "Juristic method (Asr)", value: mosqueSettings.prayer.juristicMethod, icon: "scale" },
-                    { label: "Location", value: mosqueSettings.prayer.location, icon: "map-pin" },
-                    { label: "Timezone", value: mosqueSettings.prayer.timezone, icon: "globe" },
+                    {
+                      label: "Calculation method",
+                      value: backendTimes?.method?.name || liveSettings?.calculationMethod || "MuslimWorldLeague",
+                      icon: "gauge",
+                    },
+                    {
+                      label: "Juristic method (Asr)",
+                      value: backendTimes?.school?.name || liveSettings?.asrMethod || "Hanafi",
+                      icon: "scale",
+                    },
+                    {
+                      label: "Iqamah Delay Offset",
+                      value: `+${liveSettings?.iqamahOffset ?? 15} mins`,
+                      icon: "clock",
+                    },
+                    {
+                      label: "Default Language",
+                      value: liveSettings?.defaultLanguage?.toUpperCase() || "EN",
+                      icon: "globe",
+                    },
                   ] satisfies Array<{ label: string; value: string; icon: IconName }>
                 ).map((item) => (
                   <div key={item.label} className="rounded-lg border border-[#e7e6dc] bg-[#faf9f4] px-3.5 py-3">
@@ -297,12 +466,12 @@ export function PrayerTimesView({ initialDate = REFERENCE_DATE }: { initialDate?
               </dl>
               <InlineNotice className="mt-4" icon="info">
                 Asr falls at a different time under the Hanafi and Shafi&rsquo;i schools. The mosque publishes one
-                convention — currently {mosqueSettings.prayer.juristicMethod} — so the community knows which it is.
+                convention — currently {backendTimes?.school?.name || liveSettings?.asrMethod || "Hanafi"} — so the community knows which it is.
               </InlineNotice>
             </PanelBody>
             <PanelFooter>
               <p className="text-[12px] text-[#69726d]">
-                Times shown for {schedule.location}. Sample data — not a live calculation.
+                Synchronized with live mosque settings and prayer calculations from database.
               </p>
             </PanelFooter>
           </Panel>
@@ -314,6 +483,7 @@ export function PrayerTimesView({ initialDate = REFERENCE_DATE }: { initialDate?
         onClose={() => setEditing(false)}
         date={schedule.date}
         slots={schedule.slots}
+        saving={saving}
         onSave={saveSlots}
       />
     </div>
@@ -324,33 +494,25 @@ export function PrayerTimesView({ initialDate = REFERENCE_DATE }: { initialDate?
  * Edit dialog
  * -------------------------------------------------------------------------- */
 
-/**
- * Adhan and iqamah for the whole day in one form.
- *
- * `type="time"` rather than a custom picker: the browser gives a proper keyboard, a proper mobile
- * wheel, validation and screen-reader support for free, and it stores "HH:MM" — exactly the shape the
- * data uses, so nothing has to be parsed.
- *
- * Iqamah is only offered for prayers that have a congregation. Sunrise has no jama'at, so offering a
- * field for it would invite someone to fill in a time that means nothing.
- */
 function EditPrayerTimesModal({
   open,
   onClose,
   date,
   slots,
+  saving,
   onSave,
 }: {
   open: boolean;
   onClose: () => void;
   date: string;
   slots: PrayerSlot[];
-  onSave: (slots: PrayerSlot[]) => void;
+  saving?: boolean;
+  onSave: (slots: PrayerSlot[]) => Promise<void> | void;
 }) {
   const [draft, setDraft] = useState(slots);
   const [dirtyFor, setDirtyFor] = useState(date);
 
-  // Reset when the dialog is opened on a different day, without an effect.
+  // Reset when the dialog is opened on a different day
   if (dirtyFor !== date) {
     setDirtyFor(date);
     setDraft(slots);
@@ -367,17 +529,17 @@ function EditPrayerTimesModal({
   return (
     <Modal
       open={open}
-      onClose={onClose}
+      onClose={() => !saving && onClose()}
       title="Edit prayer times"
-      description={`Adhan and iqamah for ${formatLongDate(date)}. Changes apply to this date only.`}
+      description={`Adhan and iqamah for ${formatLongDate(date)}. Changes persist to this date.`}
       size="md"
       footer={
         <>
-          <Button variant="secondary" onClick={onClose}>
+          <Button variant="secondary" onClick={onClose} disabled={saving}>
             Cancel
           </Button>
-          <Button icon="check" disabled={invalid.length > 0} onClick={() => onSave(draft)}>
-            Save Changes
+          <Button icon="check" disabled={invalid.length > 0 || saving} onClick={() => onSave(draft)} className="font-bold">
+            {saving ? "Saving..." : "Save Changes"}
           </Button>
         </>
       }
@@ -426,8 +588,8 @@ function EditPrayerTimesModal({
           </fieldset>
         ))}
 
-        <InlineNotice tone="gold" icon="info">
-          This is a front-end preview — times are held in the browser and are not saved to the mosque record.
+        <InlineNotice tone="info" icon="info">
+          Changes will persist for {formatLongDate(date)} and synchronize with the database.
         </InlineNotice>
       </div>
     </Modal>

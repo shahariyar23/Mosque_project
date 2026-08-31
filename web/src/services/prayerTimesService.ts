@@ -104,6 +104,8 @@ export type PrayerTimesResponse = {
   source: "aladhan" | "cache";
   /** True when any timing carries a non-zero adjustment — label the schedule as the mosque's own. */
   adjusted: boolean;
+  manualOverrides?: Partial<Record<PrayerKey, string>>;
+  iqamahTimings?: Partial<Record<PrayerKey, string>>;
 };
 
 /**
@@ -159,6 +161,17 @@ export type PrayerSettings = {
   effectiveTimezone: string;
   /** Minutes added to each calculated time. */
   offsets: Record<PrayerKey, number>;
+  fajrTime?: string | null;
+  sunriseTime?: string | null;
+  dhuhrTime?: string | null;
+  asrTime?: string | null;
+  maghribTime?: string | null;
+  ishaTime?: string | null;
+  fajrIqamah?: string | null;
+  dhuhrIqamah?: string | null;
+  asrIqamah?: string | null;
+  maghribIqamah?: string | null;
+  ishaIqamah?: string | null;
   /** When the overrides were last changed. `null` if never. */
   updatedAt: string | null;
 };
@@ -199,6 +212,19 @@ export type UpdatePrayerSettingsInput = {
   maghribOffset?: number;
   ishaOffset?: number;
   midnightOffset?: number;
+
+  fajrTime?: string | null;
+  sunriseTime?: string | null;
+  dhuhrTime?: string | null;
+  asrTime?: string | null;
+  maghribTime?: string | null;
+  ishaTime?: string | null;
+
+  fajrIqamah?: string | null;
+  dhuhrIqamah?: string | null;
+  asrIqamah?: string | null;
+  maghribIqamah?: string | null;
+  ishaIqamah?: string | null;
 };
 
 /**

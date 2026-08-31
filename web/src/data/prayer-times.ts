@@ -1,14 +1,16 @@
-import { fromMinutes, REFERENCE_DATE, shiftDate, toMinutes } from "@/lib/mosque/format";
+import { fromMinutes, getTodayInTimezone, REFERENCE_DATE, shiftDate, toMinutes } from "@/lib/mosque/format";
 import type { DailyPrayerSchedule, PrayerId, PrayerSlot, WeeklyPrayerRow } from "@/lib/mosque/types";
 
 /**
  * Prayer schedule for Dhaka. Times are stored as "HH:MM" on a 24-hour clock and formatted for display
  * through `formatClockTime`, so the 12/24-hour setting is honoured everywhere from one place.
  *
- * The figures are realistic for late August in Dhaka under the Karachi convention with the Hanafi
+ * The figures are realistic for Dhaka under the Karachi convention with the Hanafi
  * Asr — they are not computed. A real calculation belongs on the server, where the method, the
  * co-ordinates and the Hijri adjustment all live.
  */
+
+const currentToday = getTodayInTimezone("Asia/Dhaka");
 
 /** Sunrise is listed for context. It is the end of Fajr, not a congregation, so it has no iqamah. */
 export const todaySlots: PrayerSlot[] = [
@@ -76,7 +78,7 @@ export const todaySlots: PrayerSlot[] = [
 ];
 
 export const todaySchedule: DailyPrayerSchedule = {
-  date: REFERENCE_DATE,
+  date: currentToday,
   location: "Dhaka, Bangladesh",
   hijriDate: "10 Rabi' al-Awwal 1448",
   slots: todaySlots,
@@ -105,7 +107,7 @@ const dayNames = ["Saturday", "Sunday", "Monday", "Tuesday", "Wednesday", "Thurs
 
 export const weeklySchedule: WeeklyPrayerRow[] = weekOffsets.map((offset, index) => ({
   day: dayNames[index],
-  date: shiftDate(REFERENCE_DATE, offset),
+  date: shiftDate(currentToday, offset),
   times: weeklyTimes[index],
   isFriday: dayNames[index] === "Friday",
 }));

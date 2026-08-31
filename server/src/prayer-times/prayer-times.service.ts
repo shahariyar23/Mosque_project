@@ -132,7 +132,7 @@ export class PrayerTimesService {
       source = 'aladhan';
     }
 
-    return buildResponse(day, config, date, source);
+    return buildResponse(day, config, date, source, mosque.prayerSettings, mosque.settings);
   }
 
   /**
@@ -160,6 +160,17 @@ export class PrayerTimesService {
         : null,
       effectiveTimezone: config.timezone,
       offsets: config.offsets,
+      fajrTime: saved?.fajrTime ?? null,
+      sunriseTime: saved?.sunriseTime ?? null,
+      dhuhrTime: saved?.dhuhrTime ?? null,
+      asrTime: saved?.asrTime ?? null,
+      maghribTime: saved?.maghribTime ?? null,
+      ishaTime: saved?.ishaTime ?? null,
+      fajrIqamah: saved?.fajrIqamah ?? null,
+      dhuhrIqamah: saved?.dhuhrIqamah ?? null,
+      asrIqamah: saved?.asrIqamah ?? null,
+      maghribIqamah: saved?.maghribIqamah ?? null,
+      ishaIqamah: saved?.ishaIqamah ?? null,
       updatedAt: saved?.updatedAt.toISOString() ?? null,
     };
   }
@@ -304,33 +315,60 @@ function hasCoordinates(config: ResolvedConfig): boolean {
   return !Number.isNaN(config.latitude) && !Number.isNaN(config.longitude);
 }
 
-/** Assembles the response, applying each adjustment to the time it belongs to. */
+/** Assembles the response, prioritizing manual overrides over astronomical calculations. */
 function buildResponse(
   day: AlAdhanDay,
   config: ResolvedConfig,
   date: string,
   source: 'aladhan' | 'cache',
+  savedSettings?: PrayerSettings | null,
+  mosqueSettings?: MosqueSettings | null,
 ): PrayerTimesResponseDto {
   const timings = {} as PrayerTimingsDto;
+  const manualOverrides: Partial<Record<PrayerKey, string>> = {};
+  const iqamahTimings: Partial<Record<PrayerKey, string>> = {};
   let adjusted = false;
+
+  const iqamahOffsetMins = mosqueSettings?.iqamahOffset ?? 10;
 
   for (const key of PRAYER_KEYS) {
     const calculated = day.timings[key];
     const adjustment = config.offsets[key];
     if (adjustment !== 0) adjusted = true;
 
+    // Check if there is an explicit manual fixed override for this prayer:
+    const manualField = `${key}Time` as keyof PrayerSettings;
+    const manualFixed = savedSettings ? (savedSettings[manualField] as string | null) : null;
+    if (manualFixed) {
+      manualOverrides[key] = manualFixed;
+      adjusted = true;
+    }
+
+    // Manual override TAKES PRIORITY over the calculated time:
+    const finalTime = manualFixed || shiftTime(calculated, adjustment);
+
     timings[key] = {
       calculated,
-      adjustment,
-      time: shiftTime(calculated, adjustment),
+      adjustment: manualFixed ? 0 : adjustment,
+      time: finalTime,
     } satisfies PrayerTimeDto;
+
+    // Iqamah resolution for congregation prayers:
+    if (['fajr', 'dhuhr', 'asr', 'maghrib', 'isha'].includes(key)) {
+      const iqamahField = `${key}Iqamah` as keyof PrayerSettings;
+      const manualIqamah = savedSettings ? (savedSettings[iqamahField] as string | null) : null;
+      if (manualIqamah) {
+        iqamahTimings[key] = manualIqamah;
+      } else {
+        const offset = key === 'maghrib' ? 3 : iqamahOffsetMins;
+        iqamahTimings[key] = shiftTime(finalTime, offset);
+      }
+    }
   }
 
   return {
-    // The date upstream echoed, when it sent one — it is the authority on what day it calculated.
     date: day.gregorianDate ?? date,
     hijri: day.hijri,
-    // Likewise the zone: reporting the one that was requested would hide a disagreement.
     timezone: day.timezone ?? config.timezone,
     coordinates: { latitude: config.latitude, longitude: config.longitude },
     method: describeMethod(config.method),
@@ -338,6 +376,8 @@ function buildResponse(
     timings,
     source,
     adjusted,
+    manualOverrides,
+    iqamahTimings,
   };
 }
 
@@ -364,17 +404,29 @@ function toPrismaData(dto: UpdatePrayerSettingsDto): PrayerSettingsWriteData {
   if (dto.school !== undefined) data.school = dto.school;
   if (dto.timezone !== undefined) data.timezone = dto.timezone;
 
-  // Prisma accepts a number for a `Decimal` column and does the conversion itself, so there is nothing
-  // to construct here — and six decimal places is well inside what a double represents exactly.
   if (dto.latitude !== undefined) data.latitude = dto.latitude;
   if (dto.longitude !== undefined) data.longitude = dto.longitude;
 
   for (const key of PRAYER_KEYS) {
     const column = OFFSET_COLUMNS[key];
     const value = dto[column];
-    // The columns are NOT NULL and the DTO does not permit a null; an offset resets to zero, not null.
     if (value !== undefined) data[column] = value;
   }
+
+  // Manual fixed prayer times
+  if (dto.fajrTime !== undefined) data.fajrTime = dto.fajrTime;
+  if (dto.sunriseTime !== undefined) data.sunriseTime = dto.sunriseTime;
+  if (dto.dhuhrTime !== undefined) data.dhuhrTime = dto.dhuhrTime;
+  if (dto.asrTime !== undefined) data.asrTime = dto.asrTime;
+  if (dto.maghribTime !== undefined) data.maghribTime = dto.maghribTime;
+  if (dto.ishaTime !== undefined) data.ishaTime = dto.ishaTime;
+
+  // Manual fixed iqamah times
+  if (dto.fajrIqamah !== undefined) data.fajrIqamah = dto.fajrIqamah;
+  if (dto.dhuhrIqamah !== undefined) data.dhuhrIqamah = dto.dhuhrIqamah;
+  if (dto.asrIqamah !== undefined) data.asrIqamah = dto.asrIqamah;
+  if (dto.maghribIqamah !== undefined) data.maghribIqamah = dto.maghribIqamah;
+  if (dto.ishaIqamah !== undefined) data.ishaIqamah = dto.ishaIqamah;
 
   return data;
 }

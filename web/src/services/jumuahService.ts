@@ -99,3 +99,11 @@ export function updateJumuah(id: string, input: UpdateJumuahInput): Promise<Jumu
 export function deleteJumuah(id: string): Promise<void> {
   return apiDeleteRaw(`/jummah/${id}`);
 }
+
+// Aliases matching prompt naming conventions
+export const getJummahSchedules = fetchJumuahSchedules;
+export const getJummahScheduleById = fetchJumuah;
+export const createJummahSchedule = createJumuah;
+export const updateJummahSchedule = updateJumuah;
+export const deleteJummahSchedule = deleteJumuah;
+
