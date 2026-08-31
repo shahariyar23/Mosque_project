@@ -61,6 +61,9 @@ export const AUDIT_ACTIONS = [
   'DONATION_RECORDED',
   'RECEIPT_ISSUED',
   'RECEIPT_VOIDED',
+  'IFTAR_SPONSORSHIP_CREATED',
+  'IFTAR_SPONSORSHIP_UPDATED',
+  'IFTAR_SPONSORSHIP_DELETED',
 ] as const;
 
 export type AuditAction = (typeof AUDIT_ACTIONS)[number];
@@ -80,6 +83,7 @@ export const AUDIT_RESOURCES = [
   'fund_transfer',
   'donation',
   'receipt',
+  'iftar_sponsorship',
 ] as const;
 
 export type AuditResource = (typeof AUDIT_RESOURCES)[number];

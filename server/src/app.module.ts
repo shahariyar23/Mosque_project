@@ -21,6 +21,7 @@ import { VolunteersModule } from './volunteers/volunteers.module';
 import { PrayerTimesModule } from './prayer-times/prayer-times.module';
 import { JumuahModule } from './jumuah/jumuah.module';
 import { RamadanModule } from './ramadan/ramadan.module';
+import { IftarSponsorshipModule } from './iftar-sponsorship/iftar-sponsorship.module';
 import { DonationFundsModule } from './donation-funds/donation-funds.module';
 import { DonationCampaignsModule } from './donation-campaigns/donation-campaigns.module';
 import { DonationsModule } from './donations/donations.module';
@@ -104,6 +105,7 @@ import { MailModule } from './mail/mail.module';
     PrayerTimesModule,
     JumuahModule,
     RamadanModule,
+    IftarSponsorshipModule,
     // Funds first, then campaigns: a campaign is filed under a fund, and reading them in that order is
     // the same order the two tables relate in. Donations come after both, because a donation names one of
     // each. Expenses next — money out reads after money in, and it references neither of the others.

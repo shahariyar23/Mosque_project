@@ -27,6 +27,13 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
   async onModuleInit(): Promise<void> {
     this.$on('warn' as never, (event: { message: string }) => this.logger.warn(event.message));
     this.$on('error' as never, (event: { message: string }) => {
+      if (event.message?.includes('kind: Closed') || event.message?.includes('Closed')) {
+        this.logger.debug(`Idle database connection closed by server/pooler: ${event.message}`);
+        return;
+      }
+      this.logger.error(event.message);
+    });
+
     await this.$connect();
     this.logger.log('Database connection established');
   }

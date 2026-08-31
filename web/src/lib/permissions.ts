@@ -74,7 +74,7 @@ export const PERMISSION_GROUPS = {
     "member.view",
     "member.manage",
   ],
-  prayer: ["prayer.manage", "jumuah.manage", "ramadan.manage"],
+  prayer: ["prayer.manage", "jumuah.manage", "ramadan.manage", "iftar_sponsorship.manage"],
   events: ["event.create", "event.update", "event.delete", "event.publish", "event.registerSelf"],
   services: ["service.manage", "booking.view", "booking.manage", "booking.viewOwn", "booking.createOwn"],
   announcements: ["announcement.manage", "announcement.publish"],
