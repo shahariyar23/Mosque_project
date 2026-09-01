@@ -5,7 +5,7 @@
  * and `/api/v1/notifications/broadcasts` for outgoing admin broadcasts.
  */
 
-import { apiDelete, apiGet, apiList, apiPatch, apiPost, type ListResult } from "./apiClient";
+import { apiDelete, apiGet, apiGetRaw, apiList, apiPatch, apiPost, type ListResult } from "./apiClient";
 import type {
   NotificationAudience,
   NotificationChannel,
@@ -95,9 +95,10 @@ export interface CreateBroadcastInput {
 export async function fetchNotifications(
   query: NotificationQuery = {},
 ): Promise<{ rows: InAppNotification[]; meta: NotificationListMeta }> {
-  const result = await apiGet<{
+  const result = await apiGetRaw<{
     data?: InAppNotification[];
-    meta?: NotificationListMeta;
+    rows?: InAppNotification[];
+    meta?: Partial<NotificationListMeta>;
   }>("/notifications", {
     page: query.page,
     limit: query.limit,
@@ -106,13 +107,22 @@ export async function fetchNotifications(
     type: query.type,
   });
 
-  const rows = result?.data || [];
-  const meta = result?.meta || {
-    page: query.page || 1,
-    limit: query.limit || 20,
-    total: rows.length,
-    totalPages: 1,
-    unreadCount: rows.filter((r) => !r.isRead).length,
+  const rows: InAppNotification[] = Array.isArray(result?.data)
+    ? result.data
+    : Array.isArray(result?.rows)
+      ? result.rows
+      : Array.isArray(result)
+        ? result
+        : [];
+
+  const unreadFromRows = rows.filter((r) => !r.isRead).length;
+
+  const meta: NotificationListMeta = {
+    page: result?.meta?.page || query.page || 1,
+    limit: result?.meta?.limit || query.limit || 20,
+    total: result?.meta?.total ?? rows.length,
+    totalPages: result?.meta?.totalPages ?? 1,
+    unreadCount: result?.meta?.unreadCount ?? unreadFromRows,
   };
 
   return { rows, meta };

@@ -6,10 +6,12 @@ import { SiteHeader } from "@/components/site-header";
 import { SiteFooter } from "@/components/site-footer";
 import { IslamicTexture } from "@/components/islamic-texture";
 import { siteConfig } from "@/config/site";
+import { useToast } from "@/components/ui/toast";
 import { forgotPassword } from "@/services/authService";
 import { ArrowLeft, CheckCircle2, KeyRound, Mail, AlertCircle, Loader2 } from "lucide-react";
 
 export default function ForgotPasswordPage() {
+  const { notify } = useToast();
   const [email, setEmail] = useState("");
   const [touched, setTouched] = useState(false);
   const [status, setStatus] = useState<"idle" | "submitting" | "success" | "error">("idle");
@@ -32,9 +34,20 @@ export default function ForgotPasswordPage() {
     try {
       await forgotPassword({ email: email.trim() });
       setStatus("success");
+      notify({
+        tone: "success",
+        message: "Recovery email sent",
+        description: `Check your inbox at ${email.trim()} for the password reset link.`,
+      });
     } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Failed to request password reset.";
       setStatus("error");
-      setErrorMessage(err instanceof Error ? err.message : "Failed to request password reset.");
+      setErrorMessage(msg);
+      notify({
+        tone: "danger",
+        message: "Password reset request failed",
+        description: msg,
+      });
     }
   };
 

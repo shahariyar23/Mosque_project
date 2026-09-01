@@ -4,15 +4,24 @@ import { useEffect, useState, useRef } from "react";
 import gsap from "gsap";
 import { NoorLoaderScene } from "./NoorLoaderScene";
 import { siteConfig } from "@/config/site";
+import { useAuth } from "@/components/auth-provider";
 import "./NoorLoader.css";
 
 export function NoorLoader() {
+  const { loading: authLoading } = useAuth();
   const [isLoading, setIsLoading] = useState(true);
   const [reducedMotion, setReducedMotion] = useState(false);
   const [progress, setProgress] = useState(0);
 
   const containerRef = useRef<HTMLDivElement>(null);
   const tlRef = useRef<gsap.core.Timeline | null>(null);
+  const authLoadingRef = useRef(authLoading);
+  const isExitingRef = useRef(false);
+
+  // Keep authLoadingRef in sync with the latest state
+  useEffect(() => {
+    authLoadingRef.current = authLoading;
+  }, [authLoading]);
 
   useEffect(() => {
     // Check for reduced motion preference
@@ -88,17 +97,21 @@ export function NoorLoader() {
       }
     }, containerRef);
 
-    // Simulate progress while waiting for document ready
+    // Simulate progress smoothly while waiting for document ready + auth verification
     const progressInterval = setInterval(() => {
       setProgress((prev) => {
-        // Asymptotically approach 95% while waiting
-        if (prev >= 95) return prev;
-        const remaining = 95 - prev;
-        return prev + remaining * 0.1;
+        // While auth check is pending, asymptotically approach up to 90%
+        const ceiling = !authLoadingRef.current ? 98 : 90;
+        if (prev >= ceiling) return prev;
+        const remaining = ceiling - prev;
+        return prev + Math.max(0.4, remaining * 0.1);
       });
-    }, 100);
+    }, 80);
 
     const exitLoader = () => {
+      if (isExitingRef.current) return;
+      isExitingRef.current = true;
+
       clearInterval(progressInterval);
       setProgress(100);
 
@@ -120,21 +133,23 @@ export function NoorLoader() {
     };
 
     const checkReadyStatus = () => {
+      if (isExitingRef.current) return;
       const timeElapsed = Date.now() - startTime;
       const isReady = document.readyState === "complete";
-      
-      if (isReady && timeElapsed >= MIN_LOAD_TIME) {
+      const authSettled = !authLoadingRef.current;
+
+      if (isReady && authSettled && timeElapsed >= MIN_LOAD_TIME) {
         exitLoader();
       } else {
-        // Keep checking every 100ms until both conditions are met
-        setTimeout(checkReadyStatus, 100);
+        // Keep checking every 60ms until document is complete, auth has settled, and minimum display time elapsed
+        setTimeout(checkReadyStatus, 60);
       }
     };
 
-    // Failsafe: if something goes wrong, force exit after 5 seconds
+    // Failsafe: if something goes wrong, force exit after 6 seconds
     const failsafe = setTimeout(() => {
       exitLoader();
-    }, 5000);
+    }, 6000);
 
     return () => {
       ctx.revert();

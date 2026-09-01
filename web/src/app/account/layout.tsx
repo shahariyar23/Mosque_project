@@ -1,5 +1,4 @@
-import { getSession } from "@/lib/session";
-import { redirect } from "next/navigation";
+import { AccountGate } from "@/components/account/account-gate";
 import { SiteHeader } from "@/components/site-header";
 import { SiteFooter } from "@/components/site-footer";
 import Link from "next/link";
@@ -28,19 +27,14 @@ const accountLinks = [
   { href: "/account/settings", label: "Settings", icon: Settings },
 ];
 
-export default async function AccountLayout({
+export default function AccountLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
-  const session = getSession();
-
-  if (!session) {
-    redirect("/signin");
-  }
-
   return (
-    <div className="flex min-h-screen flex-col bg-[#faf9f4]">
+    <AccountGate>
+      <div className="flex min-h-screen flex-col bg-[#faf9f4]">
       <div className="bg-[#073a2d]">
         <SiteHeader />
       </div>
@@ -88,5 +82,6 @@ export default async function AccountLayout({
 
       <SiteFooter />
     </div>
+    </AccountGate>
   );
 }

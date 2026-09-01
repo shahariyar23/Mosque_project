@@ -34,7 +34,9 @@ export function NotificationPopover() {
       setLoading(true);
       const res = await fetchNotifications({ limit: 10 });
       setNotifications(res.rows || []);
-      setUnreadCount(res.meta?.unreadCount || 0);
+      if (typeof res.meta?.unreadCount === "number") {
+        setUnreadCount(res.meta.unreadCount);
+      }
     } catch {
       // Graceful fallback
     } finally {
@@ -197,10 +199,15 @@ export function NotificationPopover() {
                     </div>
                     <p className="text-[11px] text-[#69726d] line-clamp-2 mt-0.5">{notif.message}</p>
                     <span className="text-[10px] text-[#9aa19c] block mt-1">
-                      {new Date(notif.createdAt).toLocaleTimeString([], {
-                        hour: "2-digit",
-                        minute: "2-digit",
-                      })}
+                      {notif.createdAt
+                        ? `${new Date(notif.createdAt).toLocaleDateString(undefined, {
+                            month: "short",
+                            day: "numeric",
+                          })} · ${new Date(notif.createdAt).toLocaleTimeString([], {
+                            hour: "2-digit",
+                            minute: "2-digit",
+                          })}`
+                        : ""}
                     </span>
                   </div>
                 </div>

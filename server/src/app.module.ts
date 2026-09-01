@@ -46,6 +46,7 @@ import { MailModule } from './mail/mail.module';
 import { PublicTransparencyModule } from './public-transparency/public-transparency.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { AnnouncementsModule } from './announcements/announcements.module';
+import { SearchModule } from './search/search.module';
 
 /**
  * The composition root.
@@ -132,6 +133,7 @@ import { AnnouncementsModule } from './announcements/announcements.module';
     PublicTransparencyModule,
     NotificationsModule,
     AnnouncementsModule,
+    SearchModule,
 
     // Then what the money was meant for and who it went to. Budgets and salaries are independent of each
     // other and of the three above; reports come last because they read all four tables and nothing reads
