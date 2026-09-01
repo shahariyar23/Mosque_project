@@ -5,15 +5,15 @@ import { RequirePermission } from "@/components/finance/ui/permission-gate";
 
 export const metadata: Metadata = {
   title: "Ramadan · Noor Mosque Management",
-  description: "Manage daily Ramadan schedules including Sehri/Suhoor and Iftar timings.",
+  description: "Ramadan calendar, daily fasting schedules, Sehri, Iftar and Taraweeh times.",
 };
 
 export default function RamadanPage() {
   return (
     <div className="space-y-5">
       <PageHeader
-        title="Ramadan"
-        subtitle="Manage daily Ramadan schedules including Sehri/Suhoor and Iftar timings."
+        title="Ramadan Calendar"
+        subtitle="Manage daily fasting schedules, Sehri (Suhoor), Iftar and Taraweeh prayer times."
         crumbs={[
           { label: "Dashboard", href: "/dashboard" },
           { label: "Prayer Times", href: "/dashboard/prayer-times" },
@@ -26,3 +26,4 @@ export default function RamadanPage() {
     </div>
   );
 }
+

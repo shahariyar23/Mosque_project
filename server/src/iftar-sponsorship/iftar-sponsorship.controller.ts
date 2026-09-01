@@ -18,7 +18,6 @@ import {
   CreateIftarSponsorshipDto,
   IftarSponsorshipDto,
   ListIftarSponsorshipQueryDto,
-  PaginatedIftarSponsorshipDto,
   UpdateIftarSponsorshipDto,
 } from './dto/iftar-sponsorship.dto';
 import { IftarSponsorshipService } from './iftar-sponsorship.service';
@@ -36,13 +35,13 @@ export class IftarSponsorshipController {
   @Permissions('prayer.view')
   @ApiOperation({
     summary: 'List Iftar sponsorships',
-    description: 'Returns paginated sponsorships for the mosque, filtered optionally by year, date, status, or search query.',
+    description: 'Returns sponsorships for the mosque, filtered optionally by year, date, or status.',
   })
-  @ApiResponse({ status: 200, type: PaginatedIftarSponsorshipDto })
+  @ApiResponse({ status: 200, type: [IftarSponsorshipDto] })
   findAll(
     @CurrentUser() user: AuthenticatedUser,
     @Query() query: ListIftarSponsorshipQueryDto,
-  ): Promise<PaginatedIftarSponsorshipDto | IftarSponsorshipDto[]> {
+  ): Promise<IftarSponsorshipDto[]> {
     return this.iftarService.findAll(user.mosqueId, query);
   }
 
@@ -68,7 +67,7 @@ export class IftarSponsorshipController {
     @CurrentUser() user: AuthenticatedUser,
     @Body() dto: CreateIftarSponsorshipDto,
   ): Promise<IftarSponsorshipDto> {
-    return this.iftarService.create(user, dto);
+    return this.iftarService.create(user.mosqueId, dto);
   }
 
   @Patch(':id')
@@ -82,7 +81,7 @@ export class IftarSponsorshipController {
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: UpdateIftarSponsorshipDto,
   ): Promise<IftarSponsorshipDto> {
-    return this.iftarService.update(user, id, dto);
+    return this.iftarService.update(user.mosqueId, id, dto);
   }
 
   @Delete(':id')
@@ -94,6 +93,7 @@ export class IftarSponsorshipController {
     @CurrentUser() user: AuthenticatedUser,
     @Param('id', ParseUUIDPipe) id: string,
   ): Promise<IftarSponsorshipDto> {
-    return this.iftarService.remove(user, id);
+    return this.iftarService.remove(user.mosqueId, id);
   }
 }
+

@@ -64,6 +64,16 @@ export const AUDIT_ACTIONS = [
   'IFTAR_SPONSORSHIP_CREATED',
   'IFTAR_SPONSORSHIP_UPDATED',
   'IFTAR_SPONSORSHIP_DELETED',
+  'EVENT_CREATED',
+  'EVENT_UPDATED',
+  'EVENT_DELETED',
+  'SERVICE_CREATED',
+  'SERVICE_UPDATED',
+  'SERVICE_DELETED',
+  'BOOKING_CREATED',
+  'BOOKING_UPDATED',
+  'BOOKING_STATUS_CHANGED',
+  'BOOKING_DELETED',
 ] as const;
 
 export type AuditAction = (typeof AUDIT_ACTIONS)[number];
@@ -84,6 +94,9 @@ export const AUDIT_RESOURCES = [
   'donation',
   'receipt',
   'iftar_sponsorship',
+  'event',
+  'service',
+  'booking',
 ] as const;
 
 export type AuditResource = (typeof AUDIT_RESOURCES)[number];

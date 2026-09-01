@@ -7,33 +7,13 @@ import type { AuthenticatedUser } from '../common/types/authenticated-user';
 import { MailService } from '../mail/mail.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { IftarSponsorshipService } from './iftar-sponsorship.service';
-import { IftarSponsorshipStatus, PaginatedIftarSponsorshipDto } from './dto/iftar-sponsorship.dto';
+import { IftarSponsorshipStatus } from './dto/iftar-sponsorship.dto';
 
 const MOSQUE_ID = 'c0a80121-7ac0-11d1-898c-00c04fd8d5c0';
 const OTHER_MOSQUE_ID = 'd0b80121-7ac0-11d1-898c-00c04fd8d5c1';
 const SPONSORSHIP_ID = '1b4e28ba-2fa1-11d2-883f-0016d3cca427';
 const USER_ID = 'a1b2c3d4-e5f6-7890-abcd-ef1234567890';
 const RAMADAN_SCHED_ID = 'ramadan-sched-123';
-
-const ACTOR: AuthenticatedUser = {
-  id: 'actor-123',
-  mosqueId: MOSQUE_ID,
-  email: 'admin@noor.org',
-  role: Role.mosque_admin,
-  permissions: ['prayer.view', 'ramadan.manage', 'iftar_sponsorship.manage'],
-  deniedPermissions: [],
-  isActive: true,
-};
-
-const OTHER_ACTOR: AuthenticatedUser = {
-  id: 'actor-456',
-  mosqueId: OTHER_MOSQUE_ID,
-  email: 'other.admin@noor.org',
-  role: Role.mosque_admin,
-  permissions: ['prayer.view', 'ramadan.manage', 'iftar_sponsorship.manage'],
-  deniedPermissions: [],
-  isActive: true,
-};
 
 function mockRow(overrides: Record<string, unknown> = {}) {
   return {
@@ -45,7 +25,6 @@ function mockRow(overrides: Record<string, unknown> = {}) {
     userId: USER_ID,
     user: {
       id: USER_ID,
-      name: 'Abdul Karim',
       fullName: 'Abdul Karim',
       email: 'abdul.karim@example.com',
       phone: '+8801711000000',
@@ -54,18 +33,18 @@ function mockRow(overrides: Record<string, unknown> = {}) {
     sponsorPhone: '+8801711000000',
     sponsorEmail: 'abdul.karim@example.com',
     numberOfServings: 150,
-    estimatedCost: new Prisma.Decimal('25000'),
+    estimatedCost: new Prisma.Decimal('15000.00'),
     currency: 'BDT',
-    menuDetails: 'Khichuri, Dates, Fruit, Mutton',
-    notes: 'Main prayer hall',
+    menuDetails: 'Khichuri, Dates, Fruits, Jilapi',
+    notes: 'Volunteers will help distribution',
     status: IftarSponsorshipStatus.confirmed,
-    createdAt: new Date('2026-02-01T10:00:00.000Z'),
-    updatedAt: new Date('2026-02-01T10:00:00.000Z'),
+    createdAt: new Date('2026-02-15T10:00:00.000Z'),
+    updatedAt: new Date('2026-02-15T10:00:00.000Z'),
     ...overrides,
   };
 }
 
-describe('IftarSponsorshipService (Hardened Business Logic & Security)', () => {
+describe('IftarSponsorshipService', () => {
   let service: IftarSponsorshipService;
   let prisma: PrismaService;
   let audit: AuditLogService;
@@ -81,10 +60,10 @@ describe('IftarSponsorshipService (Hardened Business Logic & Security)', () => {
             iftarSponsorship: {
               findMany: jest.fn(),
               findFirst: jest.fn(),
-              count: jest.fn(),
               create: jest.fn(),
               update: jest.fn(),
               delete: jest.fn(),
+              count: jest.fn(),
             },
             ramadanSchedule: {
               findFirst: jest.fn(),
@@ -103,7 +82,7 @@ describe('IftarSponsorshipService (Hardened Business Logic & Security)', () => {
         {
           provide: MailService,
           useValue: {
-            sendIftarSponsorshipEmail: jest.fn().mockResolvedValue({ success: true }),
+            sendIftarSponsorshipEmail: jest.fn().mockResolvedValue(true),
           },
         },
       ],
@@ -117,7 +96,23 @@ describe('IftarSponsorshipService (Hardened Business Logic & Security)', () => {
 
   const table = () => prisma.iftarSponsorship as unknown as Record<string, jest.Mock>;
 
-  describe('CHECK 1 — DATE & RAMADAN VALIDATION', () => {
+  describe('findAll', () => {
+    it('scopes query to the authenticated mosque', async () => {
+      table().findMany.mockResolvedValue([mockRow()]);
+
+      const result = await service.findAll(MOSQUE_ID, { year: 1447 });
+
+      expect(table().findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({ mosqueId: MOSQUE_ID, year: 1447 }),
+        }),
+      );
+      expect(result).toHaveLength(1);
+      expect(result[0].sponsorName).toBe('Abdul Karim');
+    });
+  });
+
+  describe('CHECK 1 — RAMADAN SCHEDULE LINKAGE & GREGORIAN DATE RESOLUTION', () => {
     it('auto-links matching Ramadan schedule when available on that date', async () => {
       table().findFirst.mockResolvedValue(null);
       (prisma.ramadanSchedule.findFirst as jest.Mock).mockResolvedValue({
@@ -127,7 +122,7 @@ describe('IftarSponsorshipService (Hardened Business Logic & Security)', () => {
       });
       table().create.mockResolvedValue(mockRow({ ramadanScheduleId: RAMADAN_SCHED_ID }));
 
-      const result = await service.create(ACTOR, {
+      const result = await service.create(MOSQUE_ID, {
         year: 1447,
         date: '2026-03-01',
         sponsorName: 'Abdul Karim',
@@ -146,7 +141,7 @@ describe('IftarSponsorshipService (Hardened Business Logic & Security)', () => {
       });
 
       await expect(
-        service.create(ACTOR, {
+        service.create(MOSQUE_ID, {
           year: 1447,
           date: '2026-03-01',
           sponsorName: 'Abdul Karim',
@@ -161,16 +156,16 @@ describe('IftarSponsorshipService (Hardened Business Logic & Security)', () => {
       table().findFirst.mockResolvedValue(null);
       (prisma.user.findFirst as jest.Mock).mockResolvedValue({
         id: USER_ID,
-        name: 'Brother Faruq',
         fullName: 'Brother Faruq',
         email: 'faruq@noor.org',
         phone: null,
       });
       table().create.mockResolvedValue(mockRow({ sponsorName: 'Brother Faruq', userId: USER_ID }));
 
-      const result = await service.create(ACTOR, {
+      const result = await service.create(MOSQUE_ID, {
         year: 1447,
         date: '2026-03-01',
+        sponsorName: 'Brother Faruq',
         userId: USER_ID,
       });
 
@@ -182,7 +177,7 @@ describe('IftarSponsorshipService (Hardened Business Logic & Security)', () => {
       (prisma.user.findFirst as jest.Mock).mockResolvedValue(null);
 
       await expect(
-        service.create(ACTOR, {
+        service.create(MOSQUE_ID, {
           year: 1447,
           date: '2026-03-01',
           sponsorName: 'Cross-tenant member',
@@ -197,7 +192,7 @@ describe('IftarSponsorshipService (Hardened Business Logic & Security)', () => {
       table().findFirst.mockResolvedValue(mockRow({ status: IftarSponsorshipStatus.confirmed }));
 
       await expect(
-        service.create(ACTOR, {
+        service.create(MOSQUE_ID, {
           year: 1447,
           date: '2026-03-01',
           sponsorName: 'Second Host',
@@ -209,7 +204,7 @@ describe('IftarSponsorshipService (Hardened Business Logic & Security)', () => {
       table().findFirst.mockResolvedValue(null);
       table().create.mockResolvedValue(mockRow({ sponsorName: 'New Active Host' }));
 
-      const created = await service.create(ACTOR, {
+      const created = await service.create(MOSQUE_ID, {
         year: 1447,
         date: '2026-03-01',
         sponsorName: 'New Active Host',
@@ -224,7 +219,7 @@ describe('IftarSponsorshipService (Hardened Business Logic & Security)', () => {
       table().findFirst.mockResolvedValue(mockRow({ status: IftarSponsorshipStatus.completed }));
 
       await expect(
-        service.update(ACTOR, SPONSORSHIP_ID, {
+        service.update(MOSQUE_ID, SPONSORSHIP_ID, {
           status: IftarSponsorshipStatus.pending,
         }),
       ).rejects.toThrow(BadRequestException);
@@ -234,7 +229,7 @@ describe('IftarSponsorshipService (Hardened Business Logic & Security)', () => {
       table().findFirst.mockResolvedValue(mockRow({ status: IftarSponsorshipStatus.confirmed }));
       table().update.mockResolvedValue(mockRow({ status: IftarSponsorshipStatus.completed }));
 
-      const result = await service.update(ACTOR, SPONSORSHIP_ID, {
+      const result = await service.update(MOSQUE_ID, SPONSORSHIP_ID, {
         status: IftarSponsorshipStatus.completed,
       });
 
@@ -255,14 +250,14 @@ describe('IftarSponsorshipService (Hardened Business Logic & Security)', () => {
       table().findFirst.mockResolvedValue(null);
 
       await expect(
-        service.update(OTHER_ACTOR, SPONSORSHIP_ID, { numberOfServings: 180 }),
+        service.update(OTHER_MOSQUE_ID, SPONSORSHIP_ID, { numberOfServings: 180 }),
       ).rejects.toThrow(NotFoundException);
     });
 
     it('never permits cross-mosque delete in remove', async () => {
       table().findFirst.mockResolvedValue(null);
 
-      await expect(service.remove(OTHER_ACTOR, SPONSORSHIP_ID)).rejects.toThrow(
+      await expect(service.remove(OTHER_MOSQUE_ID, SPONSORSHIP_ID)).rejects.toThrow(
         NotFoundException,
       );
     });
@@ -273,7 +268,7 @@ describe('IftarSponsorshipService (Hardened Business Logic & Security)', () => {
       table().findFirst.mockResolvedValue(null);
       table().create.mockResolvedValue(mockRow());
 
-      await service.create(ACTOR, {
+      await service.create(MOSQUE_ID, {
         year: 1447,
         date: '2026-03-01',
         sponsorName: 'Abdul Karim',
@@ -283,7 +278,6 @@ describe('IftarSponsorshipService (Hardened Business Logic & Security)', () => {
         expect.objectContaining({
           action: 'IFTAR_SPONSORSHIP_CREATED',
           resource: 'iftar_sponsorship',
-          actorId: ACTOR.id,
           mosqueId: MOSQUE_ID,
         }),
       );
@@ -295,7 +289,7 @@ describe('IftarSponsorshipService (Hardened Business Logic & Security)', () => {
         .mockResolvedValueOnce(null);
       table().update.mockResolvedValue(mockRow({ sponsorName: 'Updated Sponsor' }));
 
-      await service.update(ACTOR, SPONSORSHIP_ID, { sponsorName: 'Updated Sponsor' });
+      await service.update(MOSQUE_ID, SPONSORSHIP_ID, { sponsorName: 'Updated Sponsor' });
 
       expect(audit.record).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -309,7 +303,7 @@ describe('IftarSponsorshipService (Hardened Business Logic & Security)', () => {
       table().findFirst.mockResolvedValue(mockRow());
       table().delete.mockResolvedValue(mockRow());
 
-      await service.remove(ACTOR, SPONSORSHIP_ID);
+      await service.remove(MOSQUE_ID, SPONSORSHIP_ID);
 
       expect(audit.record).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -325,7 +319,7 @@ describe('IftarSponsorshipService (Hardened Business Logic & Security)', () => {
       table().findFirst.mockResolvedValue(null);
       table().create.mockResolvedValue(mockRow({ estimatedCost: new Prisma.Decimal('5000') }));
 
-      const created = await service.create(ACTOR, {
+      const created = await service.create(MOSQUE_ID, {
         year: 1447,
         date: '2026-03-01',
         sponsorName: 'Abdul Karim',
@@ -340,7 +334,7 @@ describe('IftarSponsorshipService (Hardened Business Logic & Security)', () => {
       table().findFirst.mockResolvedValue(mockRow({ status: IftarSponsorshipStatus.pending }));
       table().update.mockResolvedValue(mockRow({ status: IftarSponsorshipStatus.cancelled }));
 
-      const updated = await service.update(ACTOR, SPONSORSHIP_ID, {
+      const updated = await service.update(MOSQUE_ID, SPONSORSHIP_ID, {
         status: IftarSponsorshipStatus.cancelled,
       });
 
@@ -354,7 +348,7 @@ describe('IftarSponsorshipService (Hardened Business Logic & Security)', () => {
         .mockResolvedValueOnce(null);
       table().update.mockResolvedValue(mockRow({ estimatedCost: new Prisma.Decimal('10000') }));
 
-      const updated = await service.update(ACTOR, SPONSORSHIP_ID, {
+      const updated = await service.update(MOSQUE_ID, SPONSORSHIP_ID, {
         estimatedCost: 10000,
       });
 
@@ -368,7 +362,7 @@ describe('IftarSponsorshipService (Hardened Business Logic & Security)', () => {
       table().findFirst.mockResolvedValue(null);
       table().create.mockResolvedValue(mockRow());
 
-      await service.create(ACTOR, {
+      await service.create(MOSQUE_ID, {
         year: 1447,
         date: '2026-03-01',
         sponsorName: 'Abdul Karim',
@@ -391,7 +385,7 @@ describe('IftarSponsorshipService (Hardened Business Logic & Security)', () => {
         .mockResolvedValueOnce(null);
       table().update.mockResolvedValue(mockRow({ status: IftarSponsorshipStatus.cancelled }));
 
-      await service.update(ACTOR, SPONSORSHIP_ID, {
+      await service.update(MOSQUE_ID, SPONSORSHIP_ID, {
         status: IftarSponsorshipStatus.cancelled,
       });
 
@@ -408,7 +402,7 @@ describe('IftarSponsorshipService (Hardened Business Logic & Security)', () => {
       table().findFirst.mockResolvedValue(null);
       table().create.mockResolvedValue(mockRow({ sponsorEmail: null, user: null, userId: null }));
 
-      await service.create(ACTOR, {
+      await service.create(MOSQUE_ID, {
         year: 1447,
         date: '2026-03-01',
         sponsorName: 'Guest Benefactor',

@@ -1,8 +1,7 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { IftarSponsorshipStatus } from '@prisma/client';
-import { Transform, Type } from 'class-transformer';
+import { Type } from 'class-transformer';
 import {
-  IsBoolean,
   IsEnum,
   IsInt,
   IsNumber,
@@ -48,10 +47,9 @@ export class CreateIftarSponsorshipDto {
   @IsUUID()
   userId?: string | null;
 
-  @ApiPropertyOptional({ description: 'Name of the sponsor (auto-resolved from member if omitted).', example: 'Abdul Karim' })
-  @IsOptional()
+  @ApiProperty({ description: 'Name of the sponsor (member or external benefactor).', example: 'Abdul Karim' })
   @IsString()
-  sponsorName?: string;
+  sponsorName!: string;
 
   @ApiPropertyOptional({ description: 'Contact phone number of the sponsor.', example: '+8801711000000' })
   @IsOptional()
@@ -173,29 +171,6 @@ export class UpdateIftarSponsorshipDto {
 }
 
 export class ListIftarSponsorshipQueryDto {
-  @ApiPropertyOptional({ description: '1-based page number', default: 1 })
-  @IsOptional()
-  @Type(() => Number)
-  @IsInt()
-  @Min(1)
-  page?: number = 1;
-
-  @ApiPropertyOptional({ description: 'Page size (1–100)', default: 10 })
-  @IsOptional()
-  @Type(() => Number)
-  @IsInt()
-  @Min(1)
-  @Max(100)
-  pageSize?: number = 10;
-
-  @ApiPropertyOptional({ description: 'Alias for pageSize (1–100)' })
-  @IsOptional()
-  @Type(() => Number)
-  @IsInt()
-  @Min(1)
-  @Max(100)
-  limit?: number;
-
   @ApiPropertyOptional({
     description: 'Filter by Hijri year (1400–1500).',
     minimum: MIN_HIJRI_YEAR,
@@ -218,29 +193,6 @@ export class ListIftarSponsorshipQueryDto {
   @IsOptional()
   @Matches(ISO_DATE_PATTERN, { message: 'date must be in YYYY-MM-DD format' })
   date?: string;
-
-  @ApiPropertyOptional({ description: 'Search term across sponsor name, menu details, or notes.' })
-  @IsOptional()
-  @IsString()
-  search?: string;
-
-  @ApiPropertyOptional({ description: 'Filter by registered member ID.' })
-  @IsOptional()
-  @IsUUID()
-  userId?: string;
-
-  @ApiPropertyOptional({ description: 'If true, returns all matching rows without pagination' })
-  @IsOptional()
-  @Type(() => Boolean)
-  @IsBoolean()
-  all?: boolean;
-}
-
-export class SponsorMemberSummaryDto {
-  @ApiProperty() id!: string;
-  @ApiProperty() name!: string;
-  @ApiProperty() email!: string;
-  @ApiPropertyOptional({ nullable: true }) phone!: string | null;
 }
 
 export class IftarSponsorshipDto {
@@ -250,7 +202,6 @@ export class IftarSponsorshipDto {
 
   @ApiPropertyOptional({ nullable: true }) ramadanScheduleId!: string | null;
   @ApiPropertyOptional({ nullable: true }) userId!: string | null;
-  @ApiPropertyOptional({ type: SponsorMemberSummaryDto, nullable: true }) member?: SponsorMemberSummaryDto | null;
 
   @ApiProperty({ example: 'Abdul Karim' }) sponsorName!: string;
   @ApiPropertyOptional({ nullable: true }) sponsorPhone!: string | null;
@@ -274,7 +225,6 @@ export class IftarSponsorshipDto {
     date: Date;
     ramadanScheduleId: string | null;
     userId: string | null;
-    user?: { id: string; fullName?: string; name?: string; email: string; phone: string | null } | null;
     sponsorName: string;
     sponsorPhone: string | null;
     sponsorEmail: string | null;
@@ -293,14 +243,6 @@ export class IftarSponsorshipDto {
       date: fromDateOnly(row.date),
       ramadanScheduleId: row.ramadanScheduleId,
       userId: row.userId,
-      member: row.user
-        ? {
-            id: row.user.id,
-            name: row.user.fullName || row.user.name || '',
-            email: row.user.email,
-            phone: row.user.phone,
-          }
-        : null,
       sponsorName: row.sponsorName,
       sponsorPhone: row.sponsorPhone,
       sponsorEmail: row.sponsorEmail,
@@ -316,19 +258,3 @@ export class IftarSponsorshipDto {
   }
 }
 
-export class PaginatedIftarSponsorshipDto {
-  @ApiProperty({ type: [IftarSponsorshipDto] })
-  rows!: IftarSponsorshipDto[];
-
-  @ApiProperty({ example: 30 })
-  total!: number;
-
-  @ApiProperty({ example: 1 })
-  page!: number;
-
-  @ApiProperty({ example: 10 })
-  pageSize!: number;
-
-  @ApiProperty({ example: 3 })
-  pageCount!: number;
-}

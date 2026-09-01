@@ -87,7 +87,7 @@ describe('IftarSponsorshipController', () => {
         sponsorName: 'Abdul Karim',
       };
       await controller.create(user, dto);
-      expect(service.create).toHaveBeenCalledWith(user, dto);
+      expect(service.create).toHaveBeenCalledWith(MOSQUE_ID, dto);
     });
 
     it('delegates update with actor, id and dto', async () => {
@@ -95,12 +95,12 @@ describe('IftarSponsorshipController', () => {
         numberOfServings: 200,
       };
       await controller.update(user, 'spon-1', dto);
-      expect(service.update).toHaveBeenCalledWith(user, 'spon-1', dto);
+      expect(service.update).toHaveBeenCalledWith(MOSQUE_ID, 'spon-1', dto);
     });
 
     it('delegates remove with actor and id', async () => {
       await controller.remove(user, 'spon-1');
-      expect(service.remove).toHaveBeenCalledWith(user, 'spon-1');
+      expect(service.remove).toHaveBeenCalledWith(MOSQUE_ID, 'spon-1');
     });
   });
 });

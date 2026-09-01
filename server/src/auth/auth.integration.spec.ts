@@ -467,6 +467,22 @@ class InMemoryDatabase {
     },
   };
 
+  event = {
+    findMany: (): Promise<Row[]> => Promise.resolve([]),
+    findFirst: (): Promise<Row | null> => Promise.resolve(null),
+    count: (): Promise<number> => Promise.resolve(0),
+    create: (): Promise<Row> => Promise.resolve({}),
+    update: (): Promise<Row> => Promise.resolve({}),
+  };
+
+  iftarSponsorship = {
+    findMany: (): Promise<Row[]> => Promise.resolve([]),
+    findFirst: (): Promise<Row | null> => Promise.resolve(null),
+    count: (): Promise<number> => Promise.resolve(0),
+    create: (): Promise<Row> => Promise.resolve({}),
+    update: (): Promise<Row> => Promise.resolve({}),
+  };
+
   /**
    * Both of Prisma's shapes, because this project now uses both.
    *

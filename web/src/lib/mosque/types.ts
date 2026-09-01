@@ -390,6 +390,7 @@ export type MosqueEvent = {
   registrationRequired: boolean;
   /** Free entry unless the committee set a contribution. */
   contribution?: number;
+  imageUrl?: string;
 };
 
 export type EventDraft = {
@@ -416,8 +417,8 @@ export const registrationStatuses: RegistrationStatus[] = ["Pending", "Confirmed
 export type Registration = {
   id: string;
   participantName: string;
-  participantEmail: string;
-  participantPhone: string;
+  participantEmail?: string;
+  participantPhone?: string;
   eventId: string;
   eventTitle: string;
   eventDate: IsoDate;

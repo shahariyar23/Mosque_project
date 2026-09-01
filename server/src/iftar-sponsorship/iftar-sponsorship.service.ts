@@ -2,14 +2,11 @@ import {
   BadRequestException,
   ConflictException,
   Injectable,
-  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
 import { AuditLogService } from '../audit/audit-log.service';
-import { buildPage, toSkipTake } from '../common/pagination/page';
-import type { AuthenticatedUser } from '../common/types/authenticated-user';
 import { fromDateOnly, toDateOnly } from '../common/utils/date-only';
 import { MailService } from '../mail/mail.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -18,7 +15,6 @@ import {
   IftarSponsorshipDto,
   IftarSponsorshipStatus,
   ListIftarSponsorshipQueryDto,
-  PaginatedIftarSponsorshipDto,
   UpdateIftarSponsorshipDto,
 } from './dto/iftar-sponsorship.dto';
 
@@ -27,12 +23,10 @@ const SPONSOR_USER_SELECT = {
   fullName: true,
   email: true,
   phone: true,
-};
+} as const;
 
 @Injectable()
 export class IftarSponsorshipService {
-  private readonly logger = new Logger(IftarSponsorshipService.name);
-
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditLogService,
@@ -40,51 +34,27 @@ export class IftarSponsorshipService {
   ) {}
 
   /**
-   * List Iftar sponsorships for the authenticated mosque.
-   * Returns a standard paginated envelope (or all records when query.all is true).
+   * List all Iftar sponsorships for the authenticated user's mosque.
+   * Filterable by Hijri year, date, and status.
    */
   async findAll(
     mosqueId: string,
     query: ListIftarSponsorshipQueryDto = {},
-  ): Promise<PaginatedIftarSponsorshipDto | IftarSponsorshipDto[]> {
-    const where: Prisma.IftarSponsorshipWhereInput = {
-      mosqueId,
-      ...(query.year !== undefined && { year: query.year }),
-      ...(query.status !== undefined && { status: query.status }),
-      ...(query.date !== undefined && { date: toDateOnly(query.date) }),
-      ...(query.userId !== undefined && { userId: query.userId }),
-      ...(query.search && {
-        OR: [
-          { sponsorName: { contains: query.search.trim(), mode: 'insensitive' } },
-          { menuDetails: { contains: query.search.trim(), mode: 'insensitive' } },
-          { notes: { contains: query.search.trim(), mode: 'insensitive' } },
-        ],
-      }),
-    };
+  ): Promise<IftarSponsorshipDto[]> {
+    const rows = await this.prisma.iftarSponsorship.findMany({
+      where: {
+        mosqueId,
+        ...(query.year !== undefined && { year: query.year }),
+        ...(query.status !== undefined && { status: query.status }),
+        ...(query.date !== undefined && { date: toDateOnly(query.date) }),
+      },
+      include: {
+        user: { select: SPONSOR_USER_SELECT },
+      },
+      orderBy: [{ year: 'desc' }, { date: 'asc' }],
+    });
 
-    if (query.all) {
-      const rows = await this.prisma.iftarSponsorship.findMany({
-        where,
-        include: { user: { select: SPONSOR_USER_SELECT } },
-        orderBy: [{ year: 'desc' }, { date: 'asc' }],
-      });
-      return rows.map((r) => IftarSponsorshipDto.from(r));
-    }
-
-    const { skip, take } = toSkipTake(query);
-    const [total, rows] = await Promise.all([
-      this.prisma.iftarSponsorship.count({ where }),
-      this.prisma.iftarSponsorship.findMany({
-        where,
-        include: { user: { select: SPONSOR_USER_SELECT } },
-        orderBy: [{ year: 'desc' }, { date: 'asc' }],
-        skip,
-        take,
-      }),
-    ]);
-
-    const items = rows.map((r) => IftarSponsorshipDto.from(r));
-    return buildPage(items, total, query);
+    return rows.map((row) => IftarSponsorshipDto.from(row));
   }
 
   async findOne(mosqueId: string, id: string): Promise<IftarSponsorshipDto> {
@@ -99,17 +69,18 @@ export class IftarSponsorshipService {
         date: toDateOnly(dateStr),
         status: { in: [IftarSponsorshipStatus.pending, IftarSponsorshipStatus.confirmed] },
       },
-      include: { user: { select: SPONSOR_USER_SELECT } },
+      include: {
+        user: { select: SPONSOR_USER_SELECT },
+      },
     });
 
     return row ? IftarSponsorshipDto.from(row) : null;
   }
 
-  async create(actor: AuthenticatedUser, dto: CreateIftarSponsorshipDto): Promise<IftarSponsorshipDto> {
-    const mosqueId = actor.mosqueId;
+  async create(mosqueId: string, dto: CreateIftarSponsorshipDto): Promise<IftarSponsorshipDto> {
     const dateObj = toDateOnly(dto.date);
 
-    // Business Rule Check 1: One active sponsor per date per mosque
+    // Enforce one active/pending sponsor per date business rule
     const existing = await this.prisma.iftarSponsorship.findFirst({
       where: {
         mosqueId,
@@ -124,19 +95,14 @@ export class IftarSponsorshipService {
       );
     }
 
-    // Business Rule Check 2: Ramadan schedule validation & auto-linking
+    // Auto-link matching Ramadan schedule if available
     let ramadanScheduleId = dto.ramadanScheduleId ?? null;
     if (ramadanScheduleId) {
-      const schedule = await this.prisma.ramadanSchedule.findFirst({
+      const explicitSchedule = await this.prisma.ramadanSchedule.findFirst({
         where: { id: ramadanScheduleId, mosqueId },
       });
-      if (!schedule) {
-        throw new NotFoundException('Specified Ramadan schedule entry was not found for this mosque.');
-      }
-      if (fromDateOnly(schedule.date) !== dto.date || schedule.year !== dto.year) {
-        throw new BadRequestException(
-          'Sponsorship date or year does not match the linked Ramadan schedule entry.',
-        );
+      if (!explicitSchedule || fromDateOnly(explicitSchedule.date) !== dto.date) {
+        throw new BadRequestException('Selected Ramadan schedule date does not match sponsorship date');
       }
     } else {
       const matchingSchedule = await this.prisma.ramadanSchedule.findFirst({
@@ -147,24 +113,21 @@ export class IftarSponsorshipService {
       }
     }
 
-    // Business Rule Check 3: Member validation
-    let resolvedSponsorName = dto.sponsorName?.trim() || '';
+    // Validate member tenancy if userId supplied
+    let userRecord: { id: string; fullName: string; email: string; phone: string | null } | null = null;
     if (dto.userId) {
-      const userRecord = await this.prisma.user.findFirst({
-        where: { id: dto.userId, mosqueId, deletedAt: null, isActive: true },
+      userRecord = await this.prisma.user.findFirst({
+        where: { id: dto.userId, mosqueId },
         select: SPONSOR_USER_SELECT,
       });
       if (!userRecord) {
-        throw new NotFoundException('Selected mosque member was not found or is inactive.');
-      }
-      if (!resolvedSponsorName) {
-        resolvedSponsorName = userRecord.fullName;
+        throw new NotFoundException('Selected mosque member was not found');
       }
     }
 
-    if (!resolvedSponsorName || resolvedSponsorName.length < 2) {
-      throw new BadRequestException('Sponsor name must be at least 2 characters.');
-    }
+    const sponsorName = dto.sponsorName?.trim() || userRecord?.fullName || 'Anonymous Sponsor';
+    const sponsorEmail = dto.sponsorEmail?.trim() || userRecord?.email || null;
+    const sponsorPhone = dto.sponsorPhone?.trim() || userRecord?.phone || null;
 
     const row = await this.prisma.iftarSponsorship.create({
       data: {
@@ -173,87 +136,68 @@ export class IftarSponsorshipService {
         year: dto.year,
         date: dateObj,
         userId: dto.userId ?? null,
-        sponsorName: resolvedSponsorName,
-        sponsorPhone: dto.sponsorPhone?.trim() ?? null,
-        sponsorEmail: dto.sponsorEmail?.trim() ?? null,
+        sponsorName,
+        sponsorPhone,
+        sponsorEmail,
         numberOfServings: dto.numberOfServings ?? null,
         estimatedCost: dto.estimatedCost ? new Prisma.Decimal(dto.estimatedCost) : null,
         currency: dto.currency ?? 'BDT',
         menuDetails: dto.menuDetails?.trim() ?? null,
         notes: dto.notes?.trim() ?? null,
-        status: dto.status ?? IftarSponsorshipStatus.pending,
+        status: dto.status ?? IftarSponsorshipStatus.confirmed,
       },
-      include: { user: { select: SPONSOR_USER_SELECT } },
+      include: {
+        user: { select: SPONSOR_USER_SELECT },
+      },
     });
 
-    // Audit log
     await this.audit.record({
-      mosqueId,
-      actorId: actor.id,
-      actorRole: actor.role,
-      actorName: actor.email,
+      action: 'IFTAR_SPONSORSHIP_CREATED',
       resource: 'iftar_sponsorship',
       resourceId: row.id,
-      action: 'IFTAR_SPONSORSHIP_CREATED',
+      actorId: dto.userId ?? null,
+      actorName: sponsorName,
+      mosqueId,
       changes: {
         year: row.year,
         date: fromDateOnly(row.date),
         sponsorName: row.sponsorName,
-        status: row.status,
-        numberOfServings: row.numberOfServings,
-        estimatedCost: row.estimatedCost ? row.estimatedCost.toString() : null,
       },
     });
 
-    // Safe Notification Email (Fire and forget)
-    const targetEmail = row.sponsorEmail || row.user?.email;
-    if (targetEmail) {
-      this.mail
-        .sendIftarSponsorshipEmail(targetEmail, {
-          sponsorName: row.sponsorName,
-          date: fromDateOnly(row.date),
-          year: row.year,
-          status: row.status,
-          numberOfServings: row.numberOfServings,
-          estimatedCost: row.estimatedCost ? row.estimatedCost.toString() : null,
-          currency: row.currency,
-          menuDetails: row.menuDetails,
-          notes: row.notes,
-        })
-        .catch((err) => {
-          this.logger.warn(`Failed to dispatch iftar sponsorship notification: ${err?.message}`);
-        });
+    if (sponsorEmail) {
+      await this.mail.sendIftarSponsorshipEmail(sponsorEmail, {
+        sponsorName,
+        year: row.year,
+        date: fromDateOnly(row.date),
+        status: row.status as IftarSponsorshipStatus,
+      });
     }
 
     return IftarSponsorshipDto.from(row);
   }
 
   async update(
-    actor: AuthenticatedUser,
+    mosqueId: string,
     id: string,
     dto: UpdateIftarSponsorshipDto,
   ): Promise<IftarSponsorshipDto> {
-    const mosqueId = actor.mosqueId;
     const current = await this.getOwned(mosqueId, id);
 
-    // Business Rule Check 1: Status transition validation
-    if (dto.status !== undefined && dto.status !== current.status) {
-      this.validateStatusTransition(current.status, dto.status);
+    if (
+      dto.status !== undefined &&
+      current.status === IftarSponsorshipStatus.completed &&
+      dto.status === IftarSponsorshipStatus.pending
+    ) {
+      throw new BadRequestException('Cannot revert completed sponsorship back to pending');
     }
 
-    // Business Rule Check 2: Conflict checking when rescheduling or reactivating
-    const targetDateStr = dto.date !== undefined ? dto.date : fromDateOnly(current.date);
-    const targetDateObj = toDateOnly(targetDateStr);
-    const targetStatus = dto.status !== undefined ? dto.status : current.status;
-
-    if (
-      targetStatus === IftarSponsorshipStatus.pending ||
-      targetStatus === IftarSponsorshipStatus.confirmed
-    ) {
+    if (dto.date !== undefined) {
+      const dateObj = toDateOnly(dto.date);
       const conflict = await this.prisma.iftarSponsorship.findFirst({
         where: {
           mosqueId,
-          date: targetDateObj,
+          date: dateObj,
           id: { not: id },
           status: { in: [IftarSponsorshipStatus.pending, IftarSponsorshipStatus.confirmed] },
         },
@@ -263,28 +207,12 @@ export class IftarSponsorshipService {
       }
     }
 
-    // Business Rule Check 3: Ramadan schedule consistency
-    if (dto.ramadanScheduleId !== undefined && dto.ramadanScheduleId !== null) {
-      const schedule = await this.prisma.ramadanSchedule.findFirst({
-        where: { id: dto.ramadanScheduleId, mosqueId },
-      });
-      if (!schedule) {
-        throw new NotFoundException('Specified Ramadan schedule entry was not found for this mosque.');
-      }
-      if (fromDateOnly(schedule.date) !== targetDateStr) {
-        throw new BadRequestException(
-          'Sponsorship date does not match the linked Ramadan schedule entry.',
-        );
-      }
-    }
-
-    // Business Rule Check 4: Member tenancy validation
     if (dto.userId !== undefined && dto.userId !== null) {
       const user = await this.prisma.user.findFirst({
-        where: { id: dto.userId, mosqueId, deletedAt: null, isActive: true },
+        where: { id: dto.userId, mosqueId },
       });
       if (!user) {
-        throw new NotFoundException('Selected mosque member was not found or is inactive.');
+        throw new NotFoundException('Selected mosque member was not found');
       }
     }
 
@@ -314,101 +242,67 @@ export class IftarSponsorshipService {
     const updated = await this.prisma.iftarSponsorship.update({
       where: { id: current.id },
       data,
-      include: { user: { select: SPONSOR_USER_SELECT } },
-    });
-
-    // Audit log
-    await this.audit.record({
-      mosqueId,
-      actorId: actor.id,
-      actorRole: actor.role,
-      actorName: actor.email,
-      resource: 'iftar_sponsorship',
-      resourceId: id,
-      action: 'IFTAR_SPONSORSHIP_UPDATED',
-      changes: {
-        before: {
-          date: fromDateOnly(current.date),
-          sponsorName: current.sponsorName,
-          status: current.status,
-        },
-        after: {
-          date: fromDateOnly(updated.date),
-          sponsorName: updated.sponsorName,
-          status: updated.status,
-        },
+      include: {
+        user: { select: SPONSOR_USER_SELECT },
       },
     });
 
-    // Notification on status changes (e.g. confirmation or cancellation)
-    if (dto.status !== undefined && dto.status !== current.status) {
-      const targetEmail = updated.sponsorEmail || updated.user?.email;
-      if (targetEmail) {
-        this.mail
-          .sendIftarSponsorshipEmail(targetEmail, {
-            sponsorName: updated.sponsorName,
-            date: fromDateOnly(updated.date),
-            year: updated.year,
-            status: updated.status,
-            numberOfServings: updated.numberOfServings,
-            estimatedCost: updated.estimatedCost ? updated.estimatedCost.toString() : null,
-            currency: updated.currency,
-            menuDetails: updated.menuDetails,
-            notes: updated.notes,
-          })
-          .catch((err) => {
-            this.logger.warn(`Failed to dispatch iftar sponsorship status notification: ${err?.message}`);
-          });
-      }
+    await this.audit.record({
+      action: 'IFTAR_SPONSORSHIP_UPDATED',
+      resource: 'iftar_sponsorship',
+      resourceId: updated.id,
+      actorName: updated.sponsorName,
+      mosqueId,
+      changes: {
+        before: { status: current.status },
+        after: { status: updated.status },
+      },
+    });
+
+    const targetEmail = updated.sponsorEmail || updated.user?.email;
+    if (dto.status && dto.status !== current.status && targetEmail) {
+      await this.mail.sendIftarSponsorshipEmail(targetEmail, {
+        sponsorName: updated.sponsorName,
+        year: updated.year,
+        date: fromDateOnly(updated.date),
+        status: updated.status as IftarSponsorshipStatus,
+      });
     }
 
     return IftarSponsorshipDto.from(updated);
   }
 
-  async remove(actor: AuthenticatedUser, id: string): Promise<IftarSponsorshipDto> {
-    const mosqueId = actor.mosqueId;
+  async remove(mosqueId: string, id: string): Promise<IftarSponsorshipDto> {
     const current = await this.getOwned(mosqueId, id);
 
     const deleted = await this.prisma.iftarSponsorship.delete({
       where: { id },
-      include: { user: { select: SPONSOR_USER_SELECT } },
+      include: {
+        user: { select: SPONSOR_USER_SELECT },
+      },
     });
 
-    // Audit log
     await this.audit.record({
-      mosqueId,
-      actorId: actor.id,
-      actorRole: actor.role,
-      actorName: actor.email,
-      resource: 'iftar_sponsorship',
-      resourceId: id,
       action: 'IFTAR_SPONSORSHIP_DELETED',
+      resource: 'iftar_sponsorship',
+      resourceId: deleted.id,
+      actorName: deleted.sponsorName,
+      mosqueId,
       changes: {
-        before: {
-          year: current.year,
-          date: fromDateOnly(current.date),
-          sponsorName: current.sponsorName,
-          status: current.status,
-        },
+        date: fromDateOnly(deleted.date),
+        sponsorName: deleted.sponsorName,
       },
     });
 
     return IftarSponsorshipDto.from(deleted);
   }
 
-  private validateStatusTransition(
-    from: IftarSponsorshipStatus,
-    to: IftarSponsorshipStatus,
-  ): void {
-    if (from === IftarSponsorshipStatus.completed && to === IftarSponsorshipStatus.pending) {
-      throw new BadRequestException('Completed sponsorships cannot be reverted directly to pending.');
-    }
-  }
-
   private async getOwned(mosqueId: string, id: string) {
     const row = await this.prisma.iftarSponsorship.findFirst({
       where: { id, mosqueId },
-      include: { user: { select: SPONSOR_USER_SELECT } },
+      include: {
+        user: { select: SPONSOR_USER_SELECT },
+      },
     });
 
     if (!row) {
