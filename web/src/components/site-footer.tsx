@@ -28,6 +28,7 @@ const englishGroups: FooterGroup[] = [
       { label: "Jumu'ah", href: "/prayer-times#jumuah" },
       { label: "Quran", href: "/quran" },
       { label: "Donations", href: "/donations" },
+      { label: "Transparency", href: "/transparency" },
     ],
   },
   {
@@ -61,6 +62,7 @@ const bengaliGroups: FooterGroup[] = [
       { label: "জুমুআ", href: "/prayer-times#jumuah" },
       { label: "কুরআন", href: "/quran" },
       { label: "দান", href: "/donations" },
+      { label: "স্বচ্ছতা ও তহবিল", href: "/transparency" },
     ],
   },
   {

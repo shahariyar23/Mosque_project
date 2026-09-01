@@ -1,11 +1,10 @@
 import type { Metadata } from "next";
 import { PageHeader } from "@/components/dashboard/page-header";
-import { JumuahView } from "@/components/mosque/jumuah/jumuah-view";
-import { RequirePermission } from "@/components/finance/ui/permission-gate";
+import { JumuahContainer } from "@/components/mosque/jumuah/jumuah-container";
 
 export const metadata: Metadata = {
   title: "Jumu'ah · Noor Mosque Management",
-  description: "Friday prayer schedules, khutbahs and attendance for both jama'ats.",
+  description: "Friday prayer schedules, khutbahs, attendance and congregational collections.",
 };
 
 export default function JumuahPage() {
@@ -13,16 +12,14 @@ export default function JumuahPage() {
     <div className="space-y-5">
       <PageHeader
         title="Jumu'ah"
-        subtitle="Manage Friday prayer schedules, khutbahs and attendance."
+        subtitle="Manage Friday prayer schedules, khutbahs, attendance and congregational collections."
         crumbs={[
           { label: "Dashboard", href: "/dashboard" },
           { label: "Prayer Times", href: "/dashboard/prayer-times" },
           { label: "Jumu'ah" },
         ]}
       />
-      <RequirePermission anyOf={["jumuah.manage"]} area="Jumu'ah">
-        <JumuahView />
-      </RequirePermission>
+      <JumuahContainer />
     </div>
   );
 }

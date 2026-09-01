@@ -923,6 +923,7 @@ export type NotificationMessage = {
   sender: string;
   /** ISO date the message was sent or is scheduled for; empty string for a pure draft. */
   sentAt: string;
+  scheduledAt?: string | null;
   recipients: number;
   delivered: number;
   opened: number;
@@ -934,6 +935,7 @@ export type NotificationDraft = {
   channel: NotificationChannel;
   audience: NotificationAudience;
   status: NotificationStatus;
+  scheduledAt?: string;
 };
 
 /* -------------------------------------------------------------------------- *

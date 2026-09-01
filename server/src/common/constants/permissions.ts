@@ -51,7 +51,16 @@ export const PERMISSION_GROUPS = {
   // included, because that is what a mosque publishes. The three `.manage` strings are who may
   // change it. One per subject rather than a `.create`/`.update`/`.delete` set each — the group has
   // no route where deleting is a narrower authority than editing.
-  prayer: ['prayer.manage', 'jumuah.manage', 'ramadan.manage', 'iftar_sponsorship.manage'],
+  prayer: [
+    'prayer.manage',
+    'jumuah.manage',
+    'ramadan.manage',
+    'iftar_sponsorship.manage',
+    'jumuah_collection.view',
+    'jumuah_collection.record',
+    'jumuah_collection.manage',
+    'jumuah_collection.void',
+  ],
   events: ['event.create', 'event.update', 'event.delete', 'event.publish', 'event.registerSelf'],
   services: [
     'service.manage',

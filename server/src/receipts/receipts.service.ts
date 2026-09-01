@@ -33,12 +33,16 @@ import {
   type SelectedReceipt,
 } from './types/receipt.types';
 
+import { NotificationsService } from '../notifications/notifications.service';
+import { Optional } from '@nestjs/common';
+
 @Injectable()
 export class ReceiptsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditLogService: AuditLogService,
     private readonly mailService: MailService,
+    @Optional() private readonly notificationsService?: NotificationsService,
   ) {}
 
   /**
@@ -325,6 +329,20 @@ export class ReceiptsService {
 
       // 8. If recipient has an email address, send receipt email asynchronously
       this.sendReceiptEmailIfPresent(actor.mosqueId, created).catch(() => undefined);
+
+      // 9. Send in-app notification if issued to a registered member
+      if (created.donor?.id && this.notificationsService) {
+        this.notificationsService.create(actor.mosqueId, {
+          userId: created.donor.id,
+          title: 'Payment Receipt Ready',
+          message: `Your receipt ${created.receiptNumber} for ${created.amount} ${created.currency} is ready to view.`,
+          type: 'receipt_ready' as any,
+          category: 'finance',
+          resourceType: 'receipt',
+          resourceId: created.id,
+          actionUrl: '/account/donations',
+        }).catch(() => undefined);
+      }
 
       return ReceiptResponseDto.from(created);
     } catch (error) {

@@ -102,51 +102,59 @@ export function minutesOfDay(date: Date): number {
  * Dates
  * -------------------------------------------------------------------------- */
 
-function toDate(value: string): Date {
-  // Mock data is date-only; midday keeps the value on the intended day in every timezone.
-  return new Date(value.length === 10 ? `${value}T12:00:00` : value);
+function toDate(value?: string | null): Date | null {
+  if (!value || typeof value !== "string" || value.trim() === "") return null;
+  const parsed = new Date(value.length === 10 ? `${value}T12:00:00` : value);
+  return isNaN(parsed.getTime()) ? null : parsed;
 }
 
 /** "23 August" — the long form used on event rows and prayer headers. */
 const longDayMonth = new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "long" });
-export function formatDayMonth(value: IsoDate): string {
-  return longDayMonth.format(toDate(value));
+export function formatDayMonth(value?: IsoDate | null): string {
+  const d = toDate(value);
+  return d ? longDayMonth.format(d) : "—";
 }
 
 /** "23 August 2026". */
 const longDate = new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "long", year: "numeric" });
-export function formatLongDate(value: IsoDate): string {
-  return longDate.format(toDate(value));
+export function formatLongDate(value?: IsoDate | null): string {
+  const d = toDate(value);
+  return d ? longDate.format(d) : "—";
 }
 
 /** "Sunday". */
 const weekday = new Intl.DateTimeFormat("en-GB", { weekday: "long" });
-export function formatWeekday(value: IsoDate): string {
-  return weekday.format(toDate(value));
+export function formatWeekday(value?: IsoDate | null): string {
+  const d = toDate(value);
+  return d ? weekday.format(d) : "—";
 }
 
 /** "Sun". */
 const weekdayShort = new Intl.DateTimeFormat("en-GB", { weekday: "short" });
-export function formatWeekdayShort(value: IsoDate): string {
-  return weekdayShort.format(toDate(value));
+export function formatWeekdayShort(value?: IsoDate | null): string {
+  const d = toDate(value);
+  return d ? weekdayShort.format(d) : "—";
 }
 
 /** "Jan 2026" — the joined-date form on the volunteers table. */
 const monthYear = new Intl.DateTimeFormat("en-GB", { month: "short", year: "numeric" });
-export function formatMonthYear(value: IsoDate): string {
-  return monthYear.format(toDate(value));
+export function formatMonthYear(value?: IsoDate | null): string {
+  const d = toDate(value);
+  return d ? monthYear.format(d) : "—";
 }
 
 /** Adds (or subtracts) whole days and returns "YYYY-MM-DD". */
 export function shiftDate(value: IsoDate, days: number): IsoDate {
-  const date = toDate(value);
+  const date = toDate(value) || new Date();
   date.setDate(date.getDate() + days);
   return date.toISOString().slice(0, 10);
 }
 
 /** Whole days between two dates. Positive when `to` is later. */
 export function daysBetween(from: IsoDate, to: IsoDate): number {
-  const ms = toDate(to).getTime() - toDate(from).getTime();
+  const dTo = toDate(to) || new Date();
+  const dFrom = toDate(from) || new Date();
+  const ms = dTo.getTime() - dFrom.getTime();
   return Math.round(ms / 86_400_000);
 }
 
@@ -188,8 +196,8 @@ export function formatRelativeTime(value: string, reference: string = REFERENCE_
 
 /** Whole years old on the reference date. */
 export function ageOf(dateOfBirth: IsoDate, reference: IsoDate = REFERENCE_DATE): number {
-  const birth = toDate(dateOfBirth);
-  const now = toDate(reference);
+  const birth = toDate(dateOfBirth) || new Date();
+  const now = toDate(reference) || new Date();
   let age = now.getFullYear() - birth.getFullYear();
   const monthDelta = now.getMonth() - birth.getMonth();
   if (monthDelta < 0 || (monthDelta === 0 && now.getDate() < birth.getDate())) age -= 1;

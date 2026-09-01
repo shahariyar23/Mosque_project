@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { Button, IconButton } from "@/components/finance/ui/button";
 import { DataTable, type Column } from "@/components/finance/ui/data-table";
 import { FinanceFilters, type SelectFilter } from "@/components/finance/ui/filters";
@@ -8,14 +8,15 @@ import { SelectField, TextAreaField, TextField } from "@/components/finance/ui/f
 import { Modal } from "@/components/finance/ui/modal";
 import { Panel, PanelHeader } from "@/components/finance/ui/panel";
 import { Can } from "@/components/finance/ui/permission-gate";
-import { FinanceEmptyState, InlineNotice } from "@/components/finance/ui/states";
+import { TableSkeleton } from "@/components/finance/ui/skeleton";
+import { FinanceEmptyState, FinanceErrorState, InlineNotice } from "@/components/finance/ui/states";
 import { DetailDrawer, DetailField, DetailGrid, DetailSection, DetailStats } from "@/components/ui/detail-drawer";
 import { StatGrid } from "@/components/ui/stat-card";
 import { NotificationChannelChip, NotificationStatusBadge } from "@/components/ui/status-badge";
 import { useToast } from "@/components/ui/toast";
-import { notificationStats, notifications as seedNotifications } from "@/data/notifications";
+import { useApiList, useApiResource } from "@/hooks/use-api";
 import { downloadCsv } from "@/lib/mosque/export";
-import { formatCount, formatDayMonth, formatLongDate, REFERENCE_DATE } from "@/lib/mosque/format";
+import { formatCount, formatDayMonth, formatLongDate } from "@/lib/mosque/format";
 import {
   notificationAudiences,
   notificationChannels,
@@ -24,50 +25,14 @@ import {
   type NotificationMessage,
   type StatMetric,
 } from "@/lib/mosque/types";
-
-/**
- * The send log — the outgoing push, email, SMS and in-app messages the mosque has pushed to a
- * segment of the community.
- *
- * Where an announcement is the standing notice on the board, a notification is the act of reaching
- * out, so the numbers that matter here are delivery ones: how many it reached, how many opened it.
- * A sent message carries those figures; a scheduled or draft one has none yet, and a failed send
- * reached no one — the status badge carries that meaning so a row never leans on colour alone.
- */
-const metrics: StatMetric[] = [
-  {
-    id: "total",
-    label: "Messages",
-    value: formatCount(notificationStats.total),
-    hint: "In the send log",
-    icon: "bell",
-    tone: "neutral",
-  },
-  {
-    id: "sent",
-    label: "Sent",
-    value: formatCount(notificationStats.sent),
-    hint: "Delivered to a segment",
-    icon: "check-circle",
-    tone: "positive",
-  },
-  {
-    id: "delivered",
-    label: "Delivered",
-    value: formatCount(notificationStats.delivered),
-    hint: "Across all sent messages",
-    icon: "mail",
-    tone: "gold",
-  },
-  {
-    id: "openRate",
-    label: "Open rate",
-    value: `${notificationStats.openRate}%`,
-    hint: "Opened of delivered",
-    icon: "eye",
-    tone: "positive",
-  },
-];
+import {
+  createBroadcast,
+  deleteBroadcast,
+  fetchBroadcasts,
+  fetchBroadcastStats,
+  sendBroadcast,
+  type BroadcastQuery,
+} from "@/services/notificationsService";
 
 const emptyDraft: NotificationDraft = {
   title: "",
@@ -75,6 +40,7 @@ const emptyDraft: NotificationDraft = {
   channel: "Push",
   audience: "Whole community",
   status: "Draft",
+  scheduledAt: "",
 };
 
 /** Trim the message to a single line for the table, so a long notification doesn't blow out the row. */
@@ -85,7 +51,7 @@ const rate = (part: number, whole: number) => (whole === 0 ? 0 : Math.round((par
 
 export function NotificationsView({ openComposeOnMount = false }: { openComposeOnMount?: boolean }) {
   const { notify } = useToast();
-  const [notificationList, setNotificationList] = useState<NotificationMessage[]>(seedNotifications);
+  const [page, setPage] = useState(1);
   const [search, setSearch] = useState("");
   const [channel, setChannel] = useState("all");
   const [status, setStatus] = useState("all");
@@ -93,41 +59,98 @@ export function NotificationsView({ openComposeOnMount = false }: { openComposeO
   const [selected, setSelected] = useState<NotificationMessage | null>(null);
   const [composing, setComposing] = useState(openComposeOnMount);
 
-  const filtered = useMemo(() => {
-    const needle = search.trim().toLowerCase();
-    return notificationList.filter((notification) => {
-      if (needle) {
-        const haystack =
-          `${notification.title} ${notification.message} ${notification.sender} ${notification.id}`.toLowerCase();
-        if (!haystack.includes(needle)) return false;
-      }
-      if (channel !== "all" && notification.channel !== channel) return false;
-      if (status !== "all" && notification.status !== status) return false;
-      if (audience !== "all" && notification.audience !== audience) return false;
-      return true;
-    });
-  }, [audience, channel, notificationList, search, status]);
+  // Live broadcast stats from API
+  const { data: statsData, refetch: refetchStats } = useApiResource(
+    fetchBroadcastStats,
+    [],
+  );
+
+  const stats = statsData || { total: 0, sent: 0, delivered: 0, openRate: 0 };
+
+  const metrics: StatMetric[] = [
+    {
+      id: "total",
+      label: "Messages",
+      value: formatCount(stats.total),
+      hint: "In the send log",
+      icon: "bell",
+      tone: "neutral",
+    },
+    {
+      id: "sent",
+      label: "Sent",
+      value: formatCount(stats.sent),
+      hint: "Delivered to a segment",
+      icon: "check-circle",
+      tone: "positive",
+    },
+    {
+      id: "delivered",
+      label: "Delivered",
+      value: formatCount(stats.delivered),
+      hint: "Across all sent messages",
+      icon: "mail",
+      tone: "gold",
+    },
+    {
+      id: "openRate",
+      label: "Open rate",
+      value: `${stats.openRate}%`,
+      hint: "Opened of delivered",
+      icon: "eye",
+      tone: "positive",
+    },
+  ];
+
+  // Query state for live API
+  const query: BroadcastQuery = {
+    page,
+    limit: 10,
+    search: search.trim() || undefined,
+    channel: channel !== "all" ? channel : undefined,
+    status: status !== "all" ? status : undefined,
+    audience: audience !== "all" ? audience : undefined,
+  };
+
+  const { rows: notificationList, meta, loading, error, refetch } = useApiList(
+    fetchBroadcasts,
+    query,
+  );
+
+  const refreshAll = () => {
+    refetch();
+    refetchStats();
+  };
 
   const filters: SelectFilter[] = [
     {
       id: "channel",
       label: "Channel",
       value: channel,
-      onChange: setChannel,
+      onChange: (val) => {
+        setChannel(val);
+        setPage(1);
+      },
       options: [{ value: "all", label: "All channels" }, ...notificationChannels.map((value) => ({ value, label: value }))],
     },
     {
       id: "status",
       label: "Status",
       value: status,
-      onChange: setStatus,
+      onChange: (val) => {
+        setStatus(val);
+        setPage(1);
+      },
       options: [{ value: "all", label: "Any status" }, ...notificationStatuses.map((value) => ({ value, label: value }))],
     },
     {
       id: "audience",
       label: "Audience",
       value: audience,
-      onChange: setAudience,
+      onChange: (val) => {
+        setAudience(val);
+        setPage(1);
+      },
       options: [{ value: "all", label: "Everyone" }, ...notificationAudiences.map((value) => ({ value, label: value }))],
     },
   ];
@@ -137,55 +160,101 @@ export function NotificationsView({ openComposeOnMount = false }: { openComposeO
     setChannel("all");
     setStatus("all");
     setAudience("all");
+    setPage(1);
   };
 
-  const addNotification = (draft: NotificationDraft) => {
-    const notification: NotificationMessage = {
-      id: `NTF-${String(notificationList.length + 1).padStart(3, "0")}`,
-      title: draft.title.trim(),
-      message: draft.message.trim(),
-      channel: draft.channel,
-      audience: draft.audience,
-      status: draft.status,
-      sender: "Mosque Office",
-      sentAt: draft.status === "Draft" ? "" : REFERENCE_DATE,
-      recipients: 0,
-      delivered: 0,
-      opened: 0,
-    };
+  const addNotification = async (draft: NotificationDraft) => {
+    try {
+      const scheduledIso =
+        draft.status === "Scheduled" && draft.scheduledAt
+          ? new Date(draft.scheduledAt).toISOString()
+          : undefined;
 
-    setNotificationList((current) => [notification, ...current]);
-    setComposing(false);
-    notify({
-      message:
-        draft.status === "Sent"
-          ? "Message queued."
-          : draft.status === "Scheduled"
-            ? "Message scheduled."
-            : "Draft saved.",
-      description: `${notification.title} · ${notification.id} — held in this browser only, nothing was really sent.`,
-    });
+      const created = await createBroadcast({
+        title: draft.title.trim(),
+        message: draft.message.trim(),
+        channel: draft.channel,
+        audience: draft.audience,
+        status: draft.status,
+        scheduledAt: scheduledIso,
+        sender: "Mosque Office",
+      });
+
+      setComposing(false);
+      refreshAll();
+      notify({
+        message:
+          draft.status === "Sent"
+            ? "Message dispatched."
+            : draft.status === "Scheduled"
+              ? "Message scheduled."
+              : "Draft saved.",
+        description:
+          draft.status === "Scheduled" && draft.scheduledAt
+            ? `${created.title} scheduled for delivery on ${new Date(draft.scheduledAt).toLocaleString()}.`
+            : `${created.title} has been recorded in the database.`,
+        tone: "success",
+      });
+    } catch (err: any) {
+      notify({
+        message: "Failed to save message",
+        description: err?.message || "An unexpected error occurred",
+        tone: "danger",
+      });
+      throw err;
+    }
   };
 
-  const sendNotification = (target: NotificationMessage) => {
-    setNotificationList((current) =>
-      current.map((notification) =>
-        notification.id === target.id ? { ...notification, status: "Sent", sentAt: REFERENCE_DATE } : notification,
-      ),
-    );
-    setSelected(null);
-    notify({ message: "Message sent.", description: `${target.title} was pushed to ${target.audience} — front-end only.` });
+  const handleSendNotification = async (target: NotificationMessage) => {
+    try {
+      const updated = await sendBroadcast(target.id);
+      setSelected(updated);
+      refreshAll();
+      notify({
+        message: "Message sent.",
+        description: `${target.title} was pushed to ${target.audience}.`,
+        tone: "success",
+      });
+    } catch (err: any) {
+      notify({
+        message: "Failed to send message",
+        description: err?.message || "An unexpected error occurred",
+        tone: "danger",
+      });
+      throw err;
+    }
+  };
+
+  const handleDeleteNotification = async (target: NotificationMessage) => {
+    try {
+      await deleteBroadcast(target.id);
+      setSelected(null);
+      refreshAll();
+      notify({
+        message: "Message deleted.",
+        description: `${target.title} was removed from the send log.`,
+        tone: "info",
+      });
+    } catch (err: any) {
+      notify({
+        message: "Delete failed",
+        description: err?.message || "Failed to delete message",
+        tone: "danger",
+      });
+      throw err;
+    }
   };
 
   const exportCsv = () => {
-    downloadCsv("noor-mosque-notifications.csv", filtered, [
+    downloadCsv("noor-mosque-notifications.csv", notificationList, [
       { header: "ID", value: (notification) => notification.id },
       { header: "Title", value: (notification) => notification.title },
       { header: "Channel", value: (notification) => notification.channel },
       { header: "Audience", value: (notification) => notification.audience },
       { header: "Status", value: (notification) => notification.status },
       { header: "Sender", value: (notification) => notification.sender },
-      { header: "Sent", value: (notification) => notification.sentAt },
+      { header: "Sent", value: (notification) => notification.sentAt || "" },
+      { header: "Scheduled", value: (notification) => notification.scheduledAt || "" },
       { header: "Recipients", value: (notification) => String(notification.recipients) },
       { header: "Delivered", value: (notification) => String(notification.delivered) },
       { header: "Opened", value: (notification) => String(notification.opened) },
@@ -193,7 +262,7 @@ export function NotificationsView({ openComposeOnMount = false }: { openComposeO
     notify({
       tone: "info",
       message: "Export downloaded.",
-      description: `${formatCount(filtered.length)} rows, matching the filters currently applied.`,
+      description: `${formatCount(notificationList.length)} rows exported from current view.`,
     });
   };
 
@@ -243,13 +312,15 @@ export function NotificationsView({ openComposeOnMount = false }: { openComposeO
       key: "sent",
       header: "Date",
       align: "right",
-      cell: (notification) =>
-        notification.sentAt ? (
-          <span className="whitespace-nowrap tabular-nums text-[#4d564f]">{formatDayMonth(notification.sentAt)}</span>
+      cell: (notification) => {
+        const dateToShow = notification.sentAt || notification.scheduledAt;
+        return dateToShow ? (
+          <span className="whitespace-nowrap tabular-nums text-[#4d564f]">{formatDayMonth(dateToShow)}</span>
         ) : (
           <span className="text-[#a3a89f]">—</span>
-        ),
-      sortValue: (notification) => notification.sentAt,
+        );
+      },
+      sortValue: (notification) => notification.sentAt || notification.scheduledAt || "",
     },
     {
       key: "actions",
@@ -290,7 +361,10 @@ export function NotificationsView({ openComposeOnMount = false }: { openComposeO
         <FinanceFilters
           search={{
             value: search,
-            onChange: setSearch,
+            onChange: (val) => {
+              setSearch(val);
+              setPage(1);
+            },
             placeholder: "Search messages…",
             label: "Search notifications by title, message, sender or ID",
           }}
@@ -299,53 +373,70 @@ export function NotificationsView({ openComposeOnMount = false }: { openComposeO
           onReset={resetFilters}
         />
 
-        <DataTable
-          rows={filtered}
-          columns={columns}
-          getRowKey={(notification) => notification.id}
-          caption="Sent notifications with channel, audience, delivery and status"
-          initialSort={{ key: "sent", direction: "desc" }}
-          pageSize={10}
-          mobileTitle={(notification) => notification.title}
-          mobileSubtitle={(notification) => `${notification.channel} · ${notification.audience}`}
-          mobileTrailing={(notification) => <NotificationStatusBadge status={notification.status} />}
-          mobileHiddenKeys={["message", "status"]}
-          emptyState={
-            <FinanceEmptyState
-              icon="bell"
-              title="No notifications found."
-              description={
-                activeFilterCount > 0 || search
-                  ? "Nothing matches the current search and filters. Try clearing them."
-                  : "The send log is empty. Compose the first message to reach the community."
-              }
-              action={
-                activeFilterCount > 0 || search ? (
-                  <Button
-                    variant="secondary"
-                    icon="close"
-                    onClick={() => {
-                      resetFilters();
-                      setSearch("");
-                    }}
-                  >
-                    Clear search and filters
-                  </Button>
-                ) : (
-                  <Can permission="notification.send">
-                    <Button icon="plus" onClick={() => setComposing(true)}>
-                      Compose
-                    </Button>
-                  </Can>
-                )
-              }
+        {loading ? (
+          <TableSkeleton rows={6} />
+        ) : error ? (
+          <div className="p-8">
+            <FinanceErrorState
+              title="Failed to load notifications"
+              description={error}
+              onRetry={refreshAll}
             />
-          }
-        />
+          </div>
+        ) : (
+          <DataTable
+            rows={notificationList}
+            columns={columns}
+            getRowKey={(notification) => notification.id}
+            caption="Sent notifications with channel, audience, delivery and status"
+            initialSort={{ key: "sent", direction: "desc" }}
+            pageSize={10}
+            mobileTitle={(notification) => notification.title}
+            mobileSubtitle={(notification) => `${notification.channel} · ${notification.audience}`}
+            mobileTrailing={(notification) => <NotificationStatusBadge status={notification.status} />}
+            mobileHiddenKeys={["message", "status"]}
+            emptyState={
+              <FinanceEmptyState
+                icon="bell"
+                title="No notifications found."
+                description={
+                  activeFilterCount > 0 || search
+                    ? "Nothing matches the current search and filters. Try clearing them."
+                    : "The send log is empty. Compose the first message to reach the community."
+                }
+                action={
+                  activeFilterCount > 0 || search ? (
+                    <Button
+                      variant="secondary"
+                      icon="close"
+                      onClick={() => {
+                        resetFilters();
+                        setSearch("");
+                      }}
+                    >
+                      Clear search and filters
+                    </Button>
+                  ) : (
+                    <Can permission="notification.send">
+                      <Button icon="plus" onClick={() => setComposing(true)}>
+                        Compose
+                      </Button>
+                    </Can>
+                  )
+                }
+              />
+            }
+          />
+        )}
       </Panel>
 
       {selected ? (
-        <NotificationDetailDrawer notification={selected} onClose={() => setSelected(null)} onSend={sendNotification} />
+        <NotificationDetailDrawer
+          notification={selected}
+          onClose={() => setSelected(null)}
+          onSend={handleSendNotification}
+          onDelete={handleDeleteNotification}
+        />
       ) : null}
       <ComposeNotificationModal open={composing} onClose={() => setComposing(false)} onSave={addNotification} />
     </div>
@@ -360,15 +451,37 @@ function NotificationDetailDrawer({
   notification,
   onClose,
   onSend,
+  onDelete,
 }: {
   notification: NotificationMessage;
   onClose: () => void;
-  onSend: (notification: NotificationMessage) => void;
+  onSend: (notification: NotificationMessage) => Promise<void>;
+  onDelete: (notification: NotificationMessage) => Promise<void>;
 }) {
+  const [sending, setSending] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+
   const isSent = notification.status === "Sent";
-  const canSend = notification.status === "Draft" || notification.status === "Scheduled";
-  const deliveredRate = rate(notification.delivered, notification.recipients);
+  const deliveryRate = rate(notification.delivered, notification.recipients);
   const openRate = rate(notification.opened, notification.delivered);
+
+  const handleSend = async () => {
+    try {
+      setSending(true);
+      await onSend(notification);
+    } finally {
+      setSending(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    try {
+      setDeleting(true);
+      await onDelete(notification);
+    } finally {
+      setDeleting(false);
+    }
+  };
 
   return (
     <DetailDrawer
@@ -386,13 +499,29 @@ function NotificationDetailDrawer({
       footer={
         <>
           <Can permission="notification.send">
-            {canSend ? (
-              <Button size="sm" icon="bell" onClick={() => onSend(notification)}>
+            {notification.status === "Draft" || notification.status === "Scheduled" ? (
+              <Button
+                size="sm"
+                icon="check"
+                onClick={handleSend}
+                loading={sending}
+                disabled={deleting}
+              >
                 Send now
               </Button>
             ) : null}
+            <Button
+              size="sm"
+              variant="danger"
+              icon="trash"
+              onClick={handleDelete}
+              loading={deleting}
+              disabled={sending}
+            >
+              Delete
+            </Button>
           </Can>
-          <Button size="sm" variant="ghost" onClick={onClose} className="ml-auto">
+          <Button size="sm" variant="ghost" onClick={onClose} disabled={sending || deleting} className="ml-auto">
             Close
           </Button>
         </>
@@ -401,32 +530,44 @@ function NotificationDetailDrawer({
       <div className="space-y-5">
         {notification.status === "Scheduled" ? (
           <InlineNotice tone="info" icon="clock">
-            Scheduled to send on {formatLongDate(notification.sentAt)}. It hasn&rsquo;t gone out yet.
+            {notification.scheduledAt
+              ? `Scheduled to go out on ${formatLongDate(notification.scheduledAt)}. Recipients haven't been notified yet.`
+              : "Scheduled message — recipients haven't been notified yet."}
           </InlineNotice>
         ) : null}
         {notification.status === "Draft" ? (
           <InlineNotice tone="neutral" icon="pencil">
-            Draft — not sent. Delivery figures appear once it goes out.
+            Draft message — not yet sent to the community.
           </InlineNotice>
         ) : null}
         {notification.status === "Failed" ? (
-          <InlineNotice tone="gold" icon="alert">
-            This send failed — no messages were delivered. Check the {notification.channel} settings and try again.
+          <InlineNotice tone="danger" icon="alert">
+            Failed send — no recipients were reached. Check the channel settings and retry.
           </InlineNotice>
         ) : null}
 
         {isSent ? (
-          <DetailStats
-            items={[
-              { label: "Recipients", value: formatCount(notification.recipients) },
-              { label: "Delivered", value: formatCount(notification.delivered), hint: `${deliveredRate}% delivered` },
-              {
-                label: "Opened",
-                value: formatCount(notification.opened),
-                hint: notification.channel === "SMS" ? "No open tracking" : `${openRate}% open rate`,
-              },
-            ]}
-          />
+          <DetailSection title="Delivery">
+            <DetailStats
+              items={[
+                {
+                  label: "Recipients",
+                  value: formatCount(notification.recipients),
+                  hint: "Targeted segment",
+                },
+                {
+                  label: "Delivered",
+                  value: formatCount(notification.delivered),
+                  hint: `${deliveryRate}% of targeted`,
+                },
+                {
+                  label: "Opened",
+                  value: notification.channel === "SMS" ? "—" : formatCount(notification.opened),
+                  hint: notification.channel === "SMS" ? "SMS has no open tracking" : `${openRate}% of delivered`,
+                },
+              ]}
+            />
+          </DetailSection>
         ) : null}
 
         <DetailSection title="Message">
@@ -436,16 +577,18 @@ function NotificationDetailDrawer({
         <DetailSection title="Details">
           <DetailGrid>
             <DetailField label="Sender" value={notification.sender} />
-            <DetailField label="Channel" value={<NotificationChannelChip channel={notification.channel} />} />
             <DetailField label="Audience" value={notification.audience} />
+            <DetailField label="Channel" value={<NotificationChannelChip channel={notification.channel} />} />
             <DetailField label="Status" value={<NotificationStatusBadge status={notification.status} />} />
             <DetailField
-              label={notification.status === "Scheduled" ? "Goes out" : "Sent"}
-              value={notification.sentAt ? formatLongDate(notification.sentAt) : "Not sent"}
-            />
-            <DetailField
-              label="Recipients"
-              value={isSent ? formatCount(notification.recipients) : "—"}
+              label={notification.status === "Scheduled" ? "Scheduled for" : "Sent date"}
+              value={
+                notification.status === "Scheduled" && notification.scheduledAt
+                  ? formatLongDate(notification.scheduledAt)
+                  : notification.sentAt
+                    ? formatLongDate(notification.sentAt)
+                    : "Not yet sent"
+              }
             />
           </DetailGrid>
         </DetailSection>
@@ -455,7 +598,7 @@ function NotificationDetailDrawer({
 }
 
 /* -------------------------------------------------------------------------- *
- * Compose
+ * Compose modal
  * -------------------------------------------------------------------------- */
 
 function ComposeNotificationModal({
@@ -465,33 +608,44 @@ function ComposeNotificationModal({
 }: {
   open: boolean;
   onClose: () => void;
-  onSave: (draft: NotificationDraft) => void;
+  onSave: (draft: NotificationDraft) => Promise<void>;
 }) {
   const [draft, setDraft] = useState<NotificationDraft>(emptyDraft);
   const [submitted, setSubmitted] = useState(false);
+  const [saving, setSaving] = useState(false);
 
   const set = <Key extends keyof NotificationDraft>(key: Key, value: NotificationDraft[Key]) =>
     setDraft((current) => ({ ...current, [key]: value }));
 
   const errors = {
-    title: draft.title.trim().length === 0 ? "Give the message a title." : undefined,
-    message: draft.message.trim().length === 0 ? "Write the message the community will read." : undefined,
+    title: draft.title.trim().length === 0 ? "Give the notification a title." : undefined,
+    message: draft.message.trim().length === 0 ? "Write the message to send." : undefined,
+    scheduledAt:
+      draft.status === "Scheduled" && (!draft.scheduledAt || draft.scheduledAt.trim().length === 0)
+        ? "Please select a date and time for scheduled delivery."
+        : undefined,
   };
   const valid = Object.values(errors).every((error) => error === undefined);
   const show = (key: keyof typeof errors) => (submitted ? errors[key] : undefined);
 
   const close = () => {
+    if (saving) return;
     setDraft(emptyDraft);
     setSubmitted(false);
     onClose();
   };
 
-  const submit = () => {
+  const submit = async () => {
     setSubmitted(true);
-    if (!valid) return;
-    onSave(draft);
-    setDraft(emptyDraft);
-    setSubmitted(false);
+    if (!valid || saving) return;
+    try {
+      setSaving(true);
+      await onSave(draft);
+      setDraft(emptyDraft);
+      setSubmitted(false);
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -499,14 +653,14 @@ function ComposeNotificationModal({
       open={open}
       onClose={close}
       title="Compose message"
-      description="Reach a segment of the community by push, email, SMS or in-app. Save as a draft, schedule it, or send in this preview."
+      description="Send a direct notification to a segment of the community across push, email, SMS or in-app."
       footer={
         <>
-          <Button variant="secondary" onClick={close}>
+          <Button variant="secondary" onClick={close} disabled={saving}>
             Cancel
           </Button>
-          <Button icon="check" onClick={submit}>
-            Save Message
+          <Button icon="check" onClick={submit} loading={saving}>
+            Save message
           </Button>
         </>
       }
@@ -521,53 +675,52 @@ function ComposeNotificationModal({
           placeholder="Jumu'ah reminder: two sessions today"
           containerClassName="sm:col-span-2"
         />
+
+        <SelectField
+          label="Channel"
+          value={draft.channel}
+          onChange={(event) => set("channel", event.target.value as any)}
+          options={notificationChannels.map((value) => ({ value, label: value }))}
+        />
+
+        <SelectField
+          label="Audience"
+          value={draft.audience}
+          onChange={(event) => set("audience", event.target.value as any)}
+          options={notificationAudiences.map((value) => ({ value, label: value }))}
+        />
+
+        <SelectField
+          label="Status"
+          value={draft.status}
+          onChange={(event) => set("status", event.target.value as any)}
+          options={notificationStatuses.map((value) => ({ value, label: value }))}
+          containerClassName={draft.status === "Scheduled" ? "" : "sm:col-span-2"}
+        />
+
+        {draft.status === "Scheduled" ? (
+          <TextField
+            label="Schedule Date & Time"
+            required
+            type="datetime-local"
+            value={draft.scheduledAt || ""}
+            onChange={(event) => set("scheduledAt", event.target.value)}
+            error={show("scheduledAt")}
+            hint="The system will automatically dispatch this message when this time arrives."
+          />
+        ) : null}
+
         <TextAreaField
           label="Message"
           required
-          rows={4}
+          rows={5}
           value={draft.message}
           onChange={(event) => set("message", event.target.value)}
           error={show("message")}
-          hint="Keep it short — this is a notification, not an article."
-          containerClassName="sm:col-span-2"
-        />
-        <SelectField
-          label="Channel"
-          required
-          value={draft.channel}
-          options={[...notificationChannels]}
-          onChange={(event) => set("channel", event.target.value as NotificationDraft["channel"])}
-        />
-        <SelectField
-          label="Audience"
-          required
-          value={draft.audience}
-          options={[...notificationAudiences]}
-          onChange={(event) => set("audience", event.target.value as NotificationDraft["audience"])}
-        />
-        <SelectField
-          label="Status"
-          required
-          value={draft.status}
-          options={[
-            { value: "Draft", label: "Save as draft" },
-            { value: "Scheduled", label: "Schedule" },
-            { value: "Sent", label: "Send now" },
-          ]}
-          onChange={(event) => set("status", event.target.value as NotificationDraft["status"])}
+          placeholder="Write the message that will be delivered…"
           containerClassName="sm:col-span-2"
         />
       </div>
-
-      {submitted && !valid ? (
-        <InlineNotice className="mt-4" tone="neutral" icon="alert">
-          Some details still need attention — see the messages above.
-        </InlineNotice>
-      ) : (
-        <InlineNotice className="mt-4" tone="gold">
-          Front-end preview — the message is added to this browser session only. Nothing is really sent.
-        </InlineNotice>
-      )}
     </Modal>
   );
 }
