@@ -1,21 +1,21 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Button, IconButton } from "@/components/finance/ui/button";
 import { DataTable, type Column } from "@/components/finance/ui/data-table";
+import { ConfirmDialog } from "@/components/finance/ui/dialogs";
 import { FinanceFilters, type SelectFilter } from "@/components/finance/ui/filters";
 import { SelectField, TextAreaField, TextField } from "@/components/finance/ui/form-field";
 import { Modal } from "@/components/finance/ui/modal";
 import { Panel, PanelHeader } from "@/components/finance/ui/panel";
 import { Can } from "@/components/finance/ui/permission-gate";
-import { FinanceEmptyState, InlineNotice } from "@/components/finance/ui/states";
+import { TableSkeleton } from "@/components/finance/ui/skeleton";
+import { FinanceEmptyState, FinanceErrorState, InlineNotice } from "@/components/finance/ui/states";
 import { PersonCell } from "@/components/ui/avatar";
 import { DetailDrawer, DetailField, DetailGrid, DetailSection, DetailStats } from "@/components/ui/detail-drawer";
 import { StatGrid } from "@/components/ui/stat-card";
 import { BookingStatusBadge, ServiceCategoryChip } from "@/components/ui/status-badge";
 import { useToast } from "@/components/ui/toast";
-import { bookingStats, bookings as seedBookings } from "@/data/bookings";
-import { serviceById, services } from "@/data/services";
 import { formatAmount } from "@/lib/finance/format";
 import { downloadCsv } from "@/lib/mosque/export";
 import {
@@ -24,61 +24,26 @@ import {
   formatDayMonth,
   formatLongDate,
   formatRelativeDay,
-  REFERENCE_DATE,
+  getTodayInTimezone,
 } from "@/lib/mosque/format";
 import {
   bookingStatuses,
   serviceCategories,
   type Booking,
   type BookingDraft,
+  type BookingStatus,
+  type Service,
   type StatMetric,
 } from "@/lib/mosque/types";
-
-/**
- * Booking requests against the service catalogue.
- *
- * Each row is one request — a funeral to arrange, a hall to hire, a counselling slot to keep. The row
- * denormalises the service's name and category (exactly as an event registration carries its event's
- * title), so this table never has to join back to the catalogue to render. A new request resolves the
- * chosen service through `serviceById` to copy across the name, category, fee and coordinator.
- *
- * `fee` is shown read-only: what a family actually contributes is receipted in the finance module,
- * which stays the one record of money in and out.
- */
-const metrics: StatMetric[] = [
-  {
-    id: "total",
-    label: "Total Bookings",
-    value: formatCount(bookingStats.total),
-    hint: "Requests on record",
-    icon: "calendar",
-    tone: "neutral",
-  },
-  {
-    id: "pending",
-    label: "Pending",
-    value: formatCount(bookingStats.pending),
-    hint: "Awaiting a decision",
-    icon: "clock",
-    tone: "warning",
-  },
-  {
-    id: "confirmed",
-    label: "Confirmed",
-    value: formatCount(bookingStats.confirmed),
-    hint: "Booked and in the diary",
-    icon: "check-circle",
-    tone: "positive",
-  },
-  {
-    id: "week",
-    label: "This Week",
-    value: formatCount(bookingStats.thisWeek),
-    hint: "Scheduled in the next 7 days",
-    icon: "calendar-days",
-    tone: "gold",
-  },
-];
+import {
+  createBooking,
+  deleteBooking,
+  fetchBookingStats,
+  fetchBookings,
+  updateBooking,
+  updateBookingStatus,
+} from "@/services/bookingService";
+import { fetchServices } from "@/services/serviceService";
 
 const emptyDraft: BookingDraft = {
   serviceId: "",
@@ -94,16 +59,113 @@ const emptyDraft: BookingDraft = {
 
 const feeLabel = (fee: number) => (fee === 0 ? "Free" : formatAmount(fee));
 
+/**
+ * Booking requests against the service catalogue — connected to the real NestJS Bookings API.
+ */
 export function BookingsView({ openAddOnMount = false }: { openAddOnMount?: boolean }) {
   const { notify } = useToast();
-  const [bookings, setBookings] = useState<Booking[]>(seedBookings);
+
+  // — Data states —
+  const [bookings, setBookings] = useState<Booking[]>([]);
+  const [services, setServices] = useState<Service[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  // — Stats state —
+  const [stats, setStats] = useState({ total: 0, pending: 0, confirmed: 0, thisWeek: 0 });
+
+  // — Filters —
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState("all");
   const [category, setCategory] = useState("all");
   const [scheduledFrom, setScheduledFrom] = useState("");
   const [scheduledTo, setScheduledTo] = useState("");
+
+  // — UI state —
   const [selected, setSelected] = useState<Booking | null>(null);
   const [adding, setAdding] = useState(openAddOnMount);
+  const [editing, setEditing] = useState<Booking | null>(null);
+  const [cancelling, setCancelling] = useState<Booking | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // — Load Bookings & Services —
+  const loadBookings = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const [bookingsRes, servicesRes, statsRes] = await Promise.all([
+        fetchBookings({ all: true }),
+        fetchServices({ all: true }).catch(() => ({ rows: [], total: 0, page: 1, pageSize: 10, pageCount: 1 })),
+        fetchBookingStats().catch(() => ({ total: 0, pending: 0, confirmed: 0, thisWeek: 0 })),
+      ]);
+      setBookings(bookingsRes.rows);
+      setServices(servicesRes.rows);
+      setStats(statsRes);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Failed to load bookings from the server.");
+      // Still fetch services for the modal if bookings had an issue
+      try {
+        const servicesRes = await fetchServices({ all: true });
+        setServices(servicesRes.rows);
+      } catch {
+        // Non-fatal
+      }
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  const refreshStats = useCallback(async () => {
+    try {
+      const s = await fetchBookingStats();
+      setStats(s);
+    } catch {
+      // Non-fatal
+    }
+  }, []);
+
+  useEffect(() => {
+    loadBookings();
+  }, [loadBookings]);
+
+  // — Live stats metrics from PostgreSQL —
+  const metrics: StatMetric[] = useMemo(
+    () => [
+      {
+        id: "total",
+        label: "Total Bookings",
+        value: formatCount(stats.total),
+        hint: "Requests on record",
+        icon: "calendar",
+        tone: "neutral",
+      },
+      {
+        id: "pending",
+        label: "Pending",
+        value: formatCount(stats.pending),
+        hint: "Awaiting a decision",
+        icon: "clock",
+        tone: "warning",
+      },
+      {
+        id: "confirmed",
+        label: "Confirmed",
+        value: formatCount(stats.confirmed),
+        hint: "Booked and in the diary",
+        icon: "check-circle",
+        tone: "positive",
+      },
+      {
+        id: "week",
+        label: "This Week",
+        value: formatCount(stats.thisWeek),
+        hint: "Scheduled in the next 7 days",
+        icon: "calendar-days",
+        tone: "gold",
+      },
+    ],
+    [stats]
+  );
 
   const filtered = useMemo(() => {
     const needle = search.trim().toLowerCase();
@@ -151,33 +213,109 @@ export function BookingsView({ openAddOnMount = false }: { openAddOnMount?: bool
     setScheduledTo("");
   };
 
-  const addBooking = (draft: BookingDraft) => {
-    const service = serviceById(draft.serviceId);
-    const booking: Booking = {
-      id: `BKG-${String(bookings.length + 1).padStart(3, "0")}`,
-      serviceId: draft.serviceId,
-      serviceName: service?.name ?? "—",
-      category: service?.category ?? "Facility",
-      requesterName: draft.requesterName.trim(),
-      requesterPhone: draft.requesterPhone.trim(),
-      requesterEmail: draft.requesterEmail.trim(),
-      status: "Pending",
-      scheduledDate: draft.scheduledDate,
-      scheduledTime: draft.scheduledTime || undefined,
-      submittedAt: REFERENCE_DATE,
-      location: draft.location.trim() || service?.location || "—",
-      partySize: Number(draft.partySize) || 0,
-      fee: service?.fee ?? 0,
-      assignedTo: service?.coordinator,
-      notes: draft.notes.trim(),
-    };
+  // — Create booking —
+  const addBooking = async (draft: BookingDraft) => {
+    const svc = services.find((s) => s.id === draft.serviceId);
+    setIsSubmitting(true);
+    try {
+      const created = await createBooking({
+        serviceId: draft.serviceId,
+        requesterName: draft.requesterName.trim(),
+        requesterPhone: draft.requesterPhone.trim(),
+        requesterEmail: draft.requesterEmail.trim() || undefined,
+        scheduledDate: draft.scheduledDate,
+        scheduledTime: draft.scheduledTime || undefined,
+        location: draft.location.trim() || svc?.location || "Main prayer hall",
+        partySize: Number(draft.partySize) || 0,
+        notes: draft.notes.trim() || undefined,
+      });
 
-    setBookings((current) => [booking, ...current]);
-    setAdding(false);
-    notify({
-      message: "Booking request logged.",
-      description: `${booking.requesterName} · ${booking.serviceName} — held in this browser only.`,
-    });
+      setBookings((current) => [created, ...current]);
+      setAdding(false);
+      await refreshStats();
+      notify({
+        message: "Booking request logged.",
+        description: `${created.requesterName} · ${created.serviceName} is now recorded.`,
+      });
+    } catch (err: unknown) {
+      notify({
+        tone: "danger",
+        message: "Failed to log booking.",
+        description: err instanceof Error ? err.message : "Please try again.",
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  // — Update booking status —
+  const changeBookingStatus = async (booking: Booking, newStatus: BookingStatus) => {
+    try {
+      const updated = await updateBookingStatus(booking.id, { status: newStatus });
+      setBookings((current) => current.map((b) => (b.id === updated.id ? updated : b)));
+      if (selected?.id === updated.id) setSelected(updated);
+      await refreshStats();
+      notify({
+        message: `Booking marked as ${newStatus}.`,
+        description: `${updated.requesterName}'s request has been updated.`,
+      });
+    } catch (err: unknown) {
+      notify({
+        tone: "danger",
+        message: "Failed to update status.",
+        description: err instanceof Error ? err.message : "Please try again.",
+      });
+    }
+  };
+
+  // — Update booking details —
+  const saveBookingEdit = async (draft: BookingDraft) => {
+    if (!editing) return;
+    setIsSubmitting(true);
+    try {
+      const updated = await updateBooking(editing.id, {
+        serviceId: draft.serviceId || undefined,
+        requesterName: draft.requesterName.trim(),
+        requesterPhone: draft.requesterPhone.trim(),
+        requesterEmail: draft.requesterEmail.trim() || undefined,
+        scheduledDate: draft.scheduledDate,
+        scheduledTime: draft.scheduledTime || undefined,
+        location: draft.location.trim() || undefined,
+        partySize: Number(draft.partySize) || 0,
+        notes: draft.notes.trim() || undefined,
+      });
+
+      setBookings((current) => current.map((b) => (b.id === updated.id ? updated : b)));
+      if (selected?.id === updated.id) setSelected(updated);
+      setEditing(null);
+      await refreshStats();
+      notify({ message: "Booking updated.", description: "Changes have been saved." });
+    } catch (err: unknown) {
+      notify({
+        tone: "danger",
+        message: "Failed to update booking.",
+        description: err instanceof Error ? err.message : "Please try again.",
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  // — Cancel / Remove booking —
+  const cancelBooking = async (booking: Booking) => {
+    try {
+      const updated = await deleteBooking(booking.id);
+      setBookings((current) => current.filter((b) => b.id !== updated.id));
+      if (selected?.id === updated.id) setSelected(null);
+      await refreshStats();
+      notify({ message: "Booking cancelled.", description: `The slot has been released.` });
+    } catch (err: unknown) {
+      notify({
+        tone: "danger",
+        message: "Failed to cancel booking.",
+        description: err instanceof Error ? err.message : "Please try again.",
+      });
+    }
   };
 
   const exportCsv = () => {
@@ -259,7 +397,22 @@ export function BookingsView({ openAddOnMount = false }: { openAddOnMount?: bool
         <span className="flex items-center justify-end gap-1">
           <IconButton icon="eye" label={`View ${booking.requesterName}'s booking`} onClick={() => setSelected(booking)} />
           <Can permission="booking.manage">
-            <IconButton icon="pencil" label={`Update ${booking.requesterName}'s booking`} onClick={() => setSelected(booking)} />
+            {booking.status === "Pending" ? (
+              <IconButton
+                icon="check"
+                label={`Confirm ${booking.requesterName}'s booking`}
+                onClick={() => changeBookingStatus(booking, "Confirmed")}
+              />
+            ) : null}
+            {booking.status !== "Cancelled" ? (
+              <IconButton
+                icon="x-circle"
+                tone="danger"
+                label={`Cancel ${booking.requesterName}'s booking`}
+                onClick={() => setCancelling(booking)}
+              />
+            ) : null}
+            <IconButton icon="pencil" label={`Update ${booking.requesterName}'s booking`} onClick={() => setEditing(booking)} />
           </Can>
         </span>
       ),
@@ -310,53 +463,132 @@ export function BookingsView({ openAddOnMount = false }: { openAddOnMount?: bool
           onReset={resetFilters}
         />
 
-        <DataTable
-          rows={filtered}
-          columns={columns}
-          getRowKey={(booking) => booking.id}
-          caption="Booking requests with requester, service, scheduled date and status"
-          initialSort={{ key: "scheduled", direction: "desc" }}
-          pageSize={10}
-          mobileTitle={(booking) => booking.requesterName}
-          mobileSubtitle={(booking) => `${booking.serviceName} · ${formatLongDate(booking.scheduledDate)}`}
-          mobileTrailing={(booking) => <BookingStatusBadge status={booking.status} />}
-          mobileHiddenKeys={["requester", "status"]}
-          emptyState={
-            <FinanceEmptyState
-              icon="calendar-days"
-              title="No bookings found."
-              description={
-                activeFilterCount > 0 || search
-                  ? "Nothing matches the current search and filters. Try clearing them."
-                  : "No requests have been made yet. Log the first booking to get started."
-              }
-              action={
-                activeFilterCount > 0 || search ? (
-                  <Button
-                    variant="secondary"
-                    icon="close"
-                    onClick={() => {
-                      resetFilters();
-                      setSearch("");
-                    }}
-                  >
-                    Clear search and filters
-                  </Button>
-                ) : (
-                  <Can permission="booking.manage">
-                    <Button icon="plus" onClick={() => setAdding(true)}>
-                      New Booking
+        {loading ? (
+          <TableSkeleton rows={6} columns={5} />
+        ) : error ? (
+          <FinanceErrorState
+            title="Could not load bookings."
+            description={error}
+            onRetry={loadBookings}
+          />
+        ) : (
+          <DataTable
+            rows={filtered}
+            columns={columns}
+            getRowKey={(booking) => booking.id}
+            caption="Booking requests with requester, service, scheduled date and status"
+            initialSort={{ key: "scheduled", direction: "desc" }}
+            pageSize={10}
+            mobileTitle={(booking) => booking.requesterName}
+            mobileSubtitle={(booking) => `${booking.serviceName} · ${formatLongDate(booking.scheduledDate)}`}
+            mobileTrailing={(booking) => <BookingStatusBadge status={booking.status} />}
+            mobileHiddenKeys={["requester", "status"]}
+            emptyState={
+              <FinanceEmptyState
+                icon="calendar-days"
+                title="No bookings found."
+                description={
+                  activeFilterCount > 0 || search
+                    ? "Nothing matches the current search and filters. Try clearing them."
+                    : "No requests have been made yet. Log the first booking to get started."
+                }
+                action={
+                  activeFilterCount > 0 || search ? (
+                    <Button
+                      variant="secondary"
+                      icon="close"
+                      onClick={() => {
+                        resetFilters();
+                        setSearch("");
+                      }}
+                    >
+                      Clear search and filters
                     </Button>
-                  </Can>
-                )
-              }
-            />
-          }
-        />
+                  ) : (
+                    <Can permission="booking.manage">
+                      <Button icon="plus" onClick={() => setAdding(true)}>
+                        New Booking
+                      </Button>
+                    </Can>
+                  )
+                }
+              />
+            }
+          />
+        )}
       </Panel>
 
-      {selected ? <BookingDetailDrawer booking={selected} onClose={() => setSelected(null)} /> : null}
-      <AddBookingModal open={adding} onClose={() => setAdding(false)} onSave={addBooking} />
+      {selected ? (
+        <BookingDetailDrawer
+          booking={selected}
+          onClose={() => setSelected(null)}
+          onEdit={() => { setEditing(selected); setSelected(null); }}
+          onStatusChange={(status) => changeBookingStatus(selected, status)}
+          onCancel={() => cancelBooking(selected)}
+        />
+      ) : null}
+
+      <AddBookingModal
+        open={adding}
+        services={services}
+        onClose={() => setAdding(false)}
+        onSave={addBooking}
+        isSubmitting={isSubmitting}
+      />
+
+      {editing ? (
+        <AddBookingModal
+          open
+          editMode
+          services={services}
+          initialDraft={{
+            serviceId: editing.serviceId,
+            requesterName: editing.requesterName,
+            requesterPhone: editing.requesterPhone,
+            requesterEmail: editing.requesterEmail,
+            scheduledDate: editing.scheduledDate,
+            scheduledTime: editing.scheduledTime ?? "",
+            partySize: String(editing.partySize),
+            location: editing.location,
+            notes: editing.notes,
+          }}
+          onClose={() => setEditing(null)}
+          onSave={saveBookingEdit}
+          isSubmitting={isSubmitting}
+        />
+      ) : null}
+
+      <ConfirmDialog
+        open={cancelling !== null}
+        onClose={() => setCancelling(null)}
+        onConfirm={() => {
+          if (cancelling) cancelBooking(cancelling);
+          setCancelling(null);
+        }}
+        title="Cancel this booking?"
+        description="The scheduled slot is released immediately and will no longer be held."
+        confirmLabel="Cancel booking"
+        cancelLabel="Keep it"
+        tone="danger"
+        details={
+          cancelling ? (
+            <dl className="space-y-1.5 text-[13px]">
+              <div className="flex justify-between gap-4">
+                <dt className="text-[#69726d]">Requester</dt>
+                <dd className="font-medium text-[#17211d]">{cancelling.requesterName}</dd>
+              </div>
+              <div className="flex justify-between gap-4">
+                <dt className="text-[#69726d]">Service</dt>
+                <dd className="text-right font-medium text-[#17211d]">{cancelling.serviceName}</dd>
+              </div>
+              <div className="flex justify-between gap-4">
+                <dt className="text-[#69726d]">Scheduled Date</dt>
+                <dd className="font-medium tabular-nums text-[#17211d]">{formatLongDate(cancelling.scheduledDate)}</dd>
+              </div>
+            </dl>
+          ) : null
+        }
+      />
     </div>
   );
 }
@@ -365,12 +597,24 @@ export function BookingsView({ openAddOnMount = false }: { openAddOnMount?: bool
  * Detail drawer
  * -------------------------------------------------------------------------- */
 
-function BookingDetailDrawer({ booking, onClose }: { booking: Booking; onClose: () => void }) {
+function BookingDetailDrawer({
+  booking,
+  onClose,
+  onEdit,
+  onStatusChange,
+  onCancel,
+}: {
+  booking: Booking;
+  onClose: () => void;
+  onEdit: () => void;
+  onStatusChange: (status: BookingStatus) => void;
+  onCancel: () => void;
+}) {
   return (
     <DetailDrawer
       open
       onClose={onClose}
-      eyebrow={booking.id}
+      eyebrow={booking.id.slice(0, 8).toUpperCase()}
       title={booking.requesterName}
       subtitle={booking.serviceName}
       avatarName={booking.requesterName}
@@ -383,8 +627,23 @@ function BookingDetailDrawer({ booking, onClose }: { booking: Booking; onClose: 
       footer={
         <>
           <Can permission="booking.manage">
-            <Button size="sm" icon="pencil">
-              Update booking
+            {booking.status === "Pending" ? (
+              <Button size="sm" icon="check" onClick={() => onStatusChange("Confirmed")}>
+                Confirm booking
+              </Button>
+            ) : null}
+            {booking.status === "Confirmed" ? (
+              <Button size="sm" icon="check-circle" onClick={() => onStatusChange("Completed")}>
+                Mark completed
+              </Button>
+            ) : null}
+            {booking.status !== "Cancelled" ? (
+              <Button size="sm" variant="danger" icon="x-circle" onClick={onCancel}>
+                Cancel booking
+              </Button>
+            ) : null}
+            <Button size="sm" icon="pencil" onClick={onEdit}>
+              Update
             </Button>
           </Can>
           <Button size="sm" variant="secondary" onClick={onClose} className="ml-auto">
@@ -437,7 +696,7 @@ function BookingDetailDrawer({ booking, onClose }: { booking: Booking; onClose: 
               value={booking.memberId ? `Member · ${booking.memberId}` : "Visitor"}
             />
             <DetailField label="Phone" value={<span className="tabular-nums">{booking.requesterPhone}</span>} />
-            <DetailField label="Email" value={<span className="break-all">{booking.requesterEmail}</span>} />
+            <DetailField label="Email" value={<span className="break-all">{booking.requesterEmail || "—"}</span>} />
           </DetailGrid>
         </DetailSection>
 
@@ -463,28 +722,44 @@ function BookingDetailDrawer({ booking, onClose }: { booking: Booking; onClose: 
 }
 
 /* -------------------------------------------------------------------------- *
- * New booking
+ * New / Edit booking modal
  * -------------------------------------------------------------------------- */
-
-/** Only services that are open and actually take bookings can be requested here. */
-const bookableServices = services.filter((service) => service.status === "Active" && service.requiresBooking);
 
 function AddBookingModal({
   open,
+  services,
   onClose,
   onSave,
+  isSubmitting = false,
+  editMode = false,
+  initialDraft,
 }: {
   open: boolean;
+  services: Service[];
   onClose: () => void;
   onSave: (draft: BookingDraft) => void;
+  isSubmitting?: boolean;
+  editMode?: boolean;
+  initialDraft?: BookingDraft;
 }) {
-  const [draft, setDraft] = useState<BookingDraft>(emptyDraft);
+  const [draft, setDraft] = useState<BookingDraft>(initialDraft ?? emptyDraft);
   const [submitted, setSubmitted] = useState(false);
+
+  const todayStr = useMemo(() => getTodayInTimezone(), []);
+
+  useEffect(() => {
+    if (initialDraft) setDraft(initialDraft);
+  }, [initialDraft]);
 
   const set = <Key extends keyof BookingDraft>(key: Key, value: BookingDraft[Key]) =>
     setDraft((current) => ({ ...current, [key]: value }));
 
-  const service = serviceById(draft.serviceId);
+  const service = useMemo(() => services.find((s) => s.id === draft.serviceId), [services, draft.serviceId]);
+
+  const bookableServices = useMemo(
+    () => services.filter((s) => s.status === "Active" && s.requiresBooking),
+    [services]
+  );
 
   const errors = {
     serviceId: draft.serviceId.length === 0 ? "Choose the service being requested." : undefined,
@@ -497,7 +772,7 @@ function AddBookingModal({
     scheduledDate:
       draft.scheduledDate.length === 0
         ? "Pick the date the service is needed."
-        : draft.scheduledDate < REFERENCE_DATE
+        : !editMode && draft.scheduledDate < todayStr
           ? "That date has passed."
           : undefined,
   };
@@ -505,7 +780,7 @@ function AddBookingModal({
   const show = (key: keyof typeof errors) => (submitted ? errors[key] : undefined);
 
   const close = () => {
-    setDraft(emptyDraft);
+    setDraft(initialDraft ?? emptyDraft);
     setSubmitted(false);
     onClose();
   };
@@ -514,23 +789,29 @@ function AddBookingModal({
     setSubmitted(true);
     if (!valid) return;
     onSave(draft);
-    setDraft(emptyDraft);
-    setSubmitted(false);
+    if (!editMode) {
+      setDraft(emptyDraft);
+      setSubmitted(false);
+    }
   };
 
   return (
     <Modal
       open={open}
       onClose={close}
-      title="New booking"
-      description="Logs a request against a service. It starts as Pending for the office to confirm."
+      title={editMode ? "Update booking" : "New booking"}
+      description={
+        editMode
+          ? "Update details of this booking request."
+          : "Logs a request against a service. It starts as Pending for the office to confirm."
+      }
       footer={
         <>
-          <Button variant="secondary" onClick={close}>
+          <Button variant="secondary" onClick={close} disabled={isSubmitting}>
             Cancel
           </Button>
-          <Button icon="check" onClick={submit}>
-            Log Booking
+          <Button icon="check" onClick={submit} disabled={isSubmitting}>
+            {isSubmitting ? (editMode ? "Saving…" : "Logging…") : editMode ? "Save Changes" : "Log Booking"}
           </Button>
         </>
       }
@@ -579,7 +860,7 @@ function AddBookingModal({
           label="Preferred date"
           type="date"
           required
-          min={REFERENCE_DATE}
+          min={todayStr}
           value={draft.scheduledDate}
           onChange={(event) => set("scheduledDate", event.target.value)}
           error={show("scheduledDate")}
@@ -618,11 +899,7 @@ function AddBookingModal({
         <InlineNotice className="mt-4" tone="neutral" icon="alert">
           Some details still need attention — see the messages above.
         </InlineNotice>
-      ) : (
-        <InlineNotice className="mt-4" tone="gold">
-          Front-end preview — the booking is added to this browser session only.
-        </InlineNotice>
-      )}
+      ) : null}
     </Modal>
   );
 }

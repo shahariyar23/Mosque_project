@@ -2,6 +2,7 @@
 
 import { useDashboardSession } from "@/components/dashboard/session-provider";
 import { ProfileSwitcher } from "@/components/dashboard/profile-switcher";
+import { NotificationPopover } from "@/components/dashboard/notification-popover";
 import { Icon } from "@/components/finance/ui/icon";
 
 type Props = { navOpen: boolean; onOpenNav: () => void };
@@ -50,14 +51,7 @@ export function DashboardHeader({ navOpen, onOpenNav }: Props) {
               {user.mosqueName}
             </span>
           ) : null}
-          <button
-            type="button"
-            aria-label="Notifications"
-            className="relative grid h-10 w-10 place-items-center rounded-md border border-[#deddd3] bg-white text-[#4d564f] transition-colors hover:border-[#0d4d3b] hover:text-[#0d4d3b] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#0d4d3b]"
-          >
-            <Icon name="inbox" size={17} />
-            <span aria-hidden="true" className="absolute right-2 top-2 h-1.5 w-1.5 rounded-full bg-[#c79a45]" />
-          </button>
+          <NotificationPopover />
           <ProfileSwitcher />
         </div>
       </div>

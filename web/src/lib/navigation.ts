@@ -98,6 +98,20 @@ export const NAVIGATION: NavGroup[] = [
         icon: "calendar",
         permission: "jumuah.manage",
       },
+      {
+        label: "Ramadan",
+        labelBn: "রমজান",
+        href: "/dashboard/ramadan",
+        icon: "sparkle",
+        permission: "prayer.view",
+      },
+      {
+        label: "Iftar Sponsorship",
+        labelBn: "ইফতার স্পনসরশিপ",
+        href: "/dashboard/ramadan/sponsorships",
+        icon: "heart",
+        permission: "prayer.view",
+      },
     ],
   },
   {

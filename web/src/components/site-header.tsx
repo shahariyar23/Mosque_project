@@ -12,6 +12,7 @@ const links = [
   { label: "Home", href: "/", section: "home" },
   { label: "About", href: "/about", section: "about" },
   { label: "Prayer Times", href: "/prayer-times", section: "prayer-times" },
+  { label: "Ramadan", href: "/ramadan", section: "ramadan" },
   { label: "Events", href: "/events", section: "events" },
   { label: "Services", href: "/services", section: "services" },
   { label: "Quran", href: "/quran", section: "quran" },

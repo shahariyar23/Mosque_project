@@ -14,13 +14,14 @@ import { InlineStat, StatGrid } from "@/components/ui/stat-card";
 import { useResource } from "@/components/ui/use-resource";
 import type { IconName } from "@/components/finance/ui/icon";
 import { formatDecimal, isNegativeDecimal } from "@/lib/finance/decimal";
-import { formatClockTime, formatCount, formatLongDate, pluralise } from "@/lib/mosque/format";
+import { formatClockTime, formatCount, formatLongDate, getTodayInTimezone, pluralise } from "@/lib/mosque/format";
 import { DAILY_PRAYER_IDS, toPrayerSlot } from "@/lib/mosque/prayer-display";
 import type { StatMetric } from "@/lib/mosque/types";
 import type { Permission } from "@/lib/permissions";
 import { fetchDashboardOverview, type DashboardOverview as OverviewData } from "@/services/dashboardService";
 import type { FinancialSummary, ReportRange } from "@/services/financialReportsService";
 import type { Jumuah } from "@/services/jumuahService";
+import { fetchRamadanSchedules } from "@/services/ramadanService";
 
 /**
  * The dashboard landing page.
@@ -119,6 +120,8 @@ export function DashboardOverview() {
       ) : null}
 
       {can("prayer.view") ? <JumuahPanel jumuah={data.jumuah} /> : null}
+
+      {can("prayer.view") ? <RamadanPanel timezone={data.prayer?.timezone} /> : null}
 
       <div className="grid gap-4 xl:grid-cols-3">
         {data.approvals ? (
@@ -417,6 +420,133 @@ function JumuahPanel({ jumuah }: { jumuah: Jumuah | null }) {
           <p className="text-[13.5px] leading-6 text-[#69726d]">
             No Jumu&apos;ah schedule has been recorded yet. Add one and it will show here and on the public
             site.
+          </p>
+        )}
+      </PanelBody>
+    </Panel>
+  );
+}
+
+/* -------------------------------------------------------------------------- *
+ * Ramadan
+ * -------------------------------------------------------------------------- */
+
+/**
+ * Fasting and prayer schedule for Ramadan.
+ *
+ * Uses `useResource` with `fetchRamadanSchedules` to fetch the real backend data unpaginated.
+ * Resolves today's schedule against the mosque's configured timezone, or displays the next upcoming fast.
+ */
+function RamadanPanel({ timezone = "Asia/Dhaka" }: { timezone?: string }) {
+  const { data: schedules, error, initialising, reload } = useResource(fetchRamadanSchedules);
+
+  if (initialising) {
+    return (
+      <Panel>
+        <PanelHeader title="Ramadan" description="Loading daily schedule..." icon="moon" />
+        <PanelBody>
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            <FinanceCardSkeleton />
+            <FinanceCardSkeleton />
+            <FinanceCardSkeleton />
+            <FinanceCardSkeleton />
+          </div>
+        </PanelBody>
+      </Panel>
+    );
+  }
+
+  if (error) {
+    return (
+      <Panel>
+        <PanelHeader
+          title="Ramadan"
+          icon="moon"
+          actions={
+            <ButtonLink href="/dashboard/ramadan" size="sm" variant="secondary" iconAfter="arrow-right">
+              Ramadan schedule
+            </ButtonLink>
+          }
+        />
+        <PanelBody>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <p className="text-[13px] text-[#991b1b]">Unable to load Ramadan schedule.</p>
+            <button
+              type="button"
+              onClick={reload}
+              className="text-[12.5px] font-medium text-[#0d4d3b] underline decoration-dotted underline-offset-2 hover:text-[#073a2d]"
+            >
+              Try again
+            </button>
+          </div>
+        </PanelBody>
+      </Panel>
+    );
+  }
+
+  const sorted = [...(schedules || [])].sort((a, b) => a.date.localeCompare(b.date));
+  const schedulesWithDay = sorted.map((item, idx) => ({ ...item, dayNumber: idx + 1 }));
+
+  const todayMosque = getTodayInTimezone(timezone);
+  const todaySchedule = schedulesWithDay.find((s) => s.date === todayMosque);
+  const nextSchedule = schedulesWithDay.find((s) => s.date >= todayMosque) || schedulesWithDay[0];
+  const activeSchedule = todaySchedule || nextSchedule;
+
+  const titleDescription = activeSchedule
+    ? `${todaySchedule ? "Today's fast" : "Upcoming fast"} · ${formatLongDate(activeSchedule.date)} · ${activeSchedule.year} AH`
+    : schedulesWithDay.length > 0
+    ? `${schedulesWithDay.length} days configured`
+    : undefined;
+
+  return (
+    <Panel>
+      <PanelHeader
+        title="Ramadan"
+        description={titleDescription}
+        icon="moon"
+        actions={
+          <ButtonLink href="/dashboard/ramadan" size="sm" variant="secondary" iconAfter="arrow-right">
+            Full timetable
+          </ButtonLink>
+        }
+      />
+      <PanelBody>
+        {activeSchedule ? (
+          <>
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              <InlineStat
+                label="Day"
+                value={`Day ${activeSchedule.dayNumber}`}
+                hint={todaySchedule ? "Today" : formatLongDate(activeSchedule.date)}
+                icon="calendar"
+                tone="gold"
+              />
+              <InlineStat
+                label="Sehri / Imsak"
+                value={formatClockTime(activeSchedule.fastingStart)}
+                hint={activeSchedule.suhoorTime ? `Suhoor: ${formatClockTime(activeSchedule.suhoorTime)}` : "Fast starts"}
+                icon="sun"
+              />
+              <InlineStat
+                label="Iftar"
+                value={formatClockTime(activeSchedule.fastingEnd)}
+                hint="Fast ends (Maghrib)"
+                icon="sunset"
+                tone="positive"
+              />
+              <InlineStat
+                label="Taraweeh"
+                value={activeSchedule.taraweehTime ? formatClockTime(activeSchedule.taraweehTime) : "Not announced"}
+                icon="book"
+              />
+            </div>
+            {activeSchedule.notes ? (
+              <p className="mt-3 text-[13px] leading-6 text-[#69726d]">{activeSchedule.notes}</p>
+            ) : null}
+          </>
+        ) : (
+          <p className="text-[13.5px] leading-6 text-[#69726d]">
+            No Ramadan schedule has been recorded yet. Add one and it will show here and on the public timetable.
           </p>
         )}
       </PanelBody>

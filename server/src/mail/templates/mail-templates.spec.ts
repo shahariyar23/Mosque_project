@@ -177,4 +177,54 @@ describe('NOOR Mail Templates', () => {
       expect(formatted).toContain('BDT');
     });
   });
+
+  describe('renderIftarSponsorshipHtml & renderIftarSponsorshipText', () => {
+    it('renders confirmed Iftar sponsorship template correctly', async () => {
+      const { renderIftarSponsorshipHtml, renderIftarSponsorshipText } = await import(
+        './iftar-sponsorship.template'
+      );
+      const html = renderIftarSponsorshipHtml({
+        sponsorName: 'Abdul Karim',
+        date: '2026-03-01',
+        year: 1447,
+        status: 'confirmed',
+        numberOfServings: 150,
+        estimatedCost: '25000',
+        currency: 'BDT',
+        menuDetails: 'Khichuri, Dates, Fruit, Mutton',
+      });
+
+      expect(html).toContain('Abdul Karim');
+      expect(html).toContain('CONFIRMED');
+      expect(html).toContain('2026-03-01');
+      expect(html).toContain('150 people');
+      expect(html).toContain('BDT 25000');
+      expect(html).toContain('Khichuri, Dates, Fruit, Mutton');
+
+      const text = renderIftarSponsorshipText({
+        sponsorName: 'Abdul Karim',
+        date: '2026-03-01',
+        year: 1447,
+        status: 'confirmed',
+        numberOfServings: 150,
+      });
+
+      expect(text).toContain('Abdul Karim');
+      expect(text).toContain('CONFIRMED');
+      expect(text).toContain('2026-03-01');
+    });
+
+    it('renders cancelled Iftar sponsorship template appropriately', async () => {
+      const { renderIftarSponsorshipHtml } = await import('./iftar-sponsorship.template');
+      const html = renderIftarSponsorshipHtml({
+        sponsorName: 'Abdul Karim',
+        date: '2026-03-01',
+        year: 1447,
+        status: 'cancelled',
+      });
+
+      expect(html).toContain('CANCELLED');
+      expect(html).toContain('has been cancelled');
+    });
+  });
 });

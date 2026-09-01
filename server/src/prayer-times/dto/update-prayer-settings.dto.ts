@@ -171,4 +171,70 @@ export class UpdatePrayerSettingsDto {
   @Min(-MAX_OFFSET_MINUTES)
   @Max(MAX_OFFSET_MINUTES)
   midnightOffset?: number;
+
+  @ApiPropertyOptional({ description: 'Manual fixed Fajr adhan time (HH:mm)', example: '04:30', nullable: true })
+  @IsOptional()
+  @IsString()
+  @Matches(/^([01]\d|2[0-3]):[0-5]\d$/, { message: 'fajrTime must be HH:mm' })
+  fajrTime?: string | null;
+
+  @ApiPropertyOptional({ description: 'Manual fixed Sunrise time (HH:mm)', example: '05:35', nullable: true })
+  @IsOptional()
+  @IsString()
+  @Matches(/^([01]\d|2[0-3]):[0-5]\d$/, { message: 'sunriseTime must be HH:mm' })
+  sunriseTime?: string | null;
+
+  @ApiPropertyOptional({ description: 'Manual fixed Dhuhr adhan time (HH:mm)', example: '12:30', nullable: true })
+  @IsOptional()
+  @IsString()
+  @Matches(/^([01]\d|2[0-3]):[0-5]\d$/, { message: 'dhuhrTime must be HH:mm' })
+  dhuhrTime?: string | null;
+
+  @ApiPropertyOptional({ description: 'Manual fixed Asr adhan time (HH:mm)', example: '16:30', nullable: true })
+  @IsOptional()
+  @IsString()
+  @Matches(/^([01]\d|2[0-3]):[0-5]\d$/, { message: 'asrTime must be HH:mm' })
+  asrTime?: string | null;
+
+  @ApiPropertyOptional({ description: 'Manual fixed Maghrib adhan time (HH:mm)', example: '18:32', nullable: true })
+  @IsOptional()
+  @IsString()
+  @Matches(/^([01]\d|2[0-3]):[0-5]\d$/, { message: 'maghribTime must be HH:mm' })
+  maghribTime?: string | null;
+
+  @ApiPropertyOptional({ description: 'Manual fixed Isha adhan time (HH:mm)', example: '20:00', nullable: true })
+  @IsOptional()
+  @IsString()
+  @Matches(/^([01]\d|2[0-3]):[0-5]\d$/, { message: 'ishaTime must be HH:mm' })
+  ishaTime?: string | null;
+
+  @ApiPropertyOptional({ description: 'Manual fixed Fajr iqamah time (HH:mm)', example: '04:45', nullable: true })
+  @IsOptional()
+  @IsString()
+  @Matches(/^([01]\d|2[0-3]):[0-5]\d$/, { message: 'fajrIqamah must be HH:mm' })
+  fajrIqamah?: string | null;
+
+  @ApiPropertyOptional({ description: 'Manual fixed Dhuhr iqamah time (HH:mm)', example: '12:45', nullable: true })
+  @IsOptional()
+  @IsString()
+  @Matches(/^([01]\d|2[0-3]):[0-5]\d$/, { message: 'dhuhrIqamah must be HH:mm' })
+  dhuhrIqamah?: string | null;
+
+  @ApiPropertyOptional({ description: 'Manual fixed Asr iqamah time (HH:mm)', example: '16:45', nullable: true })
+  @IsOptional()
+  @IsString()
+  @Matches(/^([01]\d|2[0-3]):[0-5]\d$/, { message: 'asrIqamah must be HH:mm' })
+  asrIqamah?: string | null;
+
+  @ApiPropertyOptional({ description: 'Manual fixed Maghrib iqamah time (HH:mm)', example: '18:35', nullable: true })
+  @IsOptional()
+  @IsString()
+  @Matches(/^([01]\d|2[0-3]):[0-5]\d$/, { message: 'maghribIqamah must be HH:mm' })
+  maghribIqamah?: string | null;
+
+  @ApiPropertyOptional({ description: 'Manual fixed Isha iqamah time (HH:mm)', example: '20:15', nullable: true })
+  @IsOptional()
+  @IsString()
+  @Matches(/^([01]\d|2[0-3]):[0-5]\d$/, { message: 'ishaIqamah must be HH:mm' })
+  ishaIqamah?: string | null;
 }

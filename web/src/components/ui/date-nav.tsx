@@ -3,7 +3,7 @@
 import { useId } from "react";
 import { Button, IconButton } from "@/components/finance/ui/button";
 import { Icon } from "@/components/finance/ui/icon";
-import { formatLongDate, formatWeekday, REFERENCE_DATE, shiftDate } from "@/lib/mosque/format";
+import { formatLongDate, formatWeekday, getTodayInTimezone, shiftDate } from "@/lib/mosque/format";
 import type { IsoDate } from "@/lib/mosque/types";
 
 /**
@@ -22,7 +22,7 @@ export function DateNav({
   onChange,
   label = "Schedule date",
   location,
-  today = REFERENCE_DATE,
+  today,
 }: {
   value: IsoDate;
   onChange: (next: IsoDate) => void;
@@ -31,8 +31,9 @@ export function DateNav({
   location?: string;
   today?: IsoDate;
 }) {
+  const currentToday = today || getTodayInTimezone("Asia/Dhaka");
   const inputId = useId();
-  const isToday = value === today;
+  const isToday = value === currentToday;
 
   return (
     <div className="flex flex-col gap-3 rounded-lg border border-[#deddd3] bg-white px-4 py-3.5 sm:flex-row sm:items-center sm:justify-between sm:px-5">
@@ -80,7 +81,7 @@ export function DateNav({
           }}
           className="min-h-10 rounded-md border border-[#cfd4cd] bg-white px-3 text-[13px] tabular-nums text-[#17211d] focus:border-[#0d4d3b] focus:outline-2 focus:outline-offset-1 focus:outline-[#0d4d3b]/40"
         />
-        <Button variant="secondary" size="sm" onClick={() => onChange(today)} disabled={isToday}>
+        <Button variant="secondary" size="sm" onClick={() => onChange(currentToday)} disabled={isToday}>
           Today
         </Button>
       </div>

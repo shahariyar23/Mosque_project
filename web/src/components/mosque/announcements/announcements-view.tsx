@@ -9,15 +9,16 @@ import { Icon } from "@/components/finance/ui/icon";
 import { Modal } from "@/components/finance/ui/modal";
 import { Panel, PanelHeader } from "@/components/finance/ui/panel";
 import { Can } from "@/components/finance/ui/permission-gate";
-import { FinanceEmptyState, InlineNotice } from "@/components/finance/ui/states";
+import { TableSkeleton } from "@/components/finance/ui/skeleton";
+import { FinanceEmptyState, FinanceErrorState, InlineNotice } from "@/components/finance/ui/states";
 import { DetailDrawer, DetailField, DetailGrid, DetailSection } from "@/components/ui/detail-drawer";
 import { StatGrid } from "@/components/ui/stat-card";
 import { AnnouncementCategoryChip, AnnouncementStatusBadge } from "@/components/ui/status-badge";
 import { Toggle } from "@/components/ui/toggle";
 import { useToast } from "@/components/ui/toast";
-import { announcementStats, announcements as seedAnnouncements } from "@/data/announcements";
+import { useApiList, useApiResource } from "@/hooks/use-api";
 import { downloadCsv } from "@/lib/mosque/export";
-import { formatCount, formatDayMonth, formatLongDate, REFERENCE_DATE } from "@/lib/mosque/format";
+import { formatCount, formatDayMonth, formatLongDate } from "@/lib/mosque/format";
 import {
   announcementAudiences,
   announcementCategories,
@@ -28,49 +29,17 @@ import {
   type AnnouncementDraft,
   type StatMetric,
 } from "@/lib/mosque/types";
-
-/**
- * The noticeboard — the standing messages the mosque shows the community.
- *
- * Same register shape as the other modules, with two wrinkles a notice needs: it goes out over more
- * than one channel (an array, toggled in the composer), and the important ones are pinned to the top.
- * The life-cycle badge carries the meaning — a draft isn't public, a scheduled one hasn't gone yet,
- * an archived one is kept only for the record — so the row never relies on colour alone.
- */
-const metrics: StatMetric[] = [
-  {
-    id: "total",
-    label: "Announcements",
-    value: formatCount(announcementStats.total),
-    hint: "On the board",
-    icon: "megaphone",
-    tone: "neutral",
-  },
-  {
-    id: "published",
-    label: "Published",
-    value: formatCount(announcementStats.published),
-    hint: "Live to the community",
-    icon: "check-circle",
-    tone: "positive",
-  },
-  {
-    id: "scheduled",
-    label: "Scheduled",
-    value: formatCount(announcementStats.scheduled),
-    hint: "Queued to go out",
-    icon: "calendar-days",
-    tone: "neutral",
-  },
-  {
-    id: "pinned",
-    label: "Pinned",
-    value: formatCount(announcementStats.pinned),
-    hint: "Held at the top",
-    icon: "star",
-    tone: "gold",
-  },
-];
+import {
+  archiveAnnouncement,
+  createAnnouncement,
+  deleteAnnouncement,
+  fetchAnnouncements,
+  fetchAnnouncementStats,
+  publishAnnouncement,
+  togglePinAnnouncement,
+  updateAnnouncement,
+  type AnnouncementQuery,
+} from "@/services/announcementsService";
 
 const emptyDraft: AnnouncementDraft = {
   title: "",
@@ -82,40 +51,92 @@ const emptyDraft: AnnouncementDraft = {
   pinned: false,
 };
 
-/** Trim the message to a single line for the table, so a long notice doesn't blow out the row. */
+/** Trim the message to a single line for the table */
 const excerpt = (text: string, max = 96) => (text.length > max ? `${text.slice(0, max).trimEnd()}…` : text);
 
 export function AnnouncementsView({ openAddOnMount = false }: { openAddOnMount?: boolean }) {
   const { notify } = useToast();
-  const [announcementList, setAnnouncementList] = useState<Announcement[]>(seedAnnouncements);
+  const [page, setPage] = useState(1);
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState("all");
   const [status, setStatus] = useState("all");
   const [audience, setAudience] = useState("all");
   const [selected, setSelected] = useState<Announcement | null>(null);
   const [adding, setAdding] = useState(openAddOnMount);
+  const [editing, setEditing] = useState<Announcement | null>(null);
 
-  const filtered = useMemo(() => {
-    const needle = search.trim().toLowerCase();
-    return announcementList.filter((announcement) => {
-      if (needle) {
-        const haystack =
-          `${announcement.title} ${announcement.message} ${announcement.author} ${announcement.id}`.toLowerCase();
-        if (!haystack.includes(needle)) return false;
-      }
-      if (category !== "all" && announcement.category !== category) return false;
-      if (status !== "all" && announcement.status !== status) return false;
-      if (audience !== "all" && announcement.audience !== audience) return false;
-      return true;
-    });
-  }, [announcementList, audience, category, search, status]);
+  // Live stats from backend
+  const { data: statsData, refetch: refetchStats } = useApiResource(
+    fetchAnnouncementStats,
+    [],
+  );
+
+  const stats = statsData || { total: 0, published: 0, scheduled: 0, pinned: 0 };
+
+  const metrics: StatMetric[] = [
+    {
+      id: "total",
+      label: "Announcements",
+      value: formatCount(stats.total),
+      hint: "On the board",
+      icon: "megaphone",
+      tone: "neutral",
+    },
+    {
+      id: "published",
+      label: "Published",
+      value: formatCount(stats.published),
+      hint: "Live to the community",
+      icon: "check-circle",
+      tone: "positive",
+    },
+    {
+      id: "scheduled",
+      label: "Scheduled",
+      value: formatCount(stats.scheduled),
+      hint: "Queued to go out",
+      icon: "calendar-days",
+      tone: "neutral",
+    },
+    {
+      id: "pinned",
+      label: "Pinned",
+      value: formatCount(stats.pinned),
+      hint: "Held at the top",
+      icon: "star",
+      tone: "gold",
+    },
+  ];
+
+  // Query state for live API
+  const query: AnnouncementQuery = {
+    page,
+    limit: 10,
+    search: search.trim() || undefined,
+    category: category !== "all" ? category : undefined,
+    status: status !== "all" ? status : undefined,
+    audience: audience !== "all" ? audience : undefined,
+  };
+
+  const { rows: announcementList, meta, loading, error, refetch } = useApiList(
+    fetchAnnouncements,
+    query,
+  );
+
+  const refreshAll = () => {
+    refetch();
+    refetchStats();
+  };
 
   const filters: SelectFilter[] = [
     {
       id: "category",
       label: "Category",
       value: category,
-      onChange: setCategory,
+      onChange: (val) => {
+        setCategory(val);
+        setPage(1);
+      },
       options: [
         { value: "all", label: "All categories" },
         ...announcementCategories.map((value) => ({ value, label: value })),
@@ -125,74 +146,164 @@ export function AnnouncementsView({ openAddOnMount = false }: { openAddOnMount?:
       id: "status",
       label: "Status",
       value: status,
-      onChange: setStatus,
-      options: [{ value: "all", label: "Any status" }, ...announcementStatuses.map((value) => ({ value, label: value }))],
+      onChange: (val) => {
+        setStatus(val);
+        setPage(1);
+      },
+      options: [
+        { value: "all", label: "Any status" },
+        ...announcementStatuses.map((value) => ({ value, label: value })),
+      ],
     },
     {
       id: "audience",
       label: "Audience",
       value: audience,
-      onChange: setAudience,
-      options: [{ value: "all", label: "Everyone" }, ...announcementAudiences.map((value) => ({ value, label: value }))],
+      onChange: (val) => {
+        setAudience(val);
+        setPage(1);
+      },
+      options: [
+        { value: "all", label: "Everyone" },
+        ...announcementAudiences.map((value) => ({ value, label: value })),
+      ],
     },
   ];
 
-  const activeFilterCount = (category !== "all" ? 1 : 0) + (status !== "all" ? 1 : 0) + (audience !== "all" ? 1 : 0);
+  const activeFilterCount =
+    (category !== "all" ? 1 : 0) + (status !== "all" ? 1 : 0) + (audience !== "all" ? 1 : 0);
+
   const resetFilters = () => {
     setCategory("all");
     setStatus("all");
     setAudience("all");
+    setPage(1);
   };
 
-  const addAnnouncement = (draft: AnnouncementDraft) => {
-    const announcement: Announcement = {
-      id: `ANC-${String(announcementList.length + 1).padStart(3, "0")}`,
-      title: draft.title.trim(),
-      message: draft.message.trim(),
-      category: draft.category,
-      audience: draft.audience,
-      status: draft.status,
-      channels: draft.channels,
-      pinned: draft.pinned,
-      author: "Mosque Office",
-      publishedAt: REFERENCE_DATE,
-    };
+  const handleAddAnnouncement = async (draft: AnnouncementDraft) => {
+    try {
+      const created = await createAnnouncement({
+        title: draft.title.trim(),
+        message: draft.message.trim(),
+        category: draft.category,
+        audience: draft.audience,
+        status: draft.status,
+        channels: draft.channels,
+        pinned: draft.pinned,
+        author: "Mosque Office",
+      });
 
-    setAnnouncementList((current) => [announcement, ...current]);
-    setAdding(false);
-    notify({
-      message: draft.status === "Published" ? "Announcement published." : "Announcement saved.",
-      description: `${announcement.title} · ${announcement.id} — held in this browser only.`,
-    });
+      setAdding(false);
+      refreshAll();
+      notify({
+        message: created.status === "Published" ? "Announcement published." : "Announcement saved.",
+        description: `${created.title} is now stored in the database.`,
+        tone: "success",
+      });
+    } catch (err: any) {
+      notify({
+        message: "Failed to save announcement",
+        description: err?.message || "An unexpected error occurred",
+        tone: "danger",
+      });
+    }
   };
 
-  const publishAnnouncement = (target: Announcement) => {
-    setAnnouncementList((current) =>
-      current.map((announcement) =>
-        announcement.id === target.id ? { ...announcement, status: "Published", publishedAt: REFERENCE_DATE } : announcement,
-      ),
-    );
-    setSelected(null);
-    notify({ message: "Announcement published.", description: `${target.title} is now live — front-end only.` });
+  const handlePublishAnnouncement = async (target: Announcement) => {
+    try {
+      const updated = await publishAnnouncement(target.id);
+      setSelected(updated);
+      refreshAll();
+      notify({
+        message: "Announcement published.",
+        description: `${updated.title} is now live and notifications have been dispatched.`,
+        tone: "success",
+      });
+    } catch (err: any) {
+      notify({
+        message: "Publish failed",
+        description: err?.message || "Failed to publish announcement",
+        tone: "danger",
+      });
+    }
+  };
+
+  const handleArchiveAnnouncement = async (target: Announcement) => {
+    try {
+      const updated = await archiveAnnouncement(target.id);
+      setSelected(updated);
+      refreshAll();
+      notify({
+        message: "Announcement archived.",
+        description: `${updated.title} has been moved to the archive.`,
+        tone: "info",
+      });
+    } catch (err: any) {
+      notify({
+        message: "Archive failed",
+        description: err?.message || "Failed to archive announcement",
+        tone: "danger",
+      });
+    }
+  };
+
+  const handleTogglePin = async (target: Announcement) => {
+    try {
+      const updated = await togglePinAnnouncement(target.id, !target.pinned);
+      if (selected?.id === target.id) {
+        setSelected(updated);
+      }
+      refreshAll();
+      notify({
+        message: updated.pinned ? "Announcement pinned." : "Announcement unpinned.",
+        description: `${updated.title} pin state updated.`,
+        tone: "info",
+      });
+    } catch (err: any) {
+      notify({
+        message: "Pin update failed",
+        description: err?.message || "Failed to update pin status",
+        tone: "danger",
+      });
+    }
+  };
+
+  const handleDeleteAnnouncement = async (target: Announcement) => {
+    try {
+      await deleteAnnouncement(target.id);
+      setSelected(null);
+      refreshAll();
+      notify({
+        message: "Announcement deleted.",
+        description: `${target.title} was removed.`,
+        tone: "info",
+      });
+    } catch (err: any) {
+      notify({
+        message: "Delete failed",
+        description: err?.message || "Failed to delete announcement",
+        tone: "danger",
+      });
+    }
   };
 
   const exportCsv = () => {
-    downloadCsv("noor-mosque-announcements.csv", filtered, [
+    downloadCsv("noor-mosque-announcements.csv", announcementList, [
       { header: "ID", value: (announcement) => announcement.id },
       { header: "Title", value: (announcement) => announcement.title },
       { header: "Category", value: (announcement) => announcement.category },
       { header: "Audience", value: (announcement) => announcement.audience },
       { header: "Status", value: (announcement) => announcement.status },
-      { header: "Channels", value: (announcement) => announcement.channels.join(" / ") },
+      { header: "Channels", value: (announcement) => (announcement.channels || []).join(" / ") },
       { header: "Pinned", value: (announcement) => (announcement.pinned ? "Yes" : "No") },
       { header: "Author", value: (announcement) => announcement.author },
-      { header: "Date", value: (announcement) => announcement.publishedAt },
+      { header: "Date", value: (announcement) => announcement.publishedAt || "" },
       { header: "Expires", value: (announcement) => announcement.expiresAt ?? "" },
     ]);
     notify({
       tone: "info",
       message: "Export downloaded.",
-      description: `${formatCount(filtered.length)} rows, matching the filters currently applied.`,
+      description: `${formatCount(announcementList.length)} rows exported from current view.`,
     });
   };
 
@@ -208,7 +319,7 @@ export function AnnouncementsView({ openAddOnMount = false }: { openAddOnMount?:
             ) : null}
             <span className="truncate">{announcement.title}</span>
           </span>
-          <span className="mt-0.5 block truncate text-[12px] text-[#69726d]">{excerpt(announcement.message)}</span>
+          <span className="mt-0.5 block truncate text-[12px] text-[#69726d]">{excerpt(announcement.message || announcement.title)}</span>
         </span>
       ),
       sortValue: (announcement) => announcement.title,
@@ -236,9 +347,11 @@ export function AnnouncementsView({ openAddOnMount = false }: { openAddOnMount?:
       header: "Date",
       align: "right",
       cell: (announcement) => (
-        <span className="whitespace-nowrap tabular-nums text-[#4d564f]">{formatDayMonth(announcement.publishedAt)}</span>
+        <span className="whitespace-nowrap tabular-nums text-[#4d564f]">
+          {announcement.publishedAt ? formatDayMonth(announcement.publishedAt) : "—"}
+        </span>
       ),
-      sortValue: (announcement) => announcement.publishedAt,
+      sortValue: (announcement) => announcement.publishedAt || "",
     },
     {
       key: "actions",
@@ -247,9 +360,17 @@ export function AnnouncementsView({ openAddOnMount = false }: { openAddOnMount?:
       align: "right",
       cell: (announcement) => (
         <span className="flex items-center justify-end gap-1">
-          <IconButton icon="eye" label={`View ${announcement.title}`} onClick={() => setSelected(announcement)} />
+          <IconButton
+            icon="eye"
+            label={`View ${announcement.title}`}
+            onClick={() => setSelected(announcement)}
+          />
           <Can permission="announcement.manage">
-            <IconButton icon="pencil" label={`Edit ${announcement.title}`} onClick={() => setSelected(announcement)} />
+            <IconButton
+              icon="star"
+              label={announcement.pinned ? "Unpin" : "Pin"}
+              onClick={() => handleTogglePin(announcement)}
+            />
           </Can>
         </span>
       ),
@@ -282,7 +403,10 @@ export function AnnouncementsView({ openAddOnMount = false }: { openAddOnMount?:
         <FinanceFilters
           search={{
             value: search,
-            onChange: setSearch,
+            onChange: (val) => {
+              setSearch(val);
+              setPage(1);
+            },
             placeholder: "Search announcements…",
             label: "Search announcements by title, message, author or ID",
           }}
@@ -291,66 +415,86 @@ export function AnnouncementsView({ openAddOnMount = false }: { openAddOnMount?:
           onReset={resetFilters}
         />
 
-        <DataTable
-          rows={filtered}
-          columns={columns}
-          getRowKey={(announcement) => announcement.id}
-          caption="Mosque announcements with category, audience, status and date"
-          initialSort={{ key: "date", direction: "desc" }}
-          pageSize={10}
-          mobileTitle={(announcement) => (
-            <span className="flex items-center gap-1.5">
-              {announcement.pinned ? (
-                <Icon name="star" size={13} className="shrink-0 text-[#c79a45]" aria-hidden="true" />
-              ) : null}
-              {announcement.title}
-            </span>
-          )}
-          mobileSubtitle={(announcement) => `${announcement.category} · ${announcement.audience}`}
-          mobileTrailing={(announcement) => <AnnouncementStatusBadge status={announcement.status} />}
-          mobileHiddenKeys={["announcement", "status"]}
-          emptyState={
-            <FinanceEmptyState
-              icon="megaphone"
-              title="No announcements found."
-              description={
-                activeFilterCount > 0 || search
-                  ? "Nothing matches the current search and filters. Try clearing them."
-                  : "The board is empty. Post the first announcement to reach the community."
-              }
-              action={
-                activeFilterCount > 0 || search ? (
-                  <Button
-                    variant="secondary"
-                    icon="close"
-                    onClick={() => {
-                      resetFilters();
-                      setSearch("");
-                    }}
-                  >
-                    Clear search and filters
-                  </Button>
-                ) : (
-                  <Can permission="announcement.manage">
-                    <Button icon="plus" onClick={() => setAdding(true)}>
-                      New Announcement
-                    </Button>
-                  </Can>
-                )
-              }
+        {loading ? (
+          <TableSkeleton rows={6} />
+        ) : error ? (
+          <div className="p-8">
+            <FinanceErrorState
+              title="Failed to load announcements"
+              description={error}
+              onRetry={refreshAll}
             />
-          }
-        />
+          </div>
+        ) : (
+          <DataTable
+            rows={announcementList}
+            columns={columns}
+            getRowKey={(announcement) => announcement.id}
+            caption="Mosque announcements with category, audience, status and date"
+            initialSort={{ key: "date", direction: "desc" }}
+            pageSize={10}
+            mobileTitle={(announcement) => (
+              <span className="flex items-center gap-1.5">
+                {announcement.pinned ? (
+                  <Icon name="star" size={13} className="shrink-0 text-[#c79a45]" aria-hidden="true" />
+                ) : null}
+                {announcement.title}
+              </span>
+            )}
+            mobileSubtitle={(announcement) => `${announcement.category} · ${announcement.audience}`}
+            mobileTrailing={(announcement) => <AnnouncementStatusBadge status={announcement.status} />}
+            mobileHiddenKeys={["announcement", "status"]}
+            emptyState={
+              <FinanceEmptyState
+                icon="megaphone"
+                title="No announcements found."
+                description={
+                  activeFilterCount > 0 || search
+                    ? "Nothing matches the current search and filters. Try clearing them."
+                    : "The board is empty. Post the first announcement to reach the community."
+                }
+                action={
+                  activeFilterCount > 0 || search ? (
+                    <Button
+                      variant="secondary"
+                      icon="close"
+                      onClick={() => {
+                        resetFilters();
+                        setSearch("");
+                      }}
+                    >
+                      Clear search and filters
+                    </Button>
+                  ) : (
+                    <Can permission="announcement.manage">
+                      <Button icon="plus" onClick={() => setAdding(true)}>
+                        New Announcement
+                      </Button>
+                    </Can>
+                  )
+                }
+              />
+            }
+          />
+        )}
       </Panel>
 
       {selected ? (
         <AnnouncementDetailDrawer
           announcement={selected}
           onClose={() => setSelected(null)}
-          onPublish={publishAnnouncement}
+          onPublish={handlePublishAnnouncement}
+          onArchive={handleArchiveAnnouncement}
+          onDelete={handleDeleteAnnouncement}
+          onTogglePin={handleTogglePin}
         />
       ) : null}
-      <AddAnnouncementModal open={adding} onClose={() => setAdding(false)} onSave={addAnnouncement} />
+
+      <AddAnnouncementModal
+        open={adding}
+        onClose={() => setAdding(false)}
+        onSave={handleAddAnnouncement}
+      />
     </div>
   );
 }
@@ -359,7 +503,7 @@ export function AnnouncementsView({ openAddOnMount = false }: { openAddOnMount?:
  * Detail drawer
  * -------------------------------------------------------------------------- */
 
-function ChannelPills({ channels }: { channels: AnnouncementChannel[] }) {
+function ChannelPills({ channels = [] }: { channels?: AnnouncementChannel[] }) {
   return (
     <div className="flex flex-wrap gap-1.5">
       {channels.map((channel) => (
@@ -378,12 +522,19 @@ function AnnouncementDetailDrawer({
   announcement,
   onClose,
   onPublish,
+  onArchive,
+  onDelete,
+  onTogglePin,
 }: {
   announcement: Announcement;
   onClose: () => void;
   onPublish: (announcement: Announcement) => void;
+  onArchive: (announcement: Announcement) => void;
+  onDelete: (announcement: Announcement) => void;
+  onTogglePin: (announcement: Announcement) => void;
 }) {
   const canGoLive = announcement.status === "Draft" || announcement.status === "Scheduled";
+  const canArchive = announcement.status === "Published";
 
   return (
     <DetailDrawer
@@ -414,8 +565,13 @@ function AnnouncementDetailDrawer({
             ) : null}
           </Can>
           <Can permission="announcement.manage">
-            <Button size="sm" variant="secondary" icon="pencil">
-              Edit
+            {canArchive ? (
+              <Button size="sm" variant="secondary" icon="file-text" onClick={() => onArchive(announcement)}>
+                Archive
+              </Button>
+            ) : null}
+            <Button size="sm" variant="danger" icon="trash" onClick={() => onDelete(announcement)}>
+              Delete
             </Button>
           </Can>
           <Button size="sm" variant="ghost" onClick={onClose} className="ml-auto">
@@ -427,7 +583,7 @@ function AnnouncementDetailDrawer({
       <div className="space-y-5">
         {announcement.status === "Scheduled" ? (
           <InlineNotice tone="info" icon="clock">
-            Scheduled for {formatLongDate(announcement.publishedAt)}. Not yet visible to the community.
+            Scheduled for {formatLongDate(announcement.publishedAt || "")}. Not yet visible to the community.
           </InlineNotice>
         ) : null}
         {announcement.status === "Draft" ? (
@@ -462,7 +618,7 @@ function AnnouncementDetailDrawer({
             <DetailField label="Status" value={<AnnouncementStatusBadge status={announcement.status} />} />
             <DetailField
               label={announcement.status === "Scheduled" ? "Goes out" : "Date"}
-              value={formatLongDate(announcement.publishedAt)}
+              value={announcement.publishedAt ? formatLongDate(announcement.publishedAt) : "—"}
             />
             <DetailField label="Expires" value={announcement.expiresAt ? formatLongDate(announcement.expiresAt) : "No end date"} />
             <DetailField label="Pinned" value={announcement.pinned ? "Yes — held at the top" : "No"} full />
@@ -527,7 +683,7 @@ function AddAnnouncementModal({
       open={open}
       onClose={close}
       title="New announcement"
-      description="Set the status to Draft to keep it off the board, or Published to make it live in this preview."
+      description="Set the status to Draft to keep it off the board, or Published to make it live across the community."
       footer={
         <>
           <Button variant="secondary" onClick={close}>
@@ -549,6 +705,37 @@ function AddAnnouncementModal({
           placeholder="New autumn prayer timetable now in effect"
           containerClassName="sm:col-span-2"
         />
+
+        <SelectField
+          label="Category"
+          value={draft.category}
+          onChange={(event) => set("category", event.target.value as any)}
+          options={announcementCategories.map((value) => ({ value, label: value }))}
+        />
+
+        <SelectField
+          label="Audience"
+          value={draft.audience}
+          onChange={(event) => set("audience", event.target.value as any)}
+          options={announcementAudiences.map((value) => ({ value, label: value }))}
+        />
+
+        <SelectField
+          label="Initial status"
+          value={draft.status}
+          onChange={(event) => set("status", event.target.value as any)}
+          options={announcementStatuses.map((value) => ({ value, label: value }))}
+        />
+
+        <div className="flex items-end pb-1">
+          <Toggle
+            label="Pin to the top"
+            checked={draft.pinned}
+            onChange={(checked) => set("pinned", checked)}
+            description="Holds this notice above newer ones on the board."
+          />
+        </div>
+
         <TextAreaField
           label="Message"
           required
@@ -556,52 +743,25 @@ function AddAnnouncementModal({
           value={draft.message}
           onChange={(event) => set("message", event.target.value)}
           error={show("message")}
-          hint="Plain language, a few sentences. This is what the community reads."
-          containerClassName="sm:col-span-2"
-        />
-        <SelectField
-          label="Category"
-          required
-          value={draft.category}
-          options={[...announcementCategories]}
-          onChange={(event) => set("category", event.target.value as AnnouncementDraft["category"])}
-        />
-        <SelectField
-          label="Audience"
-          required
-          value={draft.audience}
-          options={[...announcementAudiences]}
-          onChange={(event) => set("audience", event.target.value as AnnouncementDraft["audience"])}
-        />
-        <SelectField
-          label="Status"
-          required
-          value={draft.status}
-          options={[...announcementStatuses]}
-          onChange={(event) => set("status", event.target.value as AnnouncementDraft["status"])}
+          placeholder="Write the notice as it should appear to the community…"
           containerClassName="sm:col-span-2"
         />
 
-        <fieldset className="sm:col-span-2">
-          <legend className="text-[13px] font-semibold text-[#3d453f]">
-            Channels
-            <span className="ml-1 text-[#a13228]" aria-hidden="true">
-              *
-            </span>
-          </legend>
-          <div className="mt-1.5 flex flex-wrap gap-2">
+        <div className="sm:col-span-2">
+          <label className="text-[12px] font-medium text-[#2d3732]">Channels</label>
+          <p className="mt-0.5 text-[11px] text-[#69726d]">Where this notice will be posted when published.</p>
+          <div className="mt-2 flex flex-wrap gap-2">
             {announcementChannels.map((channel) => {
               const active = draft.channels.includes(channel);
               return (
                 <button
-                  key={channel}
                   type="button"
-                  aria-pressed={active}
+                  key={channel}
                   onClick={() => toggleChannel(channel)}
-                  className={`min-h-9 rounded-full border px-3.5 text-[13px] font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#0d4d3b] ${
+                  className={`rounded-full border px-3 py-1 text-[12px] font-medium transition-colors ${
                     active
                       ? "border-[#0d4d3b] bg-[#0d4d3b] text-white"
-                      : "border-[#cfd4cd] bg-white text-[#4d564f] hover:border-[#0d4d3b] hover:text-[#0d4d3b]"
+                      : "border-[#dcdacd] bg-white text-[#4d564f] hover:bg-[#f6f5ee]"
                   }`}
                 >
                   {channel}
@@ -609,33 +769,9 @@ function AddAnnouncementModal({
               );
             })}
           </div>
-          {show("channels") ? (
-            <p role="alert" className="mt-1.5 flex items-center gap-1.5 text-[12px] font-medium text-[#94291f]">
-              <Icon name="alert" size={13} />
-              {errors.channels}
-            </p>
-          ) : null}
-        </fieldset>
-
-        <div className="rounded-lg border border-[#e7e6dc] bg-[#faf9f4] px-3.5 py-1 sm:col-span-2">
-          <Toggle
-            label="Pin to the top"
-            description="Pinned announcements sit above the rest on the community site."
-            checked={draft.pinned}
-            onChange={(next) => set("pinned", next)}
-          />
+          {show("channels") ? <p className="mt-1 text-[11px] text-[#a83232]">{show("channels")}</p> : null}
         </div>
       </div>
-
-      {submitted && !valid ? (
-        <InlineNotice className="mt-4" tone="neutral" icon="alert">
-          Some details still need attention — see the messages above.
-        </InlineNotice>
-      ) : (
-        <InlineNotice className="mt-4" tone="gold">
-          Front-end preview — the announcement is added to this browser session only.
-        </InlineNotice>
-      )}
     </Modal>
   );
 }

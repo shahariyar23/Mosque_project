@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Button, IconButton } from "@/components/finance/ui/button";
 import { DataTable, type Column } from "@/components/finance/ui/data-table";
 import { FinanceFilters, type SelectFilter } from "@/components/finance/ui/filters";
@@ -8,7 +8,8 @@ import { AmountField, SelectField, TextAreaField, TextField } from "@/components
 import { Modal } from "@/components/finance/ui/modal";
 import { Panel, PanelHeader } from "@/components/finance/ui/panel";
 import { Can } from "@/components/finance/ui/permission-gate";
-import { FinanceEmptyState, InlineNotice } from "@/components/finance/ui/states";
+import { TableSkeleton } from "@/components/finance/ui/skeleton";
+import { FinanceEmptyState, FinanceErrorState, InlineNotice } from "@/components/finance/ui/states";
 import { PersonCell } from "@/components/ui/avatar";
 import { DetailDrawer, DetailField, DetailGrid, DetailSection, DetailStats } from "@/components/ui/detail-drawer";
 import { StatGrid } from "@/components/ui/stat-card";
@@ -16,11 +17,9 @@ import { BookingStatusBadge, ServiceCategoryChip, ServiceStatusBadge } from "@/c
 import { TabPanel, Tabs, useTabIds, type TabItem } from "@/components/ui/tabs";
 import { Toggle } from "@/components/ui/toggle";
 import { useToast } from "@/components/ui/toast";
-import { bookingsForService } from "@/data/bookings";
-import { serviceStats, services as seedServices } from "@/data/services";
 import { formatAmount } from "@/lib/finance/format";
 import { downloadCsv } from "@/lib/mosque/export";
-import { formatClockTime, formatCount, formatLongDate, REFERENCE_DATE } from "@/lib/mosque/format";
+import { formatClockTime, formatCount, formatLongDate } from "@/lib/mosque/format";
 import {
   serviceCategories,
   serviceStatuses,
@@ -28,52 +27,18 @@ import {
   type ServiceDraft,
   type StatMetric,
 } from "@/lib/mosque/types";
+import {
+  createService,
+  deleteService,
+  fetchBookingsByService,
+  fetchServiceStats,
+  fetchServices,
+  updateService,
+} from "@/services/serviceService";
+import type { BackendBooking } from "@/services/serviceService";
 
-/**
- * The service catalogue.
- *
- * A service is the mosque's standing offer — a funeral it will arrange, a hall it will let, a
- * counselling slot it will keep. The individual requests against these live in the bookings module;
- * here the detail drawer only *reads* the recent ones through `bookingsForService`, so the two
- * modules stay one direction apart and the catalogue never owns a request's lifecycle.
- *
- * Same shape as the member register: the predicate is the only thing this component owns, and the
- * shared `DataTable` handles sort, paging and the mobile cards.
- */
-const metrics: StatMetric[] = [
-  {
-    id: "total",
-    label: "Total Services",
-    value: formatCount(serviceStats.total),
-    hint: "In the catalogue",
-    icon: "hands-heart",
-    tone: "neutral",
-  },
-  {
-    id: "active",
-    label: "Active",
-    value: formatCount(serviceStats.active),
-    hint: `${Math.round((serviceStats.active / serviceStats.total) * 100)}% open to the community`,
-    icon: "check-circle",
-    tone: "positive",
-  },
-  {
-    id: "bookings",
-    label: "Bookings This Month",
-    value: formatCount(serviceStats.bookingsThisMonth),
-    hint: "Requests across every service",
-    icon: "calendar-days",
-    tone: "gold",
-  },
-  {
-    id: "free",
-    label: "Free of Charge",
-    value: formatCount(serviceStats.free),
-    hint: "Active services with no fee",
-    icon: "heart",
-    tone: "positive",
-  },
-];
+/** Zero is a genuinely free service, so it reads "Free" rather than "৳0". */
+const feeLabel = (fee: number) => (fee === 0 ? "Free" : formatAmount(fee));
 
 const emptyDraft: ServiceDraft = {
   name: "",
@@ -90,18 +55,102 @@ const emptyDraft: ServiceDraft = {
   turnaround: "Within a week",
 };
 
-/** Zero is a genuinely free service, so it reads "Free" rather than "৳0". */
-const feeLabel = (fee: number) => (fee === 0 ? "Free" : formatAmount(fee));
-
+/**
+ * The service catalogue — connected to the real NestJS backend at `/api/v1/services`.
+ * Statistics, listing, CRUD operations all use live PostgreSQL data.
+ */
 export function ServicesView({ openAddOnMount = false }: { openAddOnMount?: boolean }) {
   const { notify } = useToast();
-  const [services, setServices] = useState<Service[]>(seedServices);
+
+  // — Data state —
+  const [services, setServices] = useState<Service[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  // — Stats state —
+  const [stats, setStats] = useState({ total: 0, active: 0, bookingsThisMonth: 0, free: 0 });
+  const [statsLoading, setStatsLoading] = useState(true);
+
+  // — Filter state —
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState("all");
   const [status, setStatus] = useState("all");
+
+  // — UI state —
   const [selected, setSelected] = useState<Service | null>(null);
   const [adding, setAdding] = useState(openAddOnMount);
+  const [editing, setEditing] = useState<Service | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
+  // — Load services —
+  const loadServices = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const result = await fetchServices({ all: true });
+      setServices(result.rows);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Failed to load services from the server.");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  // — Load stats —
+  const loadStats = useCallback(async () => {
+    setStatsLoading(true);
+    try {
+      const s = await fetchServiceStats();
+      setStats(s);
+    } catch {
+      // Stats failure is non-fatal; keep the zero defaults
+    } finally {
+      setStatsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadServices();
+    loadStats();
+  }, [loadServices, loadStats]);
+
+  // — Dynamic stats metrics from real DB —
+  const metrics: StatMetric[] = useMemo(() => [
+    {
+      id: "total",
+      label: "Total Services",
+      value: formatCount(stats.total),
+      hint: "In the catalogue",
+      icon: "hands-heart",
+      tone: "neutral",
+    },
+    {
+      id: "active",
+      label: "Active",
+      value: formatCount(stats.active),
+      hint: stats.total > 0 ? `${Math.round((stats.active / stats.total) * 100)}% open to the community` : "Open to the community",
+      icon: "check-circle",
+      tone: "positive",
+    },
+    {
+      id: "bookings",
+      label: "Bookings This Month",
+      value: formatCount(stats.bookingsThisMonth),
+      hint: "Requests across every service",
+      icon: "calendar-days",
+      tone: "gold",
+    },
+    {
+      id: "free",
+      label: "Free of Charge",
+      value: formatCount(stats.free),
+      hint: "Active services with no fee",
+      icon: "heart",
+      tone: "positive",
+    },
+  ], [stats]);
+
+  // — Client-side filtering (all data loaded) —
   const filtered = useMemo(() => {
     const needle = search.trim().toLowerCase();
     return services.filter((service) => {
@@ -142,34 +191,92 @@ export function ServicesView({ openAddOnMount = false }: { openAddOnMount?: bool
     setStatus("all");
   };
 
-  const addService = (draft: ServiceDraft) => {
-    const service: Service = {
-      id: `SVC-${String(services.length + 1).padStart(3, "0")}`,
-      name: draft.name.trim(),
-      category: draft.category,
-      status: draft.status,
-      summary: draft.summary.trim(),
-      description: draft.description.trim(),
-      coordinator: draft.coordinator.trim(),
-      contactPhone: draft.contactPhone.trim(),
-      location: draft.location.trim(),
-      availability: draft.availability.trim() || "By appointment",
-      fee: Number(draft.fee) || 0,
-      requiresBooking: draft.requiresBooking,
-      turnaround: draft.turnaround.trim() || "To be confirmed",
-      bookingsThisMonth: 0,
-      totalBookings: 0,
-      updatedAt: REFERENCE_DATE,
-    };
-
-    setServices((current) => [service, ...current]);
-    setAdding(false);
-    notify({
-      message: "Service added to the catalogue.",
-      description: `${service.name} · ${service.id} — held in this browser only.`,
-    });
+  // — Create service —
+  const addService = async (draft: ServiceDraft) => {
+    setIsSubmitting(true);
+    try {
+      const created = await createService({
+        name: draft.name.trim(),
+        category: draft.category,
+        status: draft.status,
+        summary: draft.summary.trim(),
+        description: draft.description.trim(),
+        coordinator: draft.coordinator.trim(),
+        contactPhone: draft.contactPhone.trim(),
+        location: draft.location.trim(),
+        availability: draft.availability.trim() || "By appointment",
+        fee: Number(draft.fee) || 0,
+        requiresBooking: draft.requiresBooking,
+        turnaround: draft.turnaround.trim() || "To be confirmed",
+      });
+      setServices((current) => [created, ...current]);
+      setAdding(false);
+      await loadStats();
+      notify({ message: "Service added to the catalogue.", description: `${created.name} is now live.` });
+    } catch (err: unknown) {
+      notify({
+        tone: "danger",
+        message: "Failed to add service.",
+        description: err instanceof Error ? err.message : "Please try again.",
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
+  // — Update service —
+  const saveEdit = async (draft: ServiceDraft) => {
+    if (!editing) return;
+    setIsSubmitting(true);
+    try {
+      const updated = await updateService(editing.id, {
+        name: draft.name.trim(),
+        category: draft.category,
+        status: draft.status,
+        summary: draft.summary.trim(),
+        description: draft.description.trim(),
+        coordinator: draft.coordinator.trim(),
+        contactPhone: draft.contactPhone.trim(),
+        location: draft.location.trim(),
+        availability: draft.availability.trim() || "By appointment",
+        fee: Number(draft.fee) || 0,
+        requiresBooking: draft.requiresBooking,
+        turnaround: draft.turnaround.trim() || "To be confirmed",
+      });
+      setServices((current) => current.map((s) => (s.id === updated.id ? updated : s)));
+      if (selected?.id === updated.id) setSelected(updated);
+      setEditing(null);
+      await loadStats();
+      notify({ message: "Service updated.", description: `${updated.name} has been saved.` });
+    } catch (err: unknown) {
+      notify({
+        tone: "danger",
+        message: "Failed to update service.",
+        description: err instanceof Error ? err.message : "Please try again.",
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  // — Deactivate / delete service —
+  const deactivateService = async (service: Service) => {
+    try {
+      const updated = await deleteService(service.id);
+      setServices((current) => current.filter((s) => s.id !== updated.id));
+      if (selected?.id === updated.id) setSelected(null);
+      await loadStats();
+      notify({ message: "Service removed.", description: `${service.name} has been deactivated.` });
+    } catch (err: unknown) {
+      notify({
+        tone: "danger",
+        message: "Failed to remove service.",
+        description: err instanceof Error ? err.message : "Please try again.",
+      });
+    }
+  };
+
+  // — Export —
   const exportCsv = () => {
     downloadCsv("noor-mosque-services.csv", filtered, [
       { header: "Service ID", value: (service) => service.id },
@@ -244,7 +351,7 @@ export function ServicesView({ openAddOnMount = false }: { openAddOnMount?: bool
         <span className="flex items-center justify-end gap-1">
           <IconButton icon="eye" label={`View ${service.name}`} onClick={() => setSelected(service)} />
           <Can permission="service.manage">
-            <IconButton icon="pencil" label={`Edit ${service.name}`} onClick={() => setSelected(service)} />
+            <IconButton icon="pencil" label={`Edit ${service.name}`} onClick={() => setEditing(service)} />
           </Can>
         </span>
       ),
@@ -286,53 +393,100 @@ export function ServicesView({ openAddOnMount = false }: { openAddOnMount?: bool
           onReset={resetFilters}
         />
 
-        <DataTable
-          rows={filtered}
-          columns={columns}
-          getRowKey={(service) => service.id}
-          caption="Mosque services with category, coordinator, suggested contribution and status"
-          initialSort={{ key: "service", direction: "asc" }}
-          pageSize={10}
-          mobileTitle={(service) => service.name}
-          mobileSubtitle={(service) => `${service.category} · ${service.coordinator}`}
-          mobileTrailing={(service) => <ServiceStatusBadge status={service.status} />}
-          mobileHiddenKeys={["service", "status"]}
-          emptyState={
-            <FinanceEmptyState
-              icon="hands-heart"
-              title="No services found."
-              description={
-                activeFilterCount > 0 || search
-                  ? "Nothing matches the current search and filters. Try clearing them."
-                  : "The catalogue is empty. Add the first service to open it to the community."
-              }
-              action={
-                activeFilterCount > 0 || search ? (
-                  <Button
-                    variant="secondary"
-                    icon="close"
-                    onClick={() => {
-                      resetFilters();
-                      setSearch("");
-                    }}
-                  >
-                    Clear search and filters
-                  </Button>
-                ) : (
-                  <Can permission="service.manage">
-                    <Button icon="plus" onClick={() => setAdding(true)}>
-                      Add Service
+        {loading ? (
+          <TableSkeleton rows={6} columns={5} />
+        ) : error ? (
+          <FinanceErrorState
+            title="Could not load services."
+            description={error}
+            onRetry={loadServices}
+          />
+        ) : (
+          <DataTable
+            rows={filtered}
+            columns={columns}
+            getRowKey={(service) => service.id}
+            caption="Mosque services with category, coordinator, suggested contribution and status"
+            initialSort={{ key: "service", direction: "asc" }}
+            pageSize={10}
+            mobileTitle={(service) => service.name}
+            mobileSubtitle={(service) => `${service.category} · ${service.coordinator}`}
+            mobileTrailing={(service) => <ServiceStatusBadge status={service.status} />}
+            mobileHiddenKeys={["service", "status"]}
+            emptyState={
+              <FinanceEmptyState
+                icon="hands-heart"
+                title="No services found."
+                description={
+                  activeFilterCount > 0 || search
+                    ? "Nothing matches the current search and filters. Try clearing them."
+                    : "The catalogue is empty. Add the first service to open it to the community."
+                }
+                action={
+                  activeFilterCount > 0 || search ? (
+                    <Button
+                      variant="secondary"
+                      icon="close"
+                      onClick={() => {
+                        resetFilters();
+                        setSearch("");
+                      }}
+                    >
+                      Clear search and filters
                     </Button>
-                  </Can>
-                )
-              }
-            />
-          }
-        />
+                  ) : (
+                    <Can permission="service.manage">
+                      <Button icon="plus" onClick={() => setAdding(true)}>
+                        Add Service
+                      </Button>
+                    </Can>
+                  )
+                }
+              />
+            }
+          />
+        )}
       </Panel>
 
-      {selected ? <ServiceDetailDrawer service={selected} onClose={() => setSelected(null)} /> : null}
-      <AddServiceModal open={adding} onClose={() => setAdding(false)} onSave={addService} />
+      {selected ? (
+        <ServiceDetailDrawer
+          service={selected}
+          onClose={() => setSelected(null)}
+          onEdit={() => { setEditing(selected); setSelected(null); }}
+          onDeactivate={() => { deactivateService(selected); setSelected(null); }}
+        />
+      ) : null}
+
+      <AddServiceModal
+        open={adding}
+        onClose={() => setAdding(false)}
+        onSave={addService}
+        isSubmitting={isSubmitting}
+      />
+
+      {editing ? (
+        <AddServiceModal
+          open
+          editMode
+          initialDraft={{
+            name: editing.name,
+            category: editing.category,
+            status: editing.status,
+            summary: editing.summary,
+            description: editing.description,
+            coordinator: editing.coordinator,
+            contactPhone: editing.contactPhone,
+            location: editing.location,
+            availability: editing.availability,
+            fee: String(editing.fee),
+            requiresBooking: editing.requiresBooking,
+            turnaround: editing.turnaround,
+          }}
+          onClose={() => setEditing(null)}
+          onSave={saveEdit}
+          isSubmitting={isSubmitting}
+        />
+      ) : null}
     </div>
   );
 }
@@ -347,16 +501,36 @@ const detailTabs: ReadonlyArray<TabItem<"overview" | "contact" | "bookings">> = 
   { id: "bookings", label: "Bookings" },
 ];
 
-function ServiceDetailDrawer({ service, onClose }: { service: Service; onClose: () => void }) {
+function ServiceDetailDrawer({
+  service,
+  onClose,
+  onEdit,
+  onDeactivate,
+}: {
+  service: Service;
+  onClose: () => void;
+  onEdit: () => void;
+  onDeactivate: () => void;
+}) {
   const [tab, setTab] = useState<(typeof detailTabs)[number]["id"]>("overview");
   const idBase = useTabIds();
-  const recent = bookingsForService(service.id);
+  const [recentBookings, setRecentBookings] = useState<BackendBooking[]>([]);
+  const [bookingsLoading, setBookingsLoading] = useState(false);
+
+  useEffect(() => {
+    if (tab !== "bookings") return;
+    setBookingsLoading(true);
+    fetchBookingsByService(service.id)
+      .then(setRecentBookings)
+      .catch(() => setRecentBookings([]))
+      .finally(() => setBookingsLoading(false));
+  }, [tab, service.id]);
 
   return (
     <DetailDrawer
       open
       onClose={onClose}
-      eyebrow={service.id}
+      eyebrow={service.id.slice(0, 8).toUpperCase()}
       title={service.name}
       subtitle={service.summary}
       badge={
@@ -369,7 +543,7 @@ function ServiceDetailDrawer({ service, onClose }: { service: Service; onClose: 
       footer={
         <>
           <Can permission="service.manage">
-            <Button size="sm" icon="pencil">
+            <Button size="sm" icon="pencil" onClick={onEdit}>
               Edit service
             </Button>
           </Can>
@@ -426,14 +600,18 @@ function ServiceDetailDrawer({ service, onClose }: { service: Service; onClose: 
       </TabPanel>
 
       <TabPanel base={idBase} id="bookings" active={tab === "bookings"}>
-        <DetailSection title={`Recent bookings (${recent.length})`}>
-          {recent.length === 0 ? (
+        <DetailSection title={`Recent bookings (${recentBookings.length})`}>
+          {bookingsLoading ? (
+            <p className="rounded-lg border border-dashed border-[#dcdacd] bg-[#faf9f4] px-3.5 py-6 text-center text-[13px] text-[#69726d]">
+              Loading bookings…
+            </p>
+          ) : recentBookings.length === 0 ? (
             <p className="rounded-lg border border-dashed border-[#dcdacd] bg-[#faf9f4] px-3.5 py-6 text-center text-[13px] text-[#69726d]">
               No bookings have been made against this service yet.
             </p>
           ) : (
             <ul className="divide-y divide-[#f0efe6]">
-              {recent.map((booking) => (
+              {recentBookings.map((booking) => (
                 <li key={booking.id} className="flex items-start justify-between gap-3 py-3 first:pt-0">
                   <div className="min-w-0">
                     <p className="truncate text-[13.5px] font-medium text-[#17211d]">{booking.requesterName}</p>
@@ -442,7 +620,7 @@ function ServiceDetailDrawer({ service, onClose }: { service: Service; onClose: 
                       {booking.scheduledTime ? ` · ${formatClockTime(booking.scheduledTime)}` : null}
                     </p>
                   </div>
-                  <BookingStatusBadge status={booking.status} />
+                  <BookingStatusBadge status={booking.status as any} />
                 </li>
               ))}
             </ul>
@@ -454,20 +632,31 @@ function ServiceDetailDrawer({ service, onClose }: { service: Service; onClose: 
 }
 
 /* -------------------------------------------------------------------------- *
- * Add service
+ * Add / Edit service modal
  * -------------------------------------------------------------------------- */
 
 function AddServiceModal({
   open,
   onClose,
   onSave,
+  isSubmitting = false,
+  editMode = false,
+  initialDraft,
 }: {
   open: boolean;
   onClose: () => void;
   onSave: (draft: ServiceDraft) => void;
+  isSubmitting?: boolean;
+  editMode?: boolean;
+  initialDraft?: ServiceDraft;
 }) {
-  const [draft, setDraft] = useState<ServiceDraft>(emptyDraft);
+  const [draft, setDraft] = useState<ServiceDraft>(initialDraft ?? emptyDraft);
   const [submitted, setSubmitted] = useState(false);
+
+  // Sync draft when editing a different service
+  useEffect(() => {
+    if (initialDraft) setDraft(initialDraft);
+  }, [initialDraft]);
 
   const set = <Key extends keyof ServiceDraft>(key: Key, value: ServiceDraft[Key]) =>
     setDraft((current) => ({ ...current, [key]: value }));
@@ -485,7 +674,7 @@ function AddServiceModal({
   const show = (key: keyof typeof errors) => (submitted ? errors[key] : undefined);
 
   const close = () => {
-    setDraft(emptyDraft);
+    setDraft(initialDraft ?? emptyDraft);
     setSubmitted(false);
     onClose();
   };
@@ -494,23 +683,29 @@ function AddServiceModal({
     setSubmitted(true);
     if (!valid) return;
     onSave(draft);
-    setDraft(emptyDraft);
-    setSubmitted(false);
+    if (!editMode) {
+      setDraft(emptyDraft);
+      setSubmitted(false);
+    }
   };
 
   return (
     <Modal
       open={open}
       onClose={close}
-      title="Add service"
-      description="Publishes a new offer to the service catalogue. It can be edited or paused afterwards."
+      title={editMode ? "Edit service" : "Add service"}
+      description={
+        editMode
+          ? "Update the service details. Changes take effect immediately."
+          : "Publishes a new offer to the service catalogue. It can be edited or paused afterwards."
+      }
       footer={
         <>
-          <Button variant="secondary" onClick={close}>
+          <Button variant="secondary" onClick={close} disabled={isSubmitting}>
             Cancel
           </Button>
-          <Button icon="check" onClick={submit}>
-            Add Service
+          <Button icon="check" onClick={submit} disabled={isSubmitting}>
+            {isSubmitting ? (editMode ? "Saving…" : "Adding…") : editMode ? "Save Changes" : "Add Service"}
           </Button>
         </>
       }
@@ -589,7 +784,7 @@ function AddServiceModal({
           label="Availability"
           value={draft.availability}
           onChange={(event) => set("availability", event.target.value)}
-          hint="Plain language — “By appointment”, “24 hours”, “After Jumu'ah”."
+          hint='Plain language — "By appointment", "24 hours", "After Jumu&apos;ah".'
         />
         <TextField
           label="Turnaround"
@@ -602,7 +797,7 @@ function AddServiceModal({
           value={draft.fee}
           onChange={(event) => set("fee", event.target.value)}
           error={show("fee")}
-          hint="Leave at 0 for a free service — it will read “Free”."
+          hint='Leave at 0 for a free service — it will read "Free".'
         />
         <div className="rounded-lg border border-[#e7e6dc] bg-[#faf9f4] px-3.5 py-1 sm:col-span-2">
           <Toggle
@@ -618,11 +813,7 @@ function AddServiceModal({
         <InlineNotice className="mt-4" tone="neutral" icon="alert">
           Some details still need attention — see the messages above.
         </InlineNotice>
-      ) : (
-        <InlineNotice className="mt-4" tone="gold">
-          Front-end preview — the service is added to this browser session only.
-        </InlineNotice>
-      )}
+      ) : null}
     </Modal>
   );
 }

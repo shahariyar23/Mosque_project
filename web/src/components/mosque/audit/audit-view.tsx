@@ -22,6 +22,7 @@ import { useApiList } from "@/hooks/use-api";
 import {
   fetchAuditLogs,
   auditActionLabels,
+  auditResourceLabels,
   AUDIT_ACTIONS,
   AUDIT_RESOURCES,
   type AuditLog,
@@ -66,7 +67,7 @@ export function AuditView() {
       label: "Area",
       value: area,
       onChange: (val) => { setArea(val); setPage(1); },
-      options: [{ value: "all", label: "All areas" }, ...AUDIT_RESOURCES.map((value) => ({ value, label: value }))],
+      options: [{ value: "all", label: "All areas" }, ...AUDIT_RESOURCES.map((value) => ({ value, label: auditResourceLabels[value] || value }))],
     },
     {
       id: "action",

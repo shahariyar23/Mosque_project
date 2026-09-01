@@ -316,28 +316,36 @@ export async function apiDelete(path: string, query?: QueryParams): Promise<void
  * pagination control without null-checking every number. `total` falls back to the row count — for a
  * single unpaged page that is the right answer, and it is never larger than the truth.
  */
+type EnvelopeBody<Row> = {
+  data?: { rows?: Row[]; meta?: { page?: number; limit?: number; total?: number; totalPages?: number } } | Row[];
+  rows?: Row[];
+  meta?: { page?: number; limit?: number; total?: number; totalPages?: number };
+  total?: number;
+};
+
 export async function apiList<Row>(path: string, query?: QueryParams): Promise<ListResult<Row>> {
-  const body = (await sendWithRecovery({ method: "GET", path, query })) as any;
+  const body = (await sendWithRecovery({ method: "GET", path, query })) as EnvelopeBody<Row> | undefined;
   const rows: Row[] = Array.isArray(body?.data)
-    ? body.data
+    ? (body.data as Row[])
     : Array.isArray(body?.data?.rows)
-      ? body.data.rows
+      ? (body.data.rows as Row[])
       : Array.isArray(body?.rows)
-        ? body.rows
+        ? (body.rows as Row[])
         : [];
 
   const requestedPage = Number(query?.page ?? 1);
   const requestedLimit = Number(query?.limit ?? rows.length);
-  const total = body?.meta?.total ?? body?.data?.meta?.total ?? rows.length;
-  const limit = body?.meta?.limit ?? body?.data?.meta?.limit ?? (Number.isFinite(requestedLimit) ? requestedLimit : rows.length);
+  const rawMeta = body?.meta ?? (!Array.isArray(body?.data) ? body?.data?.meta : undefined);
+  const total = rawMeta?.total ?? rows.length;
+  const limit = rawMeta?.limit ?? (Number.isFinite(requestedLimit) ? requestedLimit : rows.length);
 
   return {
     rows,
     meta: {
-      page: body?.meta?.page ?? body?.data?.meta?.page ?? (Number.isFinite(requestedPage) ? requestedPage : 1),
+      page: rawMeta?.page ?? (Number.isFinite(requestedPage) ? requestedPage : 1),
       limit,
       total,
-      totalPages: body?.meta?.totalPages ?? body?.data?.meta?.totalPages ?? Math.max(1, limit > 0 ? Math.ceil(total / limit) : 1),
+      totalPages: rawMeta?.totalPages ?? Math.max(1, limit > 0 ? Math.ceil(total / limit) : 1),
     },
   };
 }
@@ -364,6 +372,6 @@ export async function apiPatchRaw<T>(path: string, body?: unknown): Promise<T> {
   return (await sendWithRecovery({ method: "PATCH", path, body })) as T;
 }
 
-export async function apiDeleteRaw(path: string): Promise<void> {
-  await sendWithRecovery({ method: "DELETE", path });
+export async function apiDeleteRaw<T = void>(path: string): Promise<T> {
+  return (await sendWithRecovery({ method: "DELETE", path })) as T;
 }

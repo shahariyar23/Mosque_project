@@ -4,6 +4,7 @@ import Link from "next/link";
 import { FormEvent, useState } from "react";
 import { IslamicTexture } from "@/components/islamic-texture";
 import { useLanguage } from "@/components/language-provider";
+import { PublicTransparencySection } from "@/components/transparency/public-transparency-section";
 
 type Purpose =
   | "Mosque Operations"
@@ -434,6 +435,11 @@ export function DonationPage() {
           </div>
         </div>
       </section>
+
+      {/* Public Financial Transparency & Fund Progress */}
+      <div className="bg-[#fbfbf9] border-y border-[#deddd3]">
+        <PublicTransparencySection />
+      </div>
 
       <section className="mx-auto max-w-3xl px-5 py-16 lg:px-8">
         <div className="text-center">

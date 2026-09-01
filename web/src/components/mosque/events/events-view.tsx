@@ -1,14 +1,17 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Button, IconButton } from "@/components/finance/ui/button";
 import { DataTable, type Column } from "@/components/finance/ui/data-table";
+import { ConfirmDialog } from "@/components/finance/ui/dialogs";
 import { FinanceFilters, SegmentedControl, type SelectFilter } from "@/components/finance/ui/filters";
 import { SelectField, TextAreaField, TextField } from "@/components/finance/ui/form-field";
 import { Modal } from "@/components/finance/ui/modal";
 import { Panel, PanelBody, PanelHeader } from "@/components/finance/ui/panel";
 import { Can } from "@/components/finance/ui/permission-gate";
-import { FinanceEmptyState, InlineNotice } from "@/components/finance/ui/states";
+import { TableSkeleton } from "@/components/finance/ui/skeleton";
+import { EventGridSkeleton } from "@/components/ui/skeletons";
+import { FinanceEmptyState, FinanceErrorState, InlineNotice } from "@/components/finance/ui/states";
 import { Toggle } from "@/components/ui/toggle";
 import { CapacityMeter } from "@/components/ui/charts";
 import { DetailDrawer, DetailField, DetailGrid, DetailSection } from "@/components/ui/detail-drawer";
@@ -17,60 +20,29 @@ import { PersonCell } from "@/components/ui/avatar";
 import { StatGrid } from "@/components/ui/stat-card";
 import { EventCategoryChip, EventStatusBadge, RegistrationStatusBadge } from "@/components/ui/status-badge";
 import { useToast } from "@/components/ui/toast";
-import { eventTotals, events as seedEvents } from "@/data/events";
 import { registrationsForEvent } from "@/data/registrations";
-import { formatClockTime, formatCount, formatLongDate, formatRelativeDay, REFERENCE_DATE } from "@/lib/mosque/format";
+import {
+  formatClockTime,
+  formatCount,
+  formatLongDate,
+  formatRelativeDay,
+  getTodayInTimezone,
+} from "@/lib/mosque/format";
 import {
   eventCategories,
   eventStatuses,
+  type EventCategory,
   type EventDraft,
+  type EventStatus,
   type MosqueEvent,
   type StatMetric,
 } from "@/lib/mosque/types";
-
-/**
- * Programme planning.
- *
- * Grid and list are two presentations of the same filtered array, not two screens: the filters, the
- * search and the create dialog are shared, and switching view changes nothing but the renderer. The
- * list view reuses the standard `DataTable`, which is why it gets sorting, paging and mobile cards
- * without a line of extra code.
- */
-const metrics: StatMetric[] = [
-  {
-    id: "upcoming",
-    label: "Upcoming Events",
-    value: formatCount(eventTotals.upcoming),
-    hint: "Next event in 2 days",
-    icon: "calendar-days",
-    tone: "gold",
-  },
-  {
-    id: "month",
-    label: "This Month",
-    value: formatCount(eventTotals.thisMonth),
-    hint: "Scheduled across August",
-    icon: "calendar",
-    tone: "neutral",
-  },
-  {
-    id: "registrations",
-    label: "Registrations",
-    value: formatCount(eventTotals.registrations),
-    hint: "Across every open programme",
-    icon: "clipboard-check",
-    tone: "positive",
-    change: { label: "+14%", direction: "up", period: "vs July" },
-  },
-  {
-    id: "completed",
-    label: "Completed",
-    value: formatCount(eventTotals.completed),
-    hint: "Delivered so far this year",
-    icon: "check-circle",
-    tone: "neutral",
-  },
-];
+import {
+  createEvent,
+  deleteEvent,
+  fetchEvents,
+  updateEvent,
+} from "@/services/eventService";
 
 const emptyDraft: EventDraft = {
   title: "",
@@ -87,13 +59,96 @@ const emptyDraft: EventDraft = {
 
 export function EventsView({ openCreateOnMount = false }: { openCreateOnMount?: boolean }) {
   const { notify } = useToast();
-  const [events, setEvents] = useState<MosqueEvent[]>(seedEvents);
+  const [events, setEvents] = useState<MosqueEvent[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
   const [view, setView] = useState<"grid" | "list">("grid");
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState("all");
   const [status, setStatus] = useState("all");
+
   const [selected, setSelected] = useState<MosqueEvent | null>(null);
   const [creating, setCreating] = useState(openCreateOnMount);
+  const [editing, setEditing] = useState<MosqueEvent | null>(null);
+  const [deleting, setDeleting] = useState<MosqueEvent | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const todayStr = useMemo(() => getTodayInTimezone(), []);
+
+  const loadEvents = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const result = await fetchEvents({ all: true });
+      setEvents(result.rows);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "Failed to load events from the server.";
+      setError(message);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadEvents();
+  }, [loadEvents]);
+
+  // Dynamically computed metrics based on real database records
+  const metrics: StatMetric[] = useMemo(() => {
+    const currentMonthPrefix = todayStr.slice(0, 7); // "YYYY-MM"
+
+    const upcomingEvents = events.filter(
+      (e) => (e.status === "Upcoming" || e.status === "Ongoing") && e.date >= todayStr
+    );
+    const thisMonthEvents = events.filter((e) => e.date.startsWith(currentMonthPrefix));
+    const totalRegistrations = events.reduce((sum, e) => sum + (e.registered || 0), 0);
+    const completedEvents = events.filter(
+      (e) => e.status === "Completed" || (e.status !== "Cancelled" && e.date < todayStr)
+    );
+
+    // Compute hint for next upcoming event
+    const sortedUpcoming = [...upcomingEvents].sort((a, b) => a.date.localeCompare(b.date));
+    const nextEventHint =
+      sortedUpcoming.length > 0
+        ? `Next: ${formatLongDate(sortedUpcoming[0].date)}`
+        : "No upcoming events scheduled";
+
+    return [
+      {
+        id: "upcoming",
+        label: "Upcoming Events",
+        value: formatCount(upcomingEvents.length),
+        hint: nextEventHint,
+        icon: "calendar-days",
+        tone: "gold",
+      },
+      {
+        id: "month",
+        label: "This Month",
+        value: formatCount(thisMonthEvents.length),
+        hint: `Scheduled in ${new Date().toLocaleString("default", { month: "long" })}`,
+        icon: "calendar",
+        tone: "neutral",
+      },
+      {
+        id: "registrations",
+        label: "Registrations",
+        value: formatCount(totalRegistrations),
+        hint: "Across all mosque programmes",
+        icon: "clipboard-check",
+        tone: "positive",
+      },
+      {
+        id: "completed",
+        label: "Completed",
+        value: formatCount(completedEvents.length),
+        hint: "Delivered programmes",
+        icon: "check-circle",
+        tone: "neutral",
+      },
+    ];
+  }, [events, todayStr]);
 
   const filtered = useMemo(() => {
     const needle = search.trim().toLowerCase();
@@ -146,33 +201,96 @@ export function EventsView({ openCreateOnMount = false }: { openCreateOnMount?: 
     setStatus("all");
   };
 
-  const createEvent = (draft: EventDraft) => {
-    const event: MosqueEvent = {
-      id: `EVT-${200 + events.length}`,
-      slug: draft.title
-        .toLowerCase()
-        .replace(/[^a-z0-9]+/g, "-")
-        .replace(/^-|-$/g, ""),
-      title: draft.title.trim(),
-      category: draft.category,
-      status: "Upcoming",
-      date: draft.date,
-      startTime: draft.startTime,
-      endTime: draft.endTime || undefined,
-      location: draft.location.trim(),
-      speaker: draft.speaker.trim() || undefined,
-      description: draft.description.trim(),
-      capacity: Number(draft.capacity) || 0,
-      registered: 0,
-      registrationRequired: draft.registrationRequired,
-    };
+  const handleCreateEvent = async (draft: EventDraft) => {
+    setIsSubmitting(true);
+    try {
+      const created = await createEvent({
+        title: draft.title.trim(),
+        category: draft.category,
+        date: draft.date,
+        startTime: draft.startTime,
+        endTime: draft.endTime || null,
+        location: draft.location.trim(),
+        speaker: draft.speaker.trim() || null,
+        description: draft.description.trim(),
+        capacity: Number(draft.capacity) || 100,
+        registrationRequired: draft.registrationRequired,
+      });
 
-    setEvents((current) => [event, ...current]);
-    setCreating(false);
-    notify({
-      message: "Event created successfully.",
-      description: `${event.title} · ${formatLongDate(event.date)} — held in this browser only.`,
-    });
+      setCreating(false);
+      await loadEvents();
+      notify({
+        message: "Event created successfully.",
+        description: `${created.title} · ${formatLongDate(created.date)} has been published.`,
+      });
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "Failed to create event. Please try again.";
+      notify({
+        message: "Could not create event.",
+        description: message,
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleUpdateEvent = async (id: string, draft: EventDraft & { status: EventStatus }) => {
+    setIsSubmitting(true);
+    try {
+      const updated = await updateEvent(id, {
+        title: draft.title.trim(),
+        category: draft.category,
+        status: draft.status,
+        date: draft.date,
+        startTime: draft.startTime,
+        endTime: draft.endTime || null,
+        location: draft.location.trim(),
+        speaker: draft.speaker.trim() || null,
+        description: draft.description.trim(),
+        capacity: Number(draft.capacity) || 100,
+        registrationRequired: draft.registrationRequired,
+      });
+
+      setEditing(null);
+      if (selected && selected.id === id) {
+        setSelected(updated);
+      }
+      await loadEvents();
+      notify({
+        message: "Event updated successfully.",
+        description: `${updated.title} has been updated.`,
+      });
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "Failed to update event. Please try again.";
+      notify({
+        message: "Could not update event.",
+        description: message,
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleDeleteEvent = async () => {
+    if (!deleting) return;
+    try {
+      await deleteEvent(deleting.id);
+      notify({
+        message: "Event deleted.",
+        description: `${deleting.title} has been removed from the calendar.`,
+      });
+      if (selected && selected.id === deleting.id) {
+        setSelected(null);
+      }
+      setDeleting(null);
+      await loadEvents();
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "Failed to delete event. Please try again.";
+      notify({
+        message: "Could not delete event.",
+        description: message,
+      });
+    }
   };
 
   const columns: Column<MosqueEvent>[] = [
@@ -245,7 +363,10 @@ export function EventsView({ openCreateOnMount = false }: { openCreateOnMount?: 
         <span className="flex items-center justify-end gap-1">
           <IconButton icon="eye" label={`View ${event.title}`} onClick={() => setSelected(event)} />
           <Can permission="event.update">
-            <IconButton icon="pencil" label={`Edit ${event.title}`} onClick={() => setSelected(event)} />
+            <IconButton icon="pencil" label={`Edit ${event.title}`} onClick={() => setEditing(event)} />
+          </Can>
+          <Can permission="event.delete">
+            <IconButton icon="trash" label={`Delete ${event.title}`} onClick={() => setDeleting(event)} />
           </Can>
         </span>
       ),
@@ -255,7 +376,7 @@ export function EventsView({ openCreateOnMount = false }: { openCreateOnMount?: 
   const emptyState = (
     <FinanceEmptyState
       icon="calendar-days"
-      title="No upcoming events."
+      title="No events found."
       description={
         activeFilterCount > 0 || search
           ? "Nothing matches the current search and filters. Try clearing them."
@@ -326,7 +447,17 @@ export function EventsView({ openCreateOnMount = false }: { openCreateOnMount?: 
           }
         />
 
-        {ordered.length === 0 ? (
+        {loading && events.length === 0 ? (
+          <div className="p-6">
+            {view === "grid" ? <EventGridSkeleton count={6} /> : <TableSkeleton rows={5} />}
+          </div>
+        ) : error && events.length === 0 ? (
+          <FinanceErrorState
+            title="Unable to load events."
+            description={error}
+            onRetry={loadEvents}
+          />
+        ) : ordered.length === 0 ? (
           emptyState
         ) : view === "grid" ? (
           <PanelBody>
@@ -335,7 +466,11 @@ export function EventsView({ openCreateOnMount = false }: { openCreateOnMount?: 
             </p>
             <ul className="grid gap-3 md:grid-cols-2 2xl:grid-cols-3">
               {ordered.map((event) => (
-                <EventCard key={event.id} event={event} onOpen={() => setSelected(event)} />
+                <EventCard
+                  key={event.id}
+                  event={event}
+                  onOpen={() => setSelected(event)}
+                />
               ))}
             </ul>
           </PanelBody>
@@ -355,8 +490,47 @@ export function EventsView({ openCreateOnMount = false }: { openCreateOnMount?: 
         )}
       </Panel>
 
-      {selected ? <EventDetailDrawer event={selected} onClose={() => setSelected(null)} /> : null}
-      <CreateEventModal open={creating} onClose={() => setCreating(false)} onSave={createEvent} />
+      {selected ? (
+        <EventDetailDrawer
+          event={selected}
+          onClose={() => setSelected(null)}
+          onEdit={() => {
+            setEditing(selected);
+          }}
+          onDelete={() => {
+            setDeleting(selected);
+          }}
+        />
+      ) : null}
+
+      <CreateEventModal
+        open={creating}
+        onClose={() => setCreating(false)}
+        onSave={handleCreateEvent}
+        isSubmitting={isSubmitting}
+      />
+
+      {editing ? (
+        <EditEventModal
+          open={!!editing}
+          event={editing}
+          onClose={() => setEditing(null)}
+          onSave={(draft) => handleUpdateEvent(editing.id, draft)}
+          isSubmitting={isSubmitting}
+        />
+      ) : null}
+
+      {deleting ? (
+        <ConfirmDialog
+          open={!!deleting}
+          onClose={() => setDeleting(null)}
+          onConfirm={handleDeleteEvent}
+          title="Delete event?"
+          description={`Are you sure you want to cancel and delete "${deleting.title}"? This event will be cancelled on the mosque calendar.`}
+          confirmLabel="Delete Event"
+          tone="danger"
+        />
+      ) : null}
     </div>
   );
 }
@@ -365,7 +539,17 @@ export function EventsView({ openCreateOnMount = false }: { openCreateOnMount?: 
  * Detail drawer
  * -------------------------------------------------------------------------- */
 
-function EventDetailDrawer({ event, onClose }: { event: MosqueEvent; onClose: () => void }) {
+function EventDetailDrawer({
+  event,
+  onClose,
+  onEdit,
+  onDelete,
+}: {
+  event: MosqueEvent;
+  onClose: () => void;
+  onEdit: () => void;
+  onDelete: () => void;
+}) {
   const registrations = registrationsForEvent(event.id);
   const confirmed = registrations.filter((registration) => registration.status === "Confirmed");
   const guests = registrations.reduce((total, registration) => total + registration.guests, 0);
@@ -381,8 +565,13 @@ function EventDetailDrawer({ event, onClose }: { event: MosqueEvent; onClose: ()
       footer={
         <>
           <Can permission="event.update">
-            <Button size="sm" icon="pencil">
+            <Button size="sm" icon="pencil" onClick={onEdit}>
               Edit event
+            </Button>
+          </Can>
+          <Can permission="event.delete">
+            <Button size="sm" variant="danger" icon="trash" onClick={onDelete}>
+              Delete
             </Button>
           </Can>
           <Button size="sm" variant="secondary" onClick={onClose} className="ml-auto">
@@ -429,8 +618,7 @@ function EventDetailDrawer({ event, onClose }: { event: MosqueEvent; onClose: ()
               remainingLabel="Places left"
             />
             <p className="mt-3 text-[12.5px] text-[#69726d]">
-              {formatCount(confirmed.length)} confirmed in the sample below, plus {formatCount(guests)} accompanying
-              guests.
+              {formatCount(event.registered)} registered of {formatCount(event.capacity)} total capacity.
             </p>
           </DetailSection>
         ) : (
@@ -470,17 +658,19 @@ function EventDetailDrawer({ event, onClose }: { event: MosqueEvent; onClose: ()
 }
 
 /* -------------------------------------------------------------------------- *
- * Create event
+ * Create event modal
  * -------------------------------------------------------------------------- */
 
 function CreateEventModal({
   open,
   onClose,
   onSave,
+  isSubmitting = false,
 }: {
   open: boolean;
   onClose: () => void;
   onSave: (draft: EventDraft) => void;
+  isSubmitting?: boolean;
 }) {
   const [draft, setDraft] = useState<EventDraft>(emptyDraft);
   const [submitted, setSubmitted] = useState(false);
@@ -490,7 +680,7 @@ function CreateEventModal({
 
   const errors = {
     title: draft.title.trim().length === 0 ? "An event needs a name." : undefined,
-    date: draft.date.length === 0 ? "Pick a date." : draft.date < REFERENCE_DATE ? "That date has passed." : undefined,
+    date: draft.date.length === 0 ? "Pick a date." : undefined,
     startTime: draft.startTime.length === 0 ? "Pick a start time." : undefined,
     endTime:
       draft.endTime.length > 0 && draft.endTime <= draft.startTime
@@ -513,7 +703,7 @@ function CreateEventModal({
 
   const submit = () => {
     setSubmitted(true);
-    if (!valid) return;
+    if (!valid || isSubmitting) return;
     onSave(draft);
     setDraft(emptyDraft);
     setSubmitted(false);
@@ -527,11 +717,11 @@ function CreateEventModal({
       description="Adds a programme to the mosque calendar. It is created as Upcoming and can be edited afterwards."
       footer={
         <>
-          <Button variant="secondary" onClick={close}>
+          <Button variant="secondary" onClick={close} disabled={isSubmitting}>
             Cancel
           </Button>
-          <Button icon="check" onClick={submit}>
-            Create Event
+          <Button icon="check" onClick={submit} disabled={isSubmitting}>
+            {isSubmitting ? "Creating…" : "Create Event"}
           </Button>
         </>
       }
@@ -556,7 +746,6 @@ function CreateEventModal({
           label="Date"
           type="date"
           required
-          min={REFERENCE_DATE}
           value={draft.date}
           onChange={(event) => set("date", event.target.value)}
           error={show("date")}
@@ -611,7 +800,7 @@ function CreateEventModal({
         <TextField
           label={draft.registrationRequired ? "Capacity" : "Hall capacity"}
           type="number"
-          min={0}
+          min={1}
           required={draft.registrationRequired}
           value={draft.capacity}
           onChange={(event) => set("capacity", event.target.value)}
@@ -629,11 +818,179 @@ function CreateEventModal({
         <InlineNotice className="mt-4" tone="neutral" icon="alert">
           Some details still need attention — see the messages above.
         </InlineNotice>
-      ) : (
-        <InlineNotice className="mt-4" tone="gold">
-          Front-end preview — the event is added to this browser session only.
+      ) : null}
+    </Modal>
+  );
+}
+
+/* -------------------------------------------------------------------------- *
+ * Edit event modal
+ * -------------------------------------------------------------------------- */
+
+function EditEventModal({
+  open,
+  event,
+  onClose,
+  onSave,
+  isSubmitting = false,
+}: {
+  open: boolean;
+  event: MosqueEvent;
+  onClose: () => void;
+  onSave: (draft: EventDraft & { status: EventStatus }) => void;
+  isSubmitting?: boolean;
+}) {
+  const [draft, setDraft] = useState<EventDraft & { status: EventStatus }>({
+    title: event.title,
+    category: event.category,
+    status: event.status,
+    date: event.date,
+    startTime: event.startTime,
+    endTime: event.endTime || "",
+    location: event.location,
+    speaker: event.speaker || "",
+    description: event.description,
+    capacity: String(event.capacity),
+    registrationRequired: event.registrationRequired,
+  });
+  const [submitted, setSubmitted] = useState(false);
+
+  const set = <Key extends keyof (EventDraft & { status: EventStatus })>(
+    key: Key,
+    value: (EventDraft & { status: EventStatus })[Key]
+  ) => setDraft((current) => ({ ...current, [key]: value }));
+
+  const errors = {
+    title: draft.title.trim().length === 0 ? "An event needs a name." : undefined,
+    date: draft.date.length === 0 ? "Pick a date." : undefined,
+    startTime: draft.startTime.length === 0 ? "Pick a start time." : undefined,
+    endTime:
+      draft.endTime.length > 0 && draft.endTime <= draft.startTime
+        ? "The end time has to be after the start."
+        : undefined,
+    location: draft.location.trim().length === 0 ? "Say where it is being held." : undefined,
+    capacity:
+      draft.registrationRequired && (Number(draft.capacity) || 0) <= 0
+        ? "Set how many places are available."
+        : undefined,
+  };
+  const valid = Object.values(errors).every((error) => error === undefined);
+  const show = (key: keyof typeof errors) => (submitted ? errors[key] : undefined);
+
+  const submit = () => {
+    setSubmitted(true);
+    if (!valid || isSubmitting) return;
+    onSave(draft);
+  };
+
+  return (
+    <Modal
+      open={open}
+      onClose={onClose}
+      title="Edit Event"
+      description={`Update details, logistics and status for "${event.title}".`}
+      footer={
+        <>
+          <Button variant="secondary" onClick={onClose} disabled={isSubmitting}>
+            Cancel
+          </Button>
+          <Button icon="check" onClick={submit} disabled={isSubmitting}>
+            {isSubmitting ? "Saving…" : "Save Changes"}
+          </Button>
+        </>
+      }
+    >
+      <div className="grid gap-4 sm:grid-cols-2">
+        <TextField
+          label="Event name"
+          required
+          value={draft.title}
+          onChange={(e) => set("title", e.target.value)}
+          error={show("title")}
+          containerClassName="sm:col-span-2"
+        />
+        <SelectField
+          label="Category"
+          required
+          value={draft.category}
+          options={[...eventCategories]}
+          onChange={(e) => set("category", e.target.value as EventCategory)}
+        />
+        <SelectField
+          label="Status"
+          required
+          value={draft.status}
+          options={[...eventStatuses]}
+          onChange={(e) => set("status", e.target.value as EventStatus)}
+        />
+        <TextField
+          label="Date"
+          type="date"
+          required
+          value={draft.date}
+          onChange={(e) => set("date", e.target.value)}
+          error={show("date")}
+        />
+        <TextField
+          label="Start time"
+          type="time"
+          required
+          value={draft.startTime}
+          onChange={(e) => set("startTime", e.target.value)}
+          error={show("startTime")}
+        />
+        <TextField
+          label="End time"
+          type="time"
+          value={draft.endTime}
+          onChange={(e) => set("endTime", e.target.value)}
+          error={show("endTime")}
+        />
+        <TextField
+          label="Location"
+          required
+          value={draft.location}
+          onChange={(e) => set("location", e.target.value)}
+          error={show("location")}
+        />
+        <TextField
+          label="Speaker"
+          value={draft.speaker}
+          onChange={(e) => set("speaker", e.target.value)}
+        />
+        <TextAreaField
+          label="Description"
+          rows={4}
+          value={draft.description}
+          onChange={(e) => set("description", e.target.value)}
+          containerClassName="sm:col-span-2"
+        />
+
+        <div className="rounded-lg border border-[#e7e6dc] bg-[#faf9f4] px-3.5 py-1 sm:col-span-2">
+          <Toggle
+            label="Registration required"
+            checked={draft.registrationRequired}
+            onChange={(next) => set("registrationRequired", next)}
+          />
+        </div>
+
+        <TextField
+          label={draft.registrationRequired ? "Capacity" : "Hall capacity"}
+          type="number"
+          min={1}
+          required={draft.registrationRequired}
+          value={draft.capacity}
+          onChange={(e) => set("capacity", e.target.value)}
+          error={show("capacity")}
+          containerClassName="sm:col-span-2"
+        />
+      </div>
+
+      {submitted && !valid ? (
+        <InlineNotice className="mt-4" tone="neutral" icon="alert">
+          Some details still need attention — see the messages above.
         </InlineNotice>
-      )}
+      ) : null}
     </Modal>
   );
 }

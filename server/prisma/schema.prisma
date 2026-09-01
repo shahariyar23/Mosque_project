@@ -105,12 +105,21 @@ model Mosque {
   salaryRecords    SalaryRecord[]
   receipts         Receipt[]
   transactions     Transaction[]
+  jummahCollections JummahCollection[]
   contributionPlans ContributionPlan[]
   contributionEnrollments ContributionEnrollment[]
   contributionPeriods ContributionPeriod[]
   users            User[]
+  events           Event[]
+  eventRegistrations EventRegistration[]
+  iftarSponsorships IftarSponsorship[]
+  services         Service[]
+  bookings         Booking[]
   auditLogs        AuditLog[]
   approvalRequests ApprovalRequest[]
+  notifications    Notification[]
+  announcements    Announcement[]
+  broadcasts       BroadcastMessage[]
 
   @@index([isActive])
   @@map("mosques")
@@ -253,6 +262,15 @@ model User {
   approvalsRequested ApprovalRequest[] @relation("ApprovalRequester")
   approvalsReviewed  ApprovalRequest[] @relation("ApprovalReviewer")
   transactions       Transaction[]     @relation("UserCreatedTransactions")
+  jummahCollections  JummahCollection[]
+  eventRegistrations EventRegistration[]
+  iftarSponsorships  IftarSponsorship[]
+  coordinatedServices Service[]
+  bookings           Booking[]
+  assignedBookings   Booking[]         @relation("AssignedBookings")
+  notifications      Notification[]
+  createdAnnouncements Announcement[]
+  broadcastsCreated  BroadcastMessage[] @relation("UserBroadcastsCreated")
 
   // Unique per mosque, not globally: two mosques may each have a member at the same address.
   @@unique([mosqueId, email])
@@ -398,6 +416,21 @@ model PrayerSettings {
   ishaOffset     Int @default(0)
   midnightOffset Int @default(0)
 
+  /// Explicit manual fixed times (e.g. "04:30"). When set, takes priority over astronomical calculation.
+  fajrTime       String? @db.VarChar(5)
+  sunriseTime    String? @db.VarChar(5)
+  dhuhrTime      String? @db.VarChar(5)
+  asrTime        String? @db.VarChar(5)
+  maghribTime    String? @db.VarChar(5)
+  ishaTime       String? @db.VarChar(5)
+
+  /// Explicit manual fixed iqamah times (e.g. "04:45").
+  fajrIqamah     String? @db.VarChar(5)
+  dhuhrIqamah    String? @db.VarChar(5)
+  asrIqamah      String? @db.VarChar(5)
+  maghribIqamah  String? @db.VarChar(5)
+  ishaIqamah     String? @db.VarChar(5)
+
   createdAt DateTime @default(now()) @db.Timestamptz
   updatedAt DateTime @updatedAt @db.Timestamptz
 
@@ -438,6 +471,8 @@ model JumuahSchedule {
   createdAt DateTime @default(now()) @db.Timestamptz
   updatedAt DateTime @updatedAt @db.Timestamptz
 
+  collections JummahCollection[]
+
   // Serves the list, which is scoped to one mosque and read by date. `isActive` is left to a filter
   // rather than given an index of its own: a mosque accumulates a few hundred rows here at most, and
   // a second index on the same table costs every write to save nothing measurable on the read.
@@ -475,6 +510,8 @@ model RamadanSchedule {
   taraweehTime String? @db.VarChar(5)
 
   notes String? @db.Text
+
+  iftarSponsorships IftarSponsorship[]
 
   createdAt DateTime @default(now()) @db.Timestamptz
   updatedAt DateTime @updatedAt @db.Timestamptz
@@ -553,6 +590,7 @@ model DonationFund {
   receipts          Receipt[]
   transactions      Transaction[] @relation("FundTransactions")
   transfersIncoming Transaction[] @relation("TransferToFund")
+  jummahCollections JummahCollection[]
   contributionPlans ContributionPlan[]
 
   // One slug per mosque, not one globally: the slug appears in a public URL, and two mosques are
@@ -1226,6 +1264,10 @@ model Transaction {
   receiptId   String?           @db.Uuid
   receipt     Receipt?          @relation(fields: [receiptId], references: [id], onDelete: Restrict)
 
+  /// Optional link to an underlying Jummah collection event.
+  jummahCollectionId String?           @db.Uuid
+  jummahCollection   JummahCollection? @relation(fields: [jummahCollectionId], references: [id], onDelete: Restrict)
+
   /// When the financial transaction occurred.
   transactedAt DateTime         @default(now()) @db.Timestamptz
 
@@ -1247,8 +1289,66 @@ model Transaction {
   @@index([mosqueId, donationId])
   @@index([mosqueId, expenseId])
   @@index([mosqueId, receiptId])
+  @@index([mosqueId, jummahCollectionId])
   @@index([mosqueId, createdById])
   @@map("transactions")
+}
+
+// ---------------------------------------------------------------------------
+// Jummah Collections
+// ---------------------------------------------------------------------------
+
+enum JummahCollectionStatus {
+  completed
+  voided
+}
+
+/// A congregational Friday collection recorded for a specific Friday and credited to a designated fund.
+/// Each collection is an independent historical record, never overwritten.
+model JummahCollection {
+  id          String                 @id @default(uuid()) @db.Uuid
+  mosqueId    String                 @db.Uuid
+  mosque      Mosque                 @relation(fields: [mosqueId], references: [id], onDelete: Cascade)
+
+  /// The Friday this collection was gathered on.
+  date        DateTime               @db.Date
+
+  /// Optional link to a specific Friday schedule / jamaat session.
+  scheduleId  String?                @db.Uuid
+  schedule    JumuahSchedule?        @relation(fields: [scheduleId], references: [id], onDelete: SetNull)
+
+  /// The designated fund receiving this collection.
+  fundId      String                 @db.Uuid
+  fund        DonationFund           @relation(fields: [fundId], references: [id], onDelete: Restrict)
+
+  amount      Decimal                @db.Decimal(14, 2)
+  currency    String                 @db.VarChar(8)
+
+  status      JummahCollectionStatus @default(completed)
+
+  /// Optional reference (e.g. box #, receipt #, count sheet ID).
+  reference   String?                @db.VarChar(120)
+
+  /// Counted / recorded remarks.
+  notes       String?                @db.Text
+
+  /// Whether this collection appears in the public Jummah collection history.
+  isPublic    Boolean                @default(true)
+
+  createdById String                 @db.Uuid
+  createdBy   User                   @relation(fields: [createdById], references: [id], onDelete: Restrict)
+
+  createdAt   DateTime               @default(now()) @db.Timestamptz
+  updatedAt   DateTime               @updatedAt @db.Timestamptz
+
+  transactions Transaction[]
+
+  @@index([mosqueId, date])
+  @@index([mosqueId, fundId])
+  @@index([mosqueId, status])
+  @@index([mosqueId, scheduleId])
+  @@index([mosqueId, createdAt])
+  @@map("jummah_collections")
 }
 
 // ---------------------------------------------------------------------------
@@ -1372,3 +1472,409 @@ model ApprovalRequest {
   @@index([requestedById])
   @@map("approval_requests")
 }
+
+// ---------------------------------------------------------------------------
+// Events & Registrations
+// ---------------------------------------------------------------------------
+
+enum EventCategory {
+  quran
+  education
+  youth
+  community
+  ramadan
+  charity
+  seminar
+}
+
+enum EventStatus {
+  upcoming
+  ongoing
+  completed
+  cancelled
+}
+
+enum RegistrationStatus {
+  confirmed
+  pending
+  waitlisted
+  cancelled
+}
+
+model Event {
+  id       String @id @default(uuid()) @db.Uuid
+  mosqueId String @db.Uuid
+  mosque   Mosque @relation(fields: [mosqueId], references: [id], onDelete: Cascade)
+
+  title       String        @db.VarChar(200)
+  slug        String        @db.VarChar(120)
+  category    EventCategory
+  status      EventStatus   @default(upcoming)
+  date        DateTime      @db.Date
+  startTime   String        @db.VarChar(8)
+  endTime     String?       @db.VarChar(8)
+  timeLabel   String?       @db.VarChar(64)
+  location    String        @db.VarChar(200)
+  speaker     String?       @db.VarChar(160)
+  description String        @db.Text
+  capacity    Int           @default(100)
+  registrationRequired Boolean @default(true)
+  contribution Decimal?     @db.Decimal(10, 2)
+  imageUrl    String?       @db.VarChar(500)
+  isPublished Boolean       @default(true)
+
+  createdAt DateTime  @default(now()) @db.Timestamptz
+  updatedAt DateTime  @updatedAt @db.Timestamptz
+  deletedAt DateTime? @db.Timestamptz
+
+  registrations EventRegistration[]
+
+  @@unique([mosqueId, slug])
+  @@index([mosqueId, date])
+  @@index([mosqueId, status])
+  @@index([mosqueId, category])
+  @@map("events")
+}
+
+model EventRegistration {
+  id       String @id @default(uuid()) @db.Uuid
+  mosqueId String @db.Uuid
+  mosque   Mosque @relation(fields: [mosqueId], references: [id], onDelete: Cascade)
+
+  eventId String @db.Uuid
+  event   Event  @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  userId String? @db.Uuid
+  user   User?   @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  participantName     String  @db.VarChar(160)
+  participantEmail    String? @db.VarChar(160)
+  participantPhone    String? @db.VarChar(32)
+  guests              Int     @default(0)
+  status              RegistrationStatus @default(confirmed)
+  specialRequirements String? @db.Text
+
+  registeredAt DateTime @default(now()) @db.Timestamptz
+  createdAt    DateTime @default(now()) @db.Timestamptz
+  updatedAt    DateTime @updatedAt @db.Timestamptz
+  deletedAt    DateTime? @db.Timestamptz
+
+  @@index([mosqueId, eventId])
+  @@index([mosqueId, status])
+  @@index([eventId, status])
+  @@index([mosqueId, registeredAt])
+  @@map("event_registrations")
+}
+
+// ---------------------------------------------------------------------------
+// Ramadan Iftar Sponsorships
+// ---------------------------------------------------------------------------
+
+enum IftarSponsorshipStatus {
+  pending
+  confirmed
+  completed
+  cancelled
+}
+
+model IftarSponsorship {
+  id       String @id @default(uuid()) @db.Uuid
+  mosqueId String @db.Uuid
+  mosque   Mosque @relation(fields: [mosqueId], references: [id], onDelete: Cascade)
+
+  ramadanScheduleId String?          @db.Uuid
+  ramadanSchedule   RamadanSchedule? @relation(fields: [ramadanScheduleId], references: [id], onDelete: SetNull)
+
+  year             Int
+  date             DateTime               @db.Date
+  userId           String?                @db.Uuid
+  user             User?                  @relation(fields: [userId], references: [id], onDelete: SetNull)
+  sponsorName      String                 @db.VarChar(160)
+  sponsorPhone     String?                @db.VarChar(32)
+  sponsorEmail     String?                @db.VarChar(160)
+  numberOfServings Int?
+  estimatedCost    Decimal?               @db.Decimal(10, 2)
+  currency         String                 @default("BDT") @db.VarChar(8)
+  menuDetails      String?                @db.Text
+  notes            String?                @db.Text
+  status           IftarSponsorshipStatus @default(confirmed)
+
+  createdAt DateTime @default(now()) @db.Timestamptz
+  updatedAt DateTime @updatedAt @db.Timestamptz
+
+  @@index([mosqueId, year])
+  @@index([mosqueId, date])
+  @@index([mosqueId, status])
+  @@map("iftar_sponsorships")
+}
+
+// ---------------------------------------------------------------------------
+// Services & Bookings
+// ---------------------------------------------------------------------------
+
+enum ServiceCategory {
+  funeral
+  marriage
+  counselling
+  welfare
+  education
+  facility
+  certificate
+}
+
+enum ServiceStatus {
+  active
+  paused
+  draft
+}
+
+enum BookingStatus {
+  pending
+  confirmed
+  completed
+  cancelled
+  declined
+}
+
+model Service {
+  id              String          @id @default(uuid()) @db.Uuid
+  mosqueId        String          @db.Uuid
+  mosque          Mosque          @relation(fields: [mosqueId], references: [id], onDelete: Cascade)
+
+  name            String          @db.VarChar(160)
+  slug            String          @db.VarChar(120)
+  category        ServiceCategory
+  status          ServiceStatus   @default(active)
+
+  summary         String          @db.VarChar(300)
+  description     String          @db.Text
+  coordinator     String          @db.VarChar(160)
+  coordinatorId   String?         @db.Uuid
+  coordinatorUser User?           @relation(fields: [coordinatorId], references: [id], onDelete: SetNull)
+  contactPhone    String          @db.VarChar(32)
+  location        String          @db.VarChar(200)
+  availability    String          @db.VarChar(120)
+  fee             Decimal         @default(0) @db.Decimal(10, 2)
+  requiresBooking Boolean         @default(true)
+  turnaround      String          @db.VarChar(120)
+
+  createdAt       DateTime        @default(now()) @db.Timestamptz
+  updatedAt       DateTime        @updatedAt @db.Timestamptz
+  deletedAt       DateTime?       @db.Timestamptz
+
+  bookings        Booking[]
+
+  @@unique([mosqueId, slug])
+  @@index([mosqueId, status])
+  @@index([mosqueId, category])
+  @@map("services")
+}
+
+model Booking {
+  id             String          @id @default(uuid()) @db.Uuid
+  mosqueId       String          @db.Uuid
+  mosque         Mosque          @relation(fields: [mosqueId], references: [id], onDelete: Cascade)
+
+  serviceId      String          @db.Uuid
+  service        Service         @relation(fields: [serviceId], references: [id], onDelete: Restrict)
+
+  userId         String?         @db.Uuid
+  user           User?           @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  requesterName  String          @db.VarChar(160)
+  requesterPhone String          @db.VarChar(32)
+  requesterEmail String?         @db.VarChar(160)
+  memberId       String?         @db.VarChar(64)
+
+  status         BookingStatus   @default(pending)
+  scheduledDate  DateTime        @db.Date
+  scheduledTime  String?         @db.VarChar(8)
+  location       String          @db.VarChar(200)
+  partySize      Int             @default(0)
+  fee            Decimal         @default(0) @db.Decimal(10, 2)
+  assignedTo     String?         @db.VarChar(160)
+  assignedToId   String?         @db.Uuid
+  assignedUser   User?           @relation("AssignedBookings", fields: [assignedToId], references: [id], onDelete: SetNull)
+  notes          String?         @db.Text
+
+  submittedAt    DateTime        @default(now()) @db.Timestamptz
+  createdAt      DateTime        @default(now()) @db.Timestamptz
+  updatedAt      DateTime        @updatedAt @db.Timestamptz
+  deletedAt      DateTime?       @db.Timestamptz
+
+  @@index([mosqueId, serviceId])
+  @@index([mosqueId, status])
+  @@index([mosqueId, scheduledDate])
+  @@index([serviceId, status])
+  @@map("bookings")
+}
+
+// ---------------------------------------------------------------------------
+// In-App Notification System
+// ---------------------------------------------------------------------------
+
+enum NotificationType {
+  payment_success
+  receipt_ready
+  jummah_collection
+  expense_created
+  salary_paid
+  fund_transfer
+  approval_requested
+  approval_approved
+  approval_rejected
+  announcement
+  general
+}
+
+model Notification {
+  id           String           @id @default(uuid()) @db.Uuid
+  mosqueId     String           @db.Uuid
+  mosque       Mosque           @relation(fields: [mosqueId], references: [id], onDelete: Cascade)
+  userId       String           @db.Uuid
+  user         User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  title        String           @db.VarChar(200)
+  message      String           @db.Text
+  type         NotificationType @default(general)
+  category     String           @default("system") @db.VarChar(64)
+
+  announcementId String?        @db.Uuid
+  announcement   Announcement?  @relation(fields: [announcementId], references: [id], onDelete: SetNull)
+
+  resourceType String?          @db.VarChar(64)
+  resourceId   String?          @db.VarChar(64)
+  actionUrl    String?          @db.VarChar(255)
+
+  isRead       Boolean          @default(false)
+  readAt       DateTime?        @db.Timestamptz
+
+  metadata     Json?            @db.JsonB
+
+  createdAt    DateTime         @default(now()) @db.Timestamptz
+  updatedAt    DateTime         @updatedAt @db.Timestamptz
+
+  @@index([mosqueId, userId, isRead, createdAt])
+  @@index([userId, isRead])
+  @@index([mosqueId, createdAt])
+  @@index([announcementId])
+  @@map("notifications")
+}
+
+// ---------------------------------------------------------------------------
+// Announcements Module
+// ---------------------------------------------------------------------------
+
+enum AnnouncementCategory {
+  general
+  prayer
+  event
+  ramadan
+  fundraising
+  closure
+  urgent
+}
+
+enum AnnouncementAudience {
+  everyone
+  members
+  volunteers
+  youth
+  sisters
+}
+
+enum AnnouncementStatus {
+  draft
+  scheduled
+  published
+  archived
+}
+
+model Announcement {
+  id           String                @id @default(uuid()) @db.Uuid
+  mosqueId     String                @db.Uuid
+  mosque       Mosque                @relation(fields: [mosqueId], references: [id], onDelete: Cascade)
+
+  title        String                @db.VarChar(255)
+  content      String                @db.Text
+  summary      String?               @db.VarChar(500)
+
+  category     AnnouncementCategory  @default(general)
+  audience     AnnouncementAudience  @default(everyone)
+  status       AnnouncementStatus    @default(draft)
+  channels     String[]              @default(["Website", "App"])
+
+  isPinned     Boolean               @default(false)
+
+  publishedAt  DateTime?             @db.Timestamptz
+  scheduledAt  DateTime?             @db.Timestamptz
+  expiresAt    DateTime?             @db.Timestamptz
+  archivedAt   DateTime?             @db.Timestamptz
+
+  createdById  String?               @db.Uuid
+  createdBy    User?                 @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  authorName   String?               @db.VarChar(128)
+
+  notifications Notification[]
+
+  createdAt    DateTime              @default(now()) @db.Timestamptz
+  updatedAt    DateTime              @updatedAt @db.Timestamptz
+
+  @@index([mosqueId, status, isPinned, publishedAt])
+  @@index([mosqueId, category])
+  @@index([mosqueId, audience])
+  @@index([mosqueId, scheduledAt])
+  @@map("announcements")
+}
+
+// ---------------------------------------------------------------------------
+// Broadcast Messages / Notifications Outbox
+// ---------------------------------------------------------------------------
+
+enum BroadcastChannel {
+  push
+  email
+  sms
+  in_app
+}
+
+enum BroadcastStatus {
+  draft
+  scheduled
+  sent
+  failed
+}
+
+model BroadcastMessage {
+  id          String           @id @default(uuid()) @db.Uuid
+  mosqueId    String           @db.Uuid
+  mosque      Mosque           @relation(fields: [mosqueId], references: [id], onDelete: Cascade)
+
+  title       String           @db.VarChar(255)
+  message     String           @db.Text
+  channel     BroadcastChannel @default(push)
+  audience    String           @default("Whole community") @db.VarChar(64)
+  status      BroadcastStatus  @default(draft)
+
+  senderName  String?          @db.VarChar(128)
+  sentAt      DateTime?        @db.Timestamptz
+  scheduledAt DateTime?        @db.Timestamptz
+
+  recipients  Int              @default(0)
+  delivered   Int              @default(0)
+  opened      Int              @default(0)
+
+  createdById String?          @db.Uuid
+  createdBy   User?            @relation("UserBroadcastsCreated", fields: [createdById], references: [id], onDelete: SetNull)
+
+  createdAt   DateTime         @default(now()) @db.Timestamptz
+  updatedAt   DateTime         @updatedAt @db.Timestamptz
+
+  @@index([mosqueId, status, sentAt])
+  @@index([mosqueId, channel])
+  @@index([mosqueId, audience])
+  @@map("broadcast_messages")
+}
+
+
+

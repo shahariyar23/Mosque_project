@@ -237,6 +237,10 @@ export class MailService {
    * Sends an official payment receipt confirmation email.
    * Fails gracefully if recipient email is empty or mail transport is dormant.
    */
+  /**
+   * Sends an official payment receipt confirmation email.
+   * Fails gracefully if recipient email is empty or mail transport is dormant.
+   */
   public async sendReceiptIssuedEmail(
     to: string,
     data: ReceiptIssuedTemplateData,
@@ -251,6 +255,32 @@ export class MailService {
     return this.sendMail({
       to: to.trim(),
       subject: `Payment Receipt: ${data.receiptNumber} — ${data.mosqueName || 'NOOR'}`,
+      html,
+      text,
+    });
+  }
+
+  /**
+   * Sends an Iftar sponsorship confirmation / status change email.
+   */
+  public async sendIftarSponsorshipEmail(
+    to: string,
+    data: import('./templates/iftar-sponsorship.template').IftarSponsorshipTemplateData,
+  ): Promise<MailSendResult> {
+    if (!to || !to.trim() || !to.includes('@')) {
+      return { success: false, error: 'No valid recipient email provided.' };
+    }
+
+    const { renderIftarSponsorshipHtml, renderIftarSponsorshipText } = await import(
+      './templates/iftar-sponsorship.template'
+    );
+    const html = renderIftarSponsorshipHtml(data);
+    const text = renderIftarSponsorshipText(data);
+
+    const statusTitle = data.status.toUpperCase();
+    return this.sendMail({
+      to: to.trim(),
+      subject: `Iftar Sponsorship ${statusTitle}: ${data.date} — ${data.mosqueName || 'NOOR'}`,
       html,
       text,
     });

@@ -35,12 +35,47 @@ export const AUDIT_ACTIONS = [
   "APPROVAL_REQUESTED",
   "APPROVAL_APPROVED",
   "APPROVAL_REJECTED",
+  "FUND_CREATED",
+  "FUND_UPDATED",
+  "TRANSACTION_CREATED",
+  "TRANSACTION_UPDATED",
+  "TRANSACTION_VOIDED",
+  "DONATION_RECORDED",
+  "RECEIPT_ISSUED",
+  "RECEIPT_VOIDED",
+  "IFTAR_SPONSORSHIP_CREATED",
+  "IFTAR_SPONSORSHIP_UPDATED",
+  "IFTAR_SPONSORSHIP_DELETED",
 ] as const;
 export type AuditAction = (typeof AUDIT_ACTIONS)[number];
 
-/** What kinds of thing are audited. Three, because only these three modules write log entries. */
-export const AUDIT_RESOURCES = ["user", "auth", "approval"] as const;
+/** What kinds of thing are audited. */
+export const AUDIT_RESOURCES = [
+  "user",
+  "auth",
+  "approval",
+  "transaction",
+  "fund",
+  "expense",
+  "salary",
+  "donation",
+  "receipt",
+  "iftar_sponsorship",
+] as const;
 export type AuditResource = (typeof AUDIT_RESOURCES)[number];
+
+export const auditResourceLabels: Record<AuditResource, string> = {
+  user: "User accounts",
+  auth: "Authentication",
+  approval: "Approvals",
+  transaction: "Transactions",
+  fund: "Donation funds",
+  expense: "Expenses",
+  salary: "Salaries",
+  donation: "Donations",
+  receipt: "Receipts",
+  iftar_sponsorship: "Iftar sponsorship",
+};
 
 /** Readable labels for the filter dropdown. A `Record` so a new action cannot be added without one. */
 export const auditActionLabels: Record<AuditAction, string> = {
@@ -58,6 +93,17 @@ export const auditActionLabels: Record<AuditAction, string> = {
   APPROVAL_REQUESTED: "Approval requested",
   APPROVAL_APPROVED: "Approval granted",
   APPROVAL_REJECTED: "Approval rejected",
+  FUND_CREATED: "Fund created",
+  FUND_UPDATED: "Fund updated",
+  TRANSACTION_CREATED: "Transaction created",
+  TRANSACTION_UPDATED: "Transaction updated",
+  TRANSACTION_VOIDED: "Transaction voided",
+  DONATION_RECORDED: "Donation recorded",
+  RECEIPT_ISSUED: "Receipt issued",
+  RECEIPT_VOIDED: "Receipt voided",
+  IFTAR_SPONSORSHIP_CREATED: "Iftar sponsorship created",
+  IFTAR_SPONSORSHIP_UPDATED: "Iftar sponsorship updated",
+  IFTAR_SPONSORSHIP_DELETED: "Iftar sponsorship deleted",
 };
 
 /**

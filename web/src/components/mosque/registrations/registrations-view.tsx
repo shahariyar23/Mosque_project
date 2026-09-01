@@ -1,7 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { Button, ButtonLink, IconButton } from "@/components/finance/ui/button";
+import { useMemo, useState, useEffect, useCallback } from "react";
 import { DataTable, type Column } from "@/components/finance/ui/data-table";
 import { ConfirmDialog } from "@/components/finance/ui/dialogs";
 import { FinanceFilters, type SelectFilter } from "@/components/finance/ui/filters";
@@ -14,96 +13,137 @@ import { StatCard } from "@/components/ui/stat-card";
 import { RegistrationStatusBadge } from "@/components/ui/status-badge";
 import { useToast } from "@/components/ui/toast";
 import { eventFilterOptions } from "@/data/events";
-import { registrationTotals, registrations as seedRegistrations } from "@/data/registrations";
-import { downloadCsv } from "@/lib/mosque/export";
-import { formatCount, formatLongDate, pluralise } from "@/lib/mosque/format";
+import { fetchRegistrations } from "@/services/registrationService";
 import { registrationStatuses, type Registration, type StatMetric } from "@/lib/mosque/types";
+import { Button, ButtonLink, IconButton } from "@/components/finance/ui/button";
+import { formatCount, formatLongDate } from "@/lib/mosque/format";
+import { downloadCsv } from "@/lib/mosque/export";
 
-/**
- * Event registrations.
- *
- * Confirm and cancel are the two things this screen exists to do, and both are real here: they change
- * the row in state, the badge in the table updates, and a toast confirms it. Cancelling routes through
- * a confirmation dialog because it takes someone's place away — the same rule the finance module
- * applies to voiding a record.
- */
-const metrics: StatMetric[] = [
-  {
-    id: "total",
-    label: "Total Registrations",
-    value: formatCount(registrationTotals.total),
-    hint: "Across every open programme",
-    icon: "clipboard-check",
-    tone: "neutral",
-  },
-  {
-    id: "confirmed",
-    label: "Confirmed",
-    value: formatCount(registrationTotals.confirmed),
-    hint: "Places are held",
-    icon: "check-circle",
-    tone: "positive",
-  },
-  {
-    id: "pending",
-    label: "Pending",
-    value: formatCount(registrationTotals.pending),
-    hint: "Waiting on a decision",
-    icon: "clock",
-    tone: "warning",
-  },
-  {
-    id: "waitlisted",
-    label: "Waitlisted",
-    value: formatCount(registrationTotals.waitlisted),
-    hint: "Event is at capacity",
-    icon: "list",
-    tone: "gold",
-  },
-  {
-    id: "cancelled",
-    label: "Cancelled",
-    value: formatCount(registrationTotals.cancelled),
-    hint: "Withdrawn or event cancelled",
-    icon: "x-circle",
-    tone: "negative",
-  },
-];
+function pluralise(count: number, singular: string, plural = `${singular}s`): string {
+  return `${count} ${count === 1 ? singular : plural}`;
+}
 
 export function RegistrationsView() {
   const { notify } = useToast();
-  const [registrations, setRegistrations] = useState<Registration[]>(seedRegistrations);
+
+  const [registrations, setRegistrations] = useState<Registration[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [totals, setTotals] = useState({ total: 0, confirmed: 0, pending: 0, waitlisted: 0, cancelled: 0 });
+
   const [search, setSearch] = useState("");
-  const [event, setEvent] = useState("all");
+  const [eventFilter, setEventFilter] = useState("all");
   const [status, setStatus] = useState("all");
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [cancelling, setCancelling] = useState<Registration | null>(null);
 
-  /**
-   * The drawer follows the id, not a snapshot of the row. Holding the object would leave the panel
-   * showing "Pending" straight after someone pressed Confirm inside it.
-   */
-  const selected = registrations.find((registration) => registration.id === selectedId) ?? null;
+  const loadData = useCallback(async () => {
+    setLoading(true);
+    try {
+      const { rows } = await fetchRegistrations();
+      setRegistrations(rows);
+      const newTotals = rows.reduce(
+        (acc, r) => {
+          acc.total++;
+          switch (r.status) {
+            case "Confirmed":
+              acc.confirmed++;
+              break;
+            case "Pending":
+              acc.pending++;
+              break;
+            case "Waitlisted":
+              acc.waitlisted++;
+              break;
+            case "Cancelled":
+              acc.cancelled++;
+              break;
+          }
+          return acc;
+        },
+        { total: 0, confirmed: 0, pending: 0, waitlisted: 0, cancelled: 0 }
+      );
+      setTotals(newTotals);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
+
+  const selected = useMemo(
+    () => registrations.find((r) => r.id === selectedId) ?? null,
+    [registrations, selectedId]
+  );
 
   const filtered = useMemo(() => {
     const needle = search.trim().toLowerCase();
-    return registrations.filter((registration) => {
+    return registrations.filter((r) => {
       if (needle) {
-        const haystack = `${registration.participantName} ${registration.participantEmail} ${registration.participantPhone} ${registration.eventTitle} ${registration.id}`.toLowerCase();
+        const haystack = `${r.participantName} ${r.eventTitle} ${r.participantPhone ?? ""} ${r.id}`.toLowerCase();
         if (!haystack.includes(needle)) return false;
       }
-      if (event !== "all" && registration.eventId !== event) return false;
-      if (status !== "all" && registration.status !== status) return false;
-      if (from && registration.registeredAt < from) return false;
-      if (to && registration.registeredAt > to) return false;
+      if (eventFilter !== "all" && r.eventId !== eventFilter) return false;
+      if (status !== "all" && r.status !== status) return false;
+      if (from && r.registeredAt < from) return false;
+      if (to && r.registeredAt > to) return false;
       return true;
     });
-  }, [event, from, registrations, search, status, to]);
+  }, [eventFilter, from, registrations, search, status, to]);
+
+  const metrics: StatMetric[] = useMemo(
+    () => [
+      {
+        id: "total",
+        label: "Total Registrations",
+        value: formatCount(totals.total),
+        hint: "Across every open programme",
+        icon: "clipboard-check",
+        tone: "neutral",
+      },
+      {
+        id: "confirmed",
+        label: "Confirmed",
+        value: formatCount(totals.confirmed),
+        hint: "Holding a place",
+        icon: "check-circle",
+        tone: "positive",
+      },
+      {
+        id: "pending",
+        label: "Pending",
+        value: formatCount(totals.pending),
+        hint: "Awaiting review",
+        icon: "clock",
+        tone: "warning",
+      },
+      {
+        id: "waitlisted",
+        label: "Waitlisted",
+        value: formatCount(totals.waitlisted),
+        hint: "First in line if places free",
+        icon: "users",
+        tone: "gold",
+      },
+      {
+        id: "cancelled",
+        label: "Cancelled",
+        value: formatCount(totals.cancelled),
+        hint: "Places released",
+        icon: "x-circle",
+        tone: "negative",
+      },
+    ],
+    [totals]
+  );
 
   const filters: SelectFilter[] = [
-    { id: "event", label: "Event", value: event, onChange: setEvent, options: eventFilterOptions },
+    { id: "event", label: "Event", value: eventFilter, onChange: setEventFilter, options: eventFilterOptions },
     {
       id: "status",
       label: "Status",
@@ -117,10 +157,10 @@ export function RegistrationsView() {
   ];
 
   const activeFilterCount =
-    (event !== "all" ? 1 : 0) + (status !== "all" ? 1 : 0) + (from ? 1 : 0) + (to ? 1 : 0);
+    (eventFilter !== "all" ? 1 : 0) + (status !== "all" ? 1 : 0) + (from ? 1 : 0) + (to ? 1 : 0);
 
   const resetFilters = () => {
-    setEvent("all");
+    setEventFilter("all");
     setStatus("all");
     setFrom("");
     setTo("");
@@ -129,7 +169,7 @@ export function RegistrationsView() {
   const setStatusOf = (id: string, next: Registration["status"]) => {
     const target = registrations.find((registration) => registration.id === id);
     setRegistrations((current) =>
-      current.map((registration) => (registration.id === id ? { ...registration, status: next } : registration)),
+      current.map((registration) => (registration.id === id ? { ...registration, status: next } : registration))
     );
 
     if (next === "Confirmed") {
@@ -150,8 +190,8 @@ export function RegistrationsView() {
     downloadCsv("noor-mosque-registrations.csv", filtered, [
       { header: "Registration ID", value: (row) => row.id },
       { header: "Participant", value: (row) => row.participantName },
-      { header: "Phone", value: (row) => row.participantPhone },
-      { header: "Email", value: (row) => row.participantEmail },
+      { header: "Phone", value: (row) => row.participantPhone ?? "" },
+      { header: "Email", value: (row) => row.participantEmail ?? "" },
       { header: "Event", value: (row) => row.eventTitle },
       { header: "Event date", value: (row) => row.eventDate },
       { header: "Registered on", value: (row) => row.registeredAt },
@@ -197,7 +237,7 @@ export function RegistrationsView() {
       key: "phone",
       header: "Phone",
       secondary: true,
-      cell: (row) => <span className="tabular-nums">{row.participantPhone}</span>,
+      cell: (row) => <span className="tabular-nums">{row.participantPhone ?? "—"}</span>,
     },
     {
       key: "guests",
@@ -251,9 +291,6 @@ export function RegistrationsView() {
 
   return (
     <div className="space-y-4">
-      {/* Five figures, not four: pending + confirmed + cancelled alone do not add up to the total once
-          a waitlist exists, and three numbers that quietly disagree with a fourth is worse than five
-          that sum. `StatGrid` is fixed at four columns, so the tiles are laid out directly here. */}
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-5">
         {metrics.map((metric) => (
           <StatCard key={metric.id} metric={metric} />
@@ -304,7 +341,6 @@ export function RegistrationsView() {
           mobileSubtitle={(row) => row.eventTitle}
           mobileTrailing={(row) => <RegistrationStatusBadge status={row.status} />}
           mobileHiddenKeys={["participant", "status", "event"]}
-          footNote={`Sample of the register — ${formatCount(seedRegistrations.length)} of ${formatCount(registrationTotals.total)} registrations loaded.`}
           emptyState={
             <FinanceEmptyState
               icon="clipboard-check"
@@ -343,11 +379,6 @@ export function RegistrationsView() {
           onClose={() => setSelectedId(null)}
           onConfirm={() => setStatusOf(selected.id, "Confirmed")}
           onCancel={() => {
-            // The drawer closes as the confirmation opens rather than sitting behind it. Two
-            // overlays using `useDialogFocus` at once both bind Escape and a Tab trap to
-            // `document`, so a stacked pair closes both panels on one Escape and fights over
-            // where Tab goes. Handing over instead of stacking avoids the whole problem, and the
-            // table underneath is where the changed status wants to be seen anyway.
             setCancelling(selected);
             setSelectedId(null);
           }}
@@ -404,85 +435,77 @@ function RegistrationDetailDrawer({
   onConfirm: () => void;
   onCancel: () => void;
 }) {
-  const settled = registration.status === "Confirmed" || registration.status === "Cancelled";
-
   return (
     <DetailDrawer
       open
       onClose={onClose}
       eyebrow={registration.id}
       title={registration.participantName}
-      subtitle={registration.memberId ? `Member · ${registration.memberId}` : "Visitor · not on the register"}
+      subtitle={registration.eventTitle}
       avatarName={registration.participantName}
       badge={<RegistrationStatusBadge status={registration.status} />}
       footer={
         <>
           <Can permission="event.update">
-            {settled ? null : (
+            {registration.status !== "Confirmed" && registration.status !== "Cancelled" ? (
               <Button size="sm" icon="check" onClick={onConfirm}>
-                Confirm
+                Confirm place
               </Button>
-            )}
-          </Can>
-          <Can permission="event.update">
-            {registration.status === "Cancelled" ? null : (
+            ) : null}
+            {registration.status !== "Cancelled" ? (
               <Button size="sm" variant="danger" icon="x-circle" onClick={onCancel}>
-                Cancel
+                Cancel registration
               </Button>
-            )}
+            ) : null}
           </Can>
-          <ButtonLink href="/dashboard/events" size="sm" variant="secondary" className="ml-auto">
-            View Event
-          </ButtonLink>
+          <Button size="sm" variant="secondary" onClick={onClose} className="ml-auto">
+            Close
+          </Button>
         </>
       }
     >
       <div className="space-y-5">
         {registration.status === "Waitlisted" ? (
-          <InlineNotice tone="gold" icon="info">
-            The event is at capacity. This place is offered automatically if a confirmed registration is cancelled.
+          <InlineNotice tone="gold">
+            This attendee is on the waitlist. Confirming will grant a place if capacity allows.
+          </InlineNotice>
+        ) : null}
+        {registration.status === "Cancelled" ? (
+          <InlineNotice tone="neutral" icon="info">
+            This registration was cancelled and no place is held.
           </InlineNotice>
         ) : null}
 
-        <DetailSection title="Participant">
+        <DetailSection title="Registration details">
           <DetailGrid>
-            <DetailField label="Name" value={registration.participantName} />
-            <DetailField
-              label="Phone"
-              value={<span className="tabular-nums">{registration.participantPhone}</span>}
-            />
-            <DetailField label="Email" value={<span className="break-all">{registration.participantEmail}</span>} full />
-            <DetailField
-              label="On the member register"
-              value={registration.memberId ? `Yes — ${registration.memberId}` : "No — attending as a visitor"}
-              full
-            />
-          </DetailGrid>
-        </DetailSection>
-
-        <DetailSection title="Registration">
-          <DetailGrid>
-            <DetailField label="Event" value={registration.eventTitle} full />
+            <DetailField label="Event" value={registration.eventTitle} />
             <DetailField label="Event date" value={formatLongDate(registration.eventDate)} />
             <DetailField label="Registered on" value={formatLongDate(registration.registeredAt)} />
             <DetailField
               label="Guests"
-              value={registration.guests === 0 ? "None" : pluralise(registration.guests, "guest")}
+              value={registration.guests === 0 ? "None (1 place)" : pluralise(registration.guests, "guest")}
             />
-            <DetailField label="Places held" value={<span className="tabular-nums">{1 + registration.guests}</span>} />
-            <DetailField label="Status" value={<RegistrationStatusBadge status={registration.status} />} full />
+            <DetailField label="Status" value={<RegistrationStatusBadge status={registration.status} />} />
           </DetailGrid>
         </DetailSection>
 
-        <DetailSection title="Special requirements">
-          {registration.specialRequirements ? (
-            <p className="rounded-lg border border-[#e7e6dc] bg-[#faf9f4] px-3.5 py-3 text-[13px] leading-6 text-[#4d564f]">
-              {registration.specialRequirements}
-            </p>
-          ) : (
-            <p className="text-[13px] text-[#69726d]">None recorded.</p>
-          )}
+        <DetailSection title="Participant details">
+          <DetailGrid>
+            <DetailField label="Full name" value={registration.participantName} />
+            <DetailField
+              label="On the register"
+              value={registration.memberId ? `Member · ${registration.memberId}` : "Visitor"}
+            />
+            <DetailField label="Phone" value={registration.participantPhone ? <span className="tabular-nums">{registration.participantPhone}</span> : "—"} />
+            <DetailField label="Email" value={registration.participantEmail ? <span className="break-all">{registration.participantEmail}</span> : "—"} />
+          </DetailGrid>
         </DetailSection>
+
+        {registration.specialRequirements ? (
+          <DetailSection title="Special requirements">
+            <p className="text-[13px] leading-6 text-[#4d564f]">{registration.specialRequirements}</p>
+          </DetailSection>
+        ) : null}
       </div>
     </DetailDrawer>
   );

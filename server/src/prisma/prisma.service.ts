@@ -26,10 +26,35 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
 
   async onModuleInit(): Promise<void> {
     this.$on('warn' as never, (event: { message: string }) => this.logger.warn(event.message));
-    this.$on('error' as never, (event: { message: string }) => this.logger.error(event.message));
+    this.$on('error' as never, (event: { message: string }) => {
+      if (event.message?.includes('kind: Closed') || event.message?.includes('Closed')) {
+        this.logger.debug(`Idle database connection closed by server/pooler: ${event.message}`);
+        return;
+      }
+      this.logger.error(event.message);
+    });
 
-    await this.$connect();
-    this.logger.log('Database connection established');
+    const maxRetries = 5;
+    const retryDelayMs = 2000;
+
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        await this.$connect();
+        this.logger.log('Database connection established');
+        return;
+      } catch (err: any) {
+        if (attempt === maxRetries) {
+          this.logger.error(
+            `Failed to connect to database after ${maxRetries} attempts: ${err.message}`,
+          );
+          throw err;
+        }
+        this.logger.warn(
+          `Database connection attempt ${attempt}/${maxRetries} failed (${err.message}). Retrying in ${retryDelayMs / 1000}s (waking up serverless database)...`,
+        );
+        await new Promise((resolve) => setTimeout(resolve, retryDelayMs));
+      }
+    }
   }
 
   async onModuleDestroy(): Promise<void> {
