@@ -7,6 +7,7 @@ import { SiteHeader } from "@/components/site-header";
 import { SiteFooter } from "@/components/site-footer";
 import { IslamicTexture } from "@/components/islamic-texture";
 import { siteConfig } from "@/config/site";
+import { useToast } from "@/components/ui/toast";
 import { resetPassword } from "@/services/authService";
 import {
   AlertCircle,
@@ -22,6 +23,7 @@ import {
 } from "lucide-react";
 
 function ResetPasswordForm() {
+  const { notify } = useToast();
   const searchParams = useSearchParams();
   const token = searchParams.get("token") ?? "";
 
@@ -57,13 +59,23 @@ function ResetPasswordForm() {
     try {
       await resetPassword({ token, newPassword });
       setStatus("success");
+      notify({
+        tone: "success",
+        message: "Password reset complete",
+        description: "Your password has been updated. You can now sign in.",
+      });
     } catch (err: unknown) {
-      setStatus("error");
-      setErrorMessage(
+      const msg =
         err instanceof Error
           ? err.message
-          : "Invalid or expired reset token. Please request a new recovery link.",
-      );
+          : "Invalid or expired reset token. Please request a new recovery link.";
+      setStatus("error");
+      setErrorMessage(msg);
+      notify({
+        tone: "danger",
+        message: "Password reset failed",
+        description: msg,
+      });
     }
   };
 

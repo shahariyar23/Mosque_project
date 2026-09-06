@@ -4,10 +4,12 @@ import { useState } from "react";
 import Link from "next/link";
 import { ArrowLeft, Eye, EyeOff, CheckCircle2, ShieldCheck, AlertCircle, Loader2, Check, X } from "lucide-react";
 import { useAuth } from "@/components/auth-provider";
+import { useToast } from "@/components/ui/toast";
 import { changePassword } from "@/services/authService";
 
 export default function ChangePasswordPage() {
   const { token, session } = useAuth();
+  const { notify } = useToast();
 
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
@@ -37,12 +39,22 @@ export default function ChangePasswordPage() {
     if (!token || !session) {
       setStatus("error");
       setErrorMessage("You must be signed in to change your password.");
+      notify({
+        tone: "danger",
+        message: "Authentication required",
+        description: "You must be signed in to change your password.",
+      });
       return;
     }
 
     if (isSameAsCurrent) {
       setStatus("error");
       setErrorMessage("The new password must be different from your current password.");
+      notify({
+        tone: "warning",
+        message: "Invalid password",
+        description: "The new password must be different from your current password.",
+      });
       return;
     }
 
@@ -56,13 +68,23 @@ export default function ChangePasswordPage() {
     try {
       await changePassword(token, { currentPassword, newPassword });
       setStatus("success");
+      notify({
+        tone: "success",
+        message: "Password updated successfully",
+        description: "Your account password has been changed.",
+      });
     } catch (err: unknown) {
-      setStatus("error");
-      setErrorMessage(
+      const msg =
         err instanceof Error
           ? err.message
-          : "Incorrect current password or invalid new password. Please try again.",
-      );
+          : "Incorrect current password or invalid new password. Please try again.";
+      setStatus("error");
+      setErrorMessage(msg);
+      notify({
+        tone: "danger",
+        message: "Password update failed",
+        description: msg,
+      });
     }
   };
 

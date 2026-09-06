@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
+import { useToast } from "@/components/ui/toast";
 import { registerUser } from "@/services/authService";
 import { CheckboxRow } from "./checkbox-row";
 import { controlClass, FormField, ICON_WRAP } from "./form-field";
@@ -51,6 +52,7 @@ const FIELD_IDS: Record<SignupField, string> = {
 const PASSWORD_STRENGTH_ID = "signup-password-strength";
 
 export function SignupForm() {
+  const { notify } = useToast();
   const [values, setValues] = useState<SignupValues>(initialSignupValues);
   const [touched, setTouched] = useState<Partial<Record<SignupField, boolean>>>(
     {},
@@ -104,14 +106,25 @@ export function SignupForm() {
 
     setStatus("submitting");
     try {
-      // Simulated for now — swap the service body for the Express endpoint later.
       await registerUser(toSignupPayload(values));
       setStatus("success");
-    } catch {
+      notify({
+        tone: "success",
+        message: "Account created successfully",
+        description: `Welcome to NOOR, ${values.fullName}!`,
+      });
+    } catch (err: unknown) {
       setStatus("idle");
-      setSubmitError(
-        "Something went wrong while creating your account. Please try again.",
-      );
+      const msg =
+        err instanceof Error
+          ? err.message
+          : "Something went wrong while creating your account. Please try again.";
+      setSubmitError(msg);
+      notify({
+        tone: "danger",
+        message: "Registration failed",
+        description: msg,
+      });
     }
   };
 

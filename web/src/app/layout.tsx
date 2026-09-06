@@ -34,8 +34,8 @@ export default function RootLayout({
           the refresh cookie on mount — because a session handed in from the server would make every
           visitor read as signed in, which is exactly what the guards exist to distinguish.
         */}
-        <NoorLoader />
         <AuthProvider>
+          <NoorLoader />
           <LanguageProvider>
             <ToastProvider>{children}</ToastProvider>
           </LanguageProvider>

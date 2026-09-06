@@ -1,7 +1,8 @@
 "use client";
 
 import { useDashboardSession } from "@/components/dashboard/session-provider";
-import { ProfileSwitcher } from "@/components/dashboard/profile-switcher";
+import { DashboardSearch } from "@/components/dashboard/dashboard-search";
+import { DashboardUserMenu } from "@/components/dashboard/dashboard-user-menu";
 import { NotificationPopover } from "@/components/dashboard/notification-popover";
 import { Icon } from "@/components/finance/ui/icon";
 
@@ -24,25 +25,7 @@ export function DashboardHeader({ navOpen, onOpenNav }: Props) {
           <Icon name="menu" size={18} />
         </button>
 
-        <form
-          role="search"
-          className="relative min-w-0 flex-1 md:max-w-sm"
-          onSubmit={(event) => event.preventDefault()}
-        >
-          <label htmlFor="dashboard-search" className="sr-only">
-            Search the dashboard
-          </label>
-          <span aria-hidden="true" className="absolute left-3 top-1/2 -translate-y-1/2 text-[#8b938d]">
-            <Icon name="search" size={16} />
-          </span>
-          <input
-            id="dashboard-search"
-            name="dashboard-search"
-            type="search"
-            placeholder="Search transactions, members, funds…"
-            className="min-h-10 w-full rounded-md border border-[#deddd3] bg-white pl-9 pr-3 text-[13px] text-[#17211d] placeholder:text-[#9aa19c] focus:border-[#0d4d3b] focus:outline-2 focus:outline-offset-1 focus:outline-[#0d4d3b]/40"
-          />
-        </form>
+        <DashboardSearch />
 
         <div className="ml-auto flex items-center gap-2">
           {user ? (
@@ -52,7 +35,7 @@ export function DashboardHeader({ navOpen, onOpenNav }: Props) {
             </span>
           ) : null}
           <NotificationPopover />
-          <ProfileSwitcher />
+          <DashboardUserMenu />
         </div>
       </div>
     </header>
