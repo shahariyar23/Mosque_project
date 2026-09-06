@@ -119,6 +119,7 @@ model Mosque {
   approvalRequests ApprovalRequest[]
   notifications    Notification[]
   announcements    Announcement[]
+  quranResources   QuranResource[]
   broadcasts       BroadcastMessage[]
 
   @@index([isActive])
@@ -270,6 +271,8 @@ model User {
   assignedBookings   Booking[]         @relation("AssignedBookings")
   notifications      Notification[]
   createdAnnouncements Announcement[]
+  quranResourcesCreated QuranResource[] @relation("QuranResourcesCreated")
+  quranResourcesUpdated QuranResource[] @relation("QuranResourcesUpdated")
   broadcastsCreated  BroadcastMessage[] @relation("UserBroadcastsCreated")
 
   // Unique per mosque, not globally: two mosques may each have a member at the same address.
@@ -1825,6 +1828,90 @@ model Announcement {
   @@index([mosqueId, audience])
   @@index([mosqueId, scheduledAt])
   @@map("announcements")
+}
+
+// ---------------------------------------------------------------------------
+// Quran Module
+// ---------------------------------------------------------------------------
+
+enum QuranResourceType {
+  recitation
+  tafsir
+  memorisation
+  tajweed
+  translation
+}
+
+enum QuranFormat {
+  audio
+  video
+  document
+}
+
+enum QuranStatus {
+  draft
+  published
+  scheduled
+  archived
+}
+
+/// A piece of Quran study content the mosque publishes — a recitation, a tafsir session, a
+/// memorisation plan, a tajweed guide or a translation. Each row is a published or queued piece of
+/// content, not a student record; the people learning are the members' and classes' concern.
+model QuranResource {
+  id           String           @id @default(uuid()) @db.Uuid
+  mosqueId     String           @db.Uuid
+  mosque       Mosque           @relation(fields: [mosqueId], references: [id], onDelete: Cascade)
+
+  title       String           @db.VarChar(200)
+  summary     String?          @db.VarChar(500)
+  description String           @db.Text
+
+  type     QuranResourceType
+  format   QuranFormat
+  status   QuranStatus         @default(draft)
+
+  /// The surah this resource centres on, or "Various" for a series that spans many.
+  surah      String  @db.VarChar(120)
+  /// Human reference — "Juz 1 · Ayah 1–141", "Surah 36 (Ya-Sin)".
+  reference  String  @db.VarChar(200)
+  /// Ayah range within the surah, when the resource points at one passage.
+  ayahStart Int?
+  ayahEnd   Int?
+
+  /// Qari for a recitation, author for a written or spoken series.
+  reciter String? @db.VarChar(160)
+  author  String? @db.VarChar(160)
+  language String @default("Arabic") @db.VarChar(64)
+
+  /// Media reference. No Media model exists in this codebase, so the URL is stored directly —
+  /// the same convention Event.imageUrl and Mosque.logoUrl already follow.
+  mediaUrl     String? @db.VarChar(500)
+  thumbnailUrl String? @db.VarChar(500)
+  /// Free text — "22 min", "6 pages". The unit varies with the format.
+  duration String? @db.VarChar(64)
+
+  isFeatured Boolean @default(false)
+
+  publishedAt DateTime? @db.Timestamptz
+  scheduledAt DateTime? @db.Timestamptz
+  archivedAt  DateTime? @db.Timestamptz
+
+  createdById String? @db.Uuid
+  createdBy   User?   @relation("QuranResourcesCreated", fields: [createdById], references: [id], onDelete: SetNull)
+  updatedById String? @db.Uuid
+  updatedBy   User?   @relation("QuranResourcesUpdated", fields: [updatedById], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now()) @db.Timestamptz
+  updatedAt DateTime @updatedAt @db.Timestamptz
+  deletedAt DateTime? @db.Timestamptz
+
+  @@index([mosqueId, status, publishedAt])
+  @@index([mosqueId, type])
+  @@index([mosqueId, status, scheduledAt])
+  @@index([mosqueId, status, createdAt])
+  @@index([mosqueId, deletedAt])
+  @@map("quran_resources")
 }
 
 // ---------------------------------------------------------------------------

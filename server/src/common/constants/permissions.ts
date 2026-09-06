@@ -72,6 +72,12 @@ export const PERMISSION_GROUPS = {
   announcements: ['announcement.manage', 'announcement.publish'],
   content: [
     'quran.manage',
+    'quran.create',
+    'quran.update',
+    'quran.delete',
+    'quran.publish',
+    'quran.schedule',
+    'quran.export',
     'khutbah.view',
     'khutbah.create',
     'khutbah.update',
