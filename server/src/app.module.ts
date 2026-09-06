@@ -46,6 +46,7 @@ import { MailModule } from './mail/mail.module';
 import { PublicTransparencyModule } from './public-transparency/public-transparency.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { AnnouncementsModule } from './announcements/announcements.module';
+import { QuranModule } from './quran/quran.module';
 import { SearchModule } from './search/search.module';
 
 /**
@@ -133,6 +134,7 @@ import { SearchModule } from './search/search.module';
     PublicTransparencyModule,
     NotificationsModule,
     AnnouncementsModule,
+    QuranModule,
     SearchModule,
 
     // Then what the money was meant for and who it went to. Budgets and salaries are independent of each

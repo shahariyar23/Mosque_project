@@ -82,6 +82,11 @@ export const AUDIT_ACTIONS = [
   'ANNOUNCEMENT_PUBLISHED',
   'ANNOUNCEMENT_ARCHIVED',
   'ANNOUNCEMENT_DELETED',
+  'QURAN_RESOURCE_CREATED',
+  'QURAN_RESOURCE_UPDATED',
+  'QURAN_RESOURCE_PUBLISHED',
+  'QURAN_RESOURCE_ARCHIVED',
+  'QURAN_RESOURCE_DELETED',
   'BROADCAST_CREATED',
   'BROADCAST_SENT',
   'BROADCAST_DELETED',
@@ -110,6 +115,7 @@ export const AUDIT_RESOURCES = [
   'service',
   'booking',
   'announcement',
+  'quran_resource',
   'broadcast',
 ] as const;
 
