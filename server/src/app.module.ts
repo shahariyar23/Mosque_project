@@ -43,6 +43,7 @@ import { FundTransfersModule } from './fund-transfers/fund-transfers.module';
 import { FundsModule } from './funds/funds.module';
 import { ContributionsModule } from './contributions/contributions.module';
 import { MailModule } from './mail/mail.module';
+import { PublicHomeModule } from './public-home/public-home.module';
 import { PublicTransparencyModule } from './public-transparency/public-transparency.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { AnnouncementsModule } from './announcements/announcements.module';
@@ -131,6 +132,7 @@ import { SearchModule } from './search/search.module';
     FundsModule,
     ContributionsModule,
     MailModule,
+    PublicHomeModule,
     PublicTransparencyModule,
     NotificationsModule,
     AnnouncementsModule,

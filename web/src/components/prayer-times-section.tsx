@@ -1,22 +1,29 @@
 "use client";
 
+import { useMemo } from "react";
 import { useEffect, useState, useMemo } from "react";
 import Link from "next/link";
 import { useLanguage } from "@/components/language-provider";
 import { PrayerReveal } from "@/components/home/PrayerReveal";
+import { usePublicPrayerTimes } from "@/hooks/use-public-prayer-times";
+import { PrayerStripSkeleton } from "@/components/ui/skeletons";
+import { Clock, Calendar } from "lucide-react";
 import {
   Calendar,
   Clock,
   RotateCcw,
   MapPin,
   ArrowRight,
-  Sun,
-  Sunrise as SunriseIcon,
-  CloudSun,
-  Sunset as SunsetIcon,
-  Moon,
 } from "lucide-react";
 
+const PRAYER_ICONS: Record<string, string> = {
+  fajr: "🌅",
+  sunrise: "☀️",
+  dhuhr: "🌞",
+  asr: "🌤️",
+  maghrib: "🌇",
+  isha: "🌙",
+};
 /* ── Custom Prayer Line Icons matching the reference design ── */
 function FajrIcon({ className = "w-6 h-6" }: { className?: string }) {
   return (
@@ -28,6 +35,12 @@ function FajrIcon({ className = "w-6 h-6" }: { className?: string }) {
   );
 }
 
+function formatCountdown(totalSeconds: number): { hours: number; minutes: number; seconds: number } {
+  return {
+    hours: Math.floor(totalSeconds / 3600),
+    minutes: Math.floor((totalSeconds % 3600) / 60),
+    seconds: totalSeconds % 60,
+  };
 function SunriseHeaderIcon({ className = "w-6 h-6" }: { className?: string }) {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className={className}>
@@ -168,6 +181,9 @@ const STATIC_REF_DATE = new Date("2026-08-26T06:00:00+06:00");
 export function PrayerTimesSection() {
   const { language } = useLanguage();
   const bn = language === "bn";
+  const { prayers, jumuah, nextPrayerIndex, countdownSeconds, loading, error, timezone, hijriDate } =
+    usePublicPrayerTimes();
+  const { prayers: livePrayers, jumuah, nextPrayerIndex: liveNextIndex } = usePublicPrayerTimes();
 
   const [isMounted, setIsMounted] = useState(false);
   const [currentTime, setCurrentTime] = useState<Date>(STATIC_REF_DATE);
@@ -179,8 +195,39 @@ export function PrayerTimesSection() {
     return () => clearInterval(timer);
   }, []);
 
-  const prayers = useMemo(
-    () => [
+  // Helper: Convert time string to Date in Asia/Dhaka timezone
+  function parseDhakaToLocal(time24: string, refDate = new Date()) {
+    const [hh, mm] = time24.split(":");
+    const year = refDate.getFullYear();
+    const month = String(refDate.getMonth() + 1).padStart(2, "0");
+    const day = String(refDate.getDate()).padStart(2, "0");
+    const iso = `${year}-${month}-${day}T${hh}:${mm}:00+06:00`;
+    return new Date(iso);
+  }
+
+  const prayers = useMemo(() => {
+    const iconsMap = {
+      fajr: FajrIcon,
+      sunrise: SunriseHeaderIcon,
+      dhuhr: DhuhrIcon,
+      asr: AsrIcon,
+      maghrib: MaghribIcon,
+      isha: IshaIcon,
+    };
+
+    if (livePrayers && livePrayers.length >= 6) {
+      return livePrayers.map((p) => ({
+        id: p.id,
+        nameEn: p.nameEn,
+        nameBn: p.nameBn,
+        timeEn: p.timeEn,
+        timeBn: p.timeBn,
+        time24: p.time24,
+        Icon: iconsMap[p.id as keyof typeof iconsMap] || DhuhrIcon,
+      }));
+    }
+
+    return [
       {
         id: "fajr",
         nameEn: "FAJR",
@@ -235,28 +282,50 @@ export function PrayerTimesSection() {
         time24: "19:48",
         Icon: IshaIcon,
       },
-    ],
-    []
-  );
-
-  // Helper: Convert time string to Date
-  function parseDhakaToLocal(time24: string, refDate = new Date()) {
-    const [hh, mm] = time24.split(":");
-    const year = refDate.getFullYear();
-    const month = String(refDate.getMonth() + 1).padStart(2, "0");
-    const day = String(refDate.getDate()).padStart(2, "0");
-    const iso = `${year}-${month}-${day}T${hh}:${mm}:00+06:00`;
-    return new Date(iso);
-  }
+    ];
+  }, [livePrayers]);
 
   const now = isMounted ? currentTime : STATIC_REF_DATE;
-  const nextIndex = prayers.findIndex((p) => parseDhakaToLocal(p.time24) > now);
-  const activeIndex = nextIndex === -1 ? 0 : nextIndex;
 
-  // Format dynamic date
+  // Compute active next prayer index
+  const activeIndex = useMemo(() => {
+    if (liveNextIndex !== undefined && liveNextIndex >= 0 && liveNextIndex < prayers.length) {
+      return liveNextIndex;
+    }
+    const nextIdx = prayers.findIndex((p) => parseDhakaToLocal(p.time24, now) > now);
+    return nextIdx === -1 ? 0 : nextIdx;
+  }, [liveNextIndex, prayers, now]);
+
+  const activePrayer = prayers[activeIndex] || prayers[0];
+
+  // Calculate remaining time until the next prayer
+  const remainingCountdown = useMemo(() => {
+    if (!activePrayer) return { hours: 0, minutes: 0, seconds: 0, formatted: "00:00:00" };
+    let target = parseDhakaToLocal(activePrayer.time24, now);
+    if (target.getTime() <= now.getTime()) {
+      // Next day
+      target = new Date(target.getTime() + 24 * 60 * 60 * 1000);
+    }
+    const diffMs = Math.max(0, target.getTime() - now.getTime());
+    const totalSeconds = Math.floor(diffMs / 1000);
+    const h = Math.floor(totalSeconds / 3600);
+    const m = Math.floor((totalSeconds % 3600) / 60);
+    const s = totalSeconds % 60;
+
+    const formatted = `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+    return { hours: h, minutes: m, seconds: s, formatted };
+  }, [activePrayer, now]);
+
+  // Dynamic date formatted
   const dateFormatted = useMemo(() => {
+    const now = new Date();
     if (bn) {
-      return "মঙ্গলবার, ১৮ আগস্ট ২০২৫";
+      return now.toLocaleDateString("bn-BD", {
+        weekday: "long",
+        day: "numeric",
+        month: "long",
+        year: "numeric",
+      });
     }
     return now.toLocaleDateString("en-US", {
       weekday: "long",
@@ -264,25 +333,51 @@ export function PrayerTimesSection() {
       month: "long",
       year: "numeric",
     });
+  }, [bn]);
   }, [now, bn]);
 
-  // Dynamic live digital clock readout
-  const liveClockString = useMemo(() => {
-    if (!isMounted) return "6:00:00 AM";
-    return now.toLocaleTimeString("en-US", {
-      timeZone: "Asia/Dhaka",
-      hour12: true,
-      hour: "numeric",
-      minute: "2-digit",
-      second: "2-digit",
-    });
-  }, [now, isMounted]);
+  const countdown = formatCountdown(countdownSeconds);
+  // Jumu'ah text string
+  const jumuahText = useMemo(() => {
+    if (jumuah && jumuah.length > 0) {
+      return jumuah
+        .map((j, i) => `${i === 0 ? (bn ? "প্রথম" : "First") : (bn ? "দ্বিতীয়" : "Second")}: ${j.khutbahTime}`)
+        .join("  •  ");
+    }
+    return bn
+      ? "প্রথম জামাত: ১:১৫ অপরাহ্ন  •  দ্বিতীয় জামাত: ২:১৫ অপরাহ্ন"
+      : "First: 1:15 PM  •  Second: 2:15 PM";
+  }, [jumuah, bn]);
 
+  if (loading) {
+    return (
+      <section id="prayer-times" className="bg-[#040e0b] px-4 py-8 sm:py-12 lg:px-8 text-white">
+        <div className="mx-auto max-w-7xl">
+          <PrayerStripSkeleton count={6} />
+        </div>
+      </section>
+    );
+  }
   return (
     <section id="prayer-times" className="relative bg-[#040e0b] py-10 px-4 sm:px-6 lg:px-8 text-white overflow-hidden">
       {/* Background Subtle Gradient Glow */}
       <div className="absolute top-1/4 left-1/3 w-[500px] h-[500px] bg-[#0c382b]/30 rounded-full blur-[120px] pointer-events-none" />
 
+  if (error || prayers.length === 0) {
+    return (
+      <section id="prayer-times" className="bg-[#040e0b] px-4 py-8 sm:py-12 lg:px-8 text-white">
+        <div className="mx-auto max-w-7xl">
+          <div className="rounded-lg border border-[#c79a45]/20 bg-[#0a1f18] p-6 sm:p-8 text-center">
+            <p className="text-[#8ea499] text-sm">
+              {bn
+                ? "নামাজের সময়সূচি লোড হচ্ছে না। অনুগ্রহ করে পরে আবার চেষ্টা করুন।"
+                : "Prayer times are currently unavailable. Please check back later."}
+            </p>
+          </div>
+        </div>
+      </section>
+    );
+  }
       <div className="max-w-7xl mx-auto">
         <PrayerReveal>
           {/* Main Card Container */}
@@ -306,25 +401,74 @@ export function PrayerTimesSection() {
                     </h2>
                   </div>
 
+  const nextPrayer = prayers[nextPrayerIndex] || prayers[0];
                   <Link
                     href="/prayer-times"
-                    className="inline-flex items-center gap-1.5 sm:gap-2 px-3 py-1.5 xs:px-4 xs:py-2 rounded-lg border border-[#dca74e]/50 bg-black/40 hover:bg-[#dca74e]/20 text-[#f5d78e] text-[11px] sm:text-xs font-semibold tracking-wide transition shadow-sm shrink-0"
+                    className="inline-flex items-center gap-1.5 sm:gap-2 px-3 py-1.5 sm:px-4 sm:py-2 rounded-full border border-[#dca74e]/40 bg-[#dca74e]/10 hover:bg-[#dca74e]/20 text-[#f5d78e] text-xs sm:text-sm font-semibold transition-colors group"
                   >
-                    <Calendar className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
+                    <Calendar className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-[#dca74e]" />
                     <span>{bn ? "সম্পূর্ণ সময়সূচি →" : "Full Timetable →"}</span>
                   </Link>
                 </div>
 
-                {/* 6 Prayer Cards Row */}
-                <div className="grid grid-cols-2 xs:grid-cols-3 lg:grid-cols-6 gap-2 sm:gap-3 pt-1 sm:pt-2">
+  return (
+    <section id="prayer-times" className="bg-[#040e0b] px-4 py-8 sm:py-12 lg:px-8 text-white">
+      <div className="mx-auto max-w-7xl">
+        {/* Header */}
+        <div className="mb-6 sm:mb-8 flex flex-wrap items-end justify-between gap-4">
+          <div>
+            <span className="text-xs font-bold tracking-[0.2em] text-[#c79a45] uppercase">
+              {bn ? "আজকের নামাজ" : "TODAY'S PRAYERS"}
+            </span>
+            <h2 className="mt-1 text-xl sm:text-2xl font-serif font-bold text-white">
+              {dateFormatted}
+            </h2>
+            {hijriDate && (
+              <p className="mt-1 text-sm text-[#8ea499]">{hijriDate}</p>
+            )}
+          </div>
+          <Link
+            href="/prayer-times"
+            className="inline-flex items-center gap-2 text-sm font-medium text-[#c79a45] hover:text-[#e0be79] transition-colors"
+          >
+            <Calendar className="w-4 h-4" />
+            {bn ? "সম্পূর্ণ সময়সূচি" : "Full Timetable"}
+          </Link>
+        </div>
+                {/* 6 Prayer Cards Grid */}
+                <div className="grid grid-cols-2 xs:grid-cols-3 sm:grid-cols-6 gap-2 sm:gap-3">
                   {prayers.map((prayer, i) => {
                     const isNext = i === activeIndex;
-                    const prayerDate = parseDhakaToLocal(prayer.time24);
-                    const isPassed = prayerDate <= now && !isNext;
-
+                    const prayerTime = parseDhakaToLocal(prayer.time24, now);
+                    const isPassed = !isNext && prayerTime <= now;
                     const IconComponent = prayer.Icon;
                     const [timeNum, period] = (bn ? prayer.timeBn : prayer.timeEn).split(" ");
 
+        {/* Next Prayer - Prominent */}
+        <div className="mb-6 sm:mb-8 rounded-xl border border-[#c79a45]/30 bg-gradient-to-br from-[#0d3326] to-[#061913] p-5 sm:p-8">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+            <div>
+              <span className="text-xs font-bold tracking-[0.2em] text-[#c79a45] uppercase">
+                {bn ? "পরবর্তী নামাজ" : "NEXT PRAYER"}
+              </span>
+              <h3 className="mt-2 text-2xl sm:text-3xl font-serif font-bold text-white">
+                {bn ? nextPrayer.nameBn : nextPrayer.nameEn}
+              </h3>
+              <p className="mt-1 text-lg sm:text-xl font-medium text-[#c79a45]">
+                {bn ? nextPrayer.timeBn : nextPrayer.timeEn}
+              </p>
+            </div>
+            <div className="text-center sm:text-right">
+              <div className="flex items-center justify-center sm:justify-end gap-1 text-3xl sm:text-4xl font-bold text-white tabular-nums">
+                {countdown.hours > 0 && (
+                  <>
+                    <span>{String(countdown.hours).padStart(2, "0")}</span>
+                    <span className="text-[#c79a45]">:</span>
+                  </>
+                )}
+                <span>{String(countdown.minutes).padStart(2, "0")}</span>
+                <span className="text-[#c79a45]">:</span>
+                <span>{String(countdown.seconds).padStart(2, "0")}</span>
                     return (
                       <div
                         key={prayer.id}
@@ -403,6 +547,9 @@ export function PrayerTimesSection() {
                 </div>
 
               </div>
+              <p className="mt-1 text-xs text-[#8ea499] uppercase tracking-wider">
+                {bn ? "সময় বাকি" : "remaining"}
+              </p>
 
               {/* Right Panel: Ornate Next Prayer & Live Clock Card (col-span-5) */}
               <div className="prayer-right-panel lg:col-span-5 rounded-xl border border-[#dca74e]/40 bg-gradient-to-b from-[#0d3326] via-[#09271e] to-[#051711] p-4 xs:p-5 sm:p-6 flex flex-col items-center justify-between text-center relative overflow-hidden shadow-xl min-h-[380px] xs:min-h-[400px] sm:min-h-[420px]">
@@ -418,21 +565,21 @@ export function PrayerTimesSection() {
                     <span>✦</span>
                   </span>
                   <h3 className="text-2xl xs:text-3xl sm:text-4xl font-serif font-bold text-white mt-1 sm:mt-1.5 tracking-wide">
-                    {bn ? prayers[activeIndex].nameBn : prayers[activeIndex].nameEn}
+                    {bn ? activePrayer.nameBn : activePrayer.nameEn}
                   </h3>
                 </div>
 
                 {/* Center Ornate Live Analog Clock */}
                 <OrnateAnalogClock time={now} />
 
-                {/* Live Digital Time Pill */}
+                {/* Remaining Time Pill for Next Prayer (replaced the previous Dhaka time) */}
                 <div className="relative z-10 bg-black/60 border border-[#dca74e]/50 px-4 py-1.5 xs:px-6 xs:py-2 rounded-full flex flex-col items-center shadow-lg mt-1">
                   <div className="flex items-center gap-1.5 sm:gap-2 font-mono text-lg xs:text-xl sm:text-2xl font-bold tracking-wider text-white">
                     <Clock className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-[#dca74e]" />
-                    <span suppressHydrationWarning>{liveClockString}</span>
+                    <span suppressHydrationWarning>{remainingCountdown.formatted}</span>
                   </div>
                   <span className="text-[10px] xs:text-[11px] font-medium text-[#8ea499] uppercase tracking-wider">
-                    {bn ? "ঢাকা সময়" : "Dhaka Time"}
+                    {bn ? "বাকি সময়" : "Time Remaining"}
                   </span>
                 </div>
 
@@ -444,16 +591,36 @@ export function PrayerTimesSection() {
                     <span>✦</span>
                   </span>
                   <p className="text-[11px] xs:text-xs sm:text-sm font-medium text-white/90 mt-1">
-                    {bn
-                      ? "প্রথম জামাত: ১:১৫ অপরাহ্ন  •  দ্বিতীয় জামাত: ২:১৫ অপরাহ্ন"
-                      : "First: 1:15 PM  •  Second: 2:15 PM"}
+                    {jumuahText}
                   </p>
                 </div>
 
               </div>
 
             </div>
+          </div>
+        </div>
 
+        {/* Prayer Grid */}
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 sm:gap-4">
+          {prayers.map((prayer, i) => {
+            const isNext = i === nextPrayerIndex;
+            const [timeNum, period] = (bn ? prayer.timeBn : prayer.timeEn).split(" ");
+
+            return (
+              <div
+                key={prayer.id}
+                className={`rounded-lg p-3 sm:p-4 text-center transition-all ${
+                  isNext
+                    ? "bg-[#c79a45]/20 ring-2 ring-[#c79a45]"
+                    : "bg-[#0a1f18] hover:bg-[#0d2920]"
+                }`}
+              >
+                <span className="text-2xl" aria-hidden="true">
+                  {PRAYER_ICONS[prayer.id] || "🕌"}
+                </span>
+                <p className={`mt-2 text-xs font-bold uppercase tracking-wider ${isNext ? "text-[#c79a45]" : "text-[#8ea499]"}`}>
+                  {bn ? prayer.nameBn : prayer.nameEn}
             {/* Bottom Feature Banner */}
             <div className="mt-6 sm:mt-8 rounded-lg border border-[#1b4334] bg-gradient-to-r from-[#061c16] via-[#08261e] to-[#051711] p-4 xs:p-5 sm:p-6 flex flex-col md:flex-row items-center justify-between gap-4 sm:gap-6 relative overflow-hidden shadow-lg">
               
@@ -462,8 +629,29 @@ export function PrayerTimesSection() {
                 <p className="text-base xs:text-lg sm:text-xl font-serif font-bold text-white tracking-wide">
                   {bn ? "আপনার ঈমানের সাথে সংযুক্ত থাকুন" : "Stay connected with your faith"}
                 </p>
+                <p className={`mt-1 text-lg sm:text-xl font-bold ${isNext ? "text-white" : "text-white/90"}`}>
+                  {timeNum}
+                </p>
+                <p className="text-xs text-[#8ea499]">{period}</p>
               </div>
+            );
+          })}
+        </div>
 
+        {/* Jumu'ah */}
+        {jumuah.length > 0 && (
+          <div className="mt-6 sm:mt-8 rounded-lg border border-[#c79a45]/20 bg-[#0a1f18] p-4 sm:p-6">
+            <span className="text-xs font-bold tracking-[0.2em] text-[#c79a45] uppercase">
+              {bn ? "জুমু'আর নামাজ" : "JUMU'AH PRAYER"}
+            </span>
+            <div className="mt-3 flex flex-wrap gap-4 sm:gap-6">
+              {jumuah.map((j, idx) => (
+                <div key={idx} className="flex items-center gap-3">
+                  <Clock className="w-4 h-4 text-[#c79a45]" />
+                  <span className="text-sm text-white">
+                    {j.khutbahTime}
+                    {j.location && <span className="text-[#8ea499]"> • {j.location}</span>}
+                  </span>
               {/* Middle 3 Features with Circular Gold Icon Badges */}
               <div className="flex flex-wrap items-center justify-center gap-4 xs:gap-6 sm:gap-10">
                 
@@ -481,6 +669,7 @@ export function PrayerTimesSection() {
                     </span>
                   </div>
                 </div>
+              ))}
 
                 {/* Feature 2: Automatic Updates */}
                 <div className="flex items-center gap-2.5 xs:gap-3">
@@ -524,6 +713,7 @@ export function PrayerTimesSection() {
             </div>
 
           </div>
+        )}
         </PrayerReveal>
       </div>
     </section>

@@ -6,19 +6,23 @@ import { ArrowRight, Moon, BookOpen, CalendarDays, Heart } from "lucide-react";
 export function HeroSection() {
   const { language } = useLanguage();
   const bangla = language === "bn";
-  
+
   return (
     <section
       id="home"
       className="relative min-h-[850px] lg:min-h-[900px] overflow-hidden bg-[#073a2d] text-white flex flex-col lg:flex-row items-center pt-32 lg:pt-20"
     >
-      <style dangerouslySetInnerHTML={{ __html: `
+      <style
+        dangerouslySetInnerHTML={{
+          __html: `
         @media (max-width: 1023px) {
           .hero-video-bg {
             object-position: 78% center !important;
           }
         }
-      `}} />
+      `,
+        }}
+      />
 
       {/* Background Video */}
       <video
@@ -30,24 +34,26 @@ export function HeroSection() {
       >
         <source src="/hero.mp4" type="video/mp4" />
       </video>
-      
+
       {/* Gradient Overlay for Text Readability */}
       <div className="absolute inset-0 z-0 bg-gradient-to-b from-[#04241b]/95 via-[#072a20]/40 to-transparent lg:bg-gradient-to-r lg:from-[#072a20]/90 lg:via-[#072a20]/60 lg:to-transparent lg:w-2/3 pointer-events-none" />
 
       {/* Content Container */}
       <div className="relative z-10 mx-auto w-full max-w-7xl px-4 lg:px-8 pointer-events-none mt-10 lg:mt-0 flex flex-col items-center lg:items-start text-center lg:text-left">
         <div className="max-w-2xl pointer-events-auto flex flex-col items-center lg:items-start">
-          
           {/* Top Arabic Text */}
           <div className="flex items-center justify-center lg:justify-start gap-2.5 sm:gap-3 text-[#dca74e] mb-3 sm:mb-4 lg:mb-6">
             <span className="text-[10px]">❖</span>
-            <span className="font-arabic text-base sm:text-xl tracking-wider">بِسْمِ ٱللَّٰهِ ٱلرَّحْمَٰنِ ٱلرَّحِيمِ</span>
+            <span className="font-arabic text-base sm:text-xl tracking-wider">
+              بِسْمِ ٱللَّٰهِ ٱلرَّحْمَٰنِ ٱلرَّحِيمِ
+            </span>
             <span className="text-[10px]">❖</span>
           </div>
 
           {/* Main Heading */}
           <h1 className="text-[30px] xs:text-[38px] sm:text-6xl lg:text-[72px] font-serif text-[#f2e6ce] leading-[1.1] tracking-wide mb-3 sm:mb-4 lg:mb-6">
-            DISCOVER THE<br />
+            DISCOVER THE
+            <br />
             BEAUTY OF FAITH
           </h1>
 
@@ -104,11 +110,8 @@ export function HeroSection() {
               </a>
             </div>
           </div>
-
         </div>
       </div>
     </section>
   );
 }
-
-
