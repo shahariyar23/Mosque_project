@@ -1,51 +1,89 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import Link from "next/link";
 import { useLanguage } from "@/components/language-provider";
-import { mosqueEvents, type EventCategory, type MosqueEvent } from "@/components/events/event-data";
+import { type MosqueEvent, type EventCategory } from "@/lib/mosque/types";
+import { fetchEvents } from "@/services/eventService";
 import { EventsHero } from "@/components/events/events-hero";
 import { FeaturedEventCard } from "@/components/events/featured-event-card";
 import { EventsFilters } from "@/components/events/events-filters";
 import { EventCard } from "@/components/events/event-card";
 import { EventsCta } from "@/components/events/events-cta";
-import { Calendar, ChevronDown, ChevronUp, History, Sparkles, Clock } from "lucide-react";
+import { Calendar, ChevronDown, ChevronUp, History, Sparkles, Clock, AlertCircle } from "lucide-react";
 
 export function EventsPage() {
   const { language } = useLanguage();
   const bn = language === "bn";
 
   const [search, setSearch] = useState("");
-  const [selectedCategory, setSelectedCategory] = useState<EventCategory>("All");
-  const [selectedMonth, setSelectedMonth] = useState<string>("all");
+  const [selectedCategory, setSelectedCategory] = useState<string>("all");
   const [showPastEvents, setShowPastEvents] = useState(false);
+  const [allEvents, setAllEvents] = useState<MosqueEvent[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  // Fetch events from API
+  useEffect(() => {
+    const loadEvents = async () => {
+      try {
+        setLoading(true);
+        setError(null);
+        
+        // Fetch upcoming events
+        const upcomingResult = await fetchEvents({
+          timeframe: "upcoming",
+          all: true,
+        });
+        
+        // Fetch completed/past events separately
+        const pastResult = await fetchEvents({
+          timeframe: "past",
+          all: true,
+        });
+        
+        setAllEvents([...upcomingResult.rows, ...pastResult.rows]);
+      } catch (err) {
+        console.error("Failed to fetch events:", err);
+        setError(bn ? "অনুষ্ঠান লোড করতে ব্যর্থ হয়েছে" : "Failed to load events");
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadEvents();
+  }, [bn]);
+
+  // Separate upcoming and past
+  const upcomingEventsAll = useMemo(
+    () => allEvents.filter((e) => e.status === "Upcoming" || e.status === "Ongoing"),
+    [allEvents]
+  );
+  const pastEventsAll = useMemo(
+    () => allEvents.filter((e) => e.status === "Completed" || e.status === "Cancelled"),
+    [allEvents]
+  );
+
+  // Determine the featured event
+  const featuredEvent = useMemo(() => {
+    return upcomingEventsAll[0];
+  }, [upcomingEventsAll]);
 
   // Extract all available months from upcoming events
   const availableMonths = useMemo(() => {
     const monthsSet = new Set<string>();
-    mosqueEvents
-      .filter((e) => !e.past)
-      .forEach((e) => {
-        monthsSet.add(e.date.slice(0, 7)); // YYYY-MM
-      });
+    upcomingEventsAll.forEach((e) => {
+      monthsSet.add(e.date.slice(0, 7)); // YYYY-MM
+    });
     return Array.from(monthsSet).sort();
-  }, []);
-
-  // Separate upcoming and past
-  const upcomingEventsAll = useMemo(() => mosqueEvents.filter((e) => !e.past), []);
-  const pastEventsAll = useMemo(() => mosqueEvents.filter((e) => e.past), []);
-
-  // Determine the featured event
-  const featuredEvent = useMemo(() => {
-    return upcomingEventsAll.find((e) => e.featured) || upcomingEventsAll[0];
   }, [upcomingEventsAll]);
 
-  // Filter upcoming events based on search, category, and month
+  // Filter upcoming events based on search and category
   const filteredUpcoming = useMemo(() => {
     return upcomingEventsAll.filter((event) => {
       // Exclude featured event if no active search or filter is applied (so it doesn't duplicate right away)
-      const hasActiveFilter = search.trim() !== "" || selectedCategory !== "All" || selectedMonth !== "all";
-      if (!hasActiveFilter && featuredEvent && event.slug === featuredEvent.slug) {
+      const hasActiveFilter = search.trim() !== "" || selectedCategory !== "all";
+      if (!hasActiveFilter && featuredEvent && event.id === featuredEvent.id) {
         // Keep in grid only if multiple events exist, otherwise show it
         if (upcomingEventsAll.length > 1) {
           return false;
@@ -53,12 +91,7 @@ export function EventsPage() {
       }
 
       // Category filter
-      if (selectedCategory !== "All" && event.category !== selectedCategory) {
-        return false;
-      }
-
-      // Month filter
-      if (selectedMonth !== "all" && !event.date.startsWith(selectedMonth)) {
+      if (selectedCategory !== "all" && event.category !== selectedCategory) {
         return false;
       }
 
@@ -66,24 +99,60 @@ export function EventsPage() {
       if (search.trim() !== "") {
         const query = search.toLowerCase();
         const matchesTitle = event.title.toLowerCase().includes(query);
-        const matchesBnTitle = event.bnTitle?.toLowerCase().includes(query) || false;
         const matchesDesc = event.description.toLowerCase().includes(query);
         const matchesLocation = event.location.toLowerCase().includes(query);
-        if (!matchesTitle && !matchesBnTitle && !matchesDesc && !matchesLocation) {
+        const matchesSpeaker = event.speaker?.toLowerCase().includes(query) || false;
+        if (!matchesTitle && !matchesDesc && !matchesLocation && !matchesSpeaker) {
           return false;
         }
       }
 
       return true;
     });
-  }, [upcomingEventsAll, search, selectedCategory, selectedMonth, featuredEvent]);
+  }, [upcomingEventsAll, search, selectedCategory, featuredEvent]);
 
   // Reset filters
   const resetFilters = () => {
     setSearch("");
-    setSelectedCategory("All");
-    setSelectedMonth("all");
+    setSelectedCategory("all");
   };
+
+  // Show loading state
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-[#f8f6ef] text-[#17211d] flex flex-col">
+        <EventsHero />
+        <main className="mx-auto max-w-7xl w-full px-4 xs:px-6 lg:px-8 py-10 sm:py-14">
+          <div className="flex items-center justify-center h-64">
+            <div className="text-center">
+              <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-[#0d4d3b] mx-auto mb-4"></div>
+              <p className="text-[#52605a]">{bn ? "অনুষ্ঠান লোড করছে..." : "Loading events..."}</p>
+            </div>
+          </div>
+        </main>
+      </div>
+    );
+  }
+
+  // Show error state
+  if (error) {
+    return (
+      <div className="min-h-screen bg-[#f8f6ef] text-[#17211d] flex flex-col">
+        <EventsHero />
+        <main className="mx-auto max-w-7xl w-full px-4 xs:px-6 lg:px-8 py-10 sm:py-14">
+          <div className="p-8 sm:p-14 rounded-3xl border border-red-300 bg-red-50 text-center flex flex-col items-center justify-center max-w-xl mx-auto">
+            <div className="w-14 h-14 rounded-2xl bg-red-100 border border-red-300 flex items-center justify-center text-red-600 mb-4">
+              <AlertCircle className="w-7 h-7" />
+            </div>
+            <h3 className="text-xl sm:text-2xl font-serif font-bold text-red-800">
+              {bn ? "ত্রুটি" : "Error"}
+            </h3>
+            <p className="mt-2 text-sm text-red-700">{error}</p>
+          </div>
+        </main>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-[#f8f6ef] text-[#17211d] flex flex-col">
@@ -131,8 +200,8 @@ export function EventsPage() {
             onSearchChange={setSearch}
             selectedCategory={selectedCategory}
             onCategoryChange={setSelectedCategory}
-            selectedMonth={selectedMonth}
-            onMonthChange={setSelectedMonth}
+            selectedMonth="all"
+            onMonthChange={() => {}}
             availableMonths={availableMonths}
           />
         </section>
@@ -142,7 +211,7 @@ export function EventsPage() {
           {filteredUpcoming.length > 0 ? (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 sm:gap-8">
               {filteredUpcoming.map((event) => (
-                <EventCard key={event.slug} event={event} />
+                <EventCard key={event.id} event={event} />
               ))}
             </div>
           ) : (
@@ -155,17 +224,17 @@ export function EventsPage() {
                 {bn ? "কোনো অনুষ্ঠান পাওয়া যায়নি" : "No Matching Events Found"}
               </h3>
               <p className="mt-2 text-xs xs:text-sm text-[#69726d] max-w-md leading-relaxed">
-                {search || selectedCategory !== "All" || selectedMonth !== "all"
+                {search || selectedCategory !== "all"
                   ? bn
-                    ? "আপনার বর্তমান ফিল্টার অনুযায়ী কোনো অনুষ্ঠান মেলেনি। ফিল্টার রিসেট করে আবার চেষ্টা করুন।"
+                    ? "আপনার বর্তমান ফিল্টার অনুযায়ী কোনো অনুষ্ঠান মেলেনি। ফিল্টার রিসেট করে আবার চেষ্টা করুন।"
                     : "No events match your current search or category filter. Try clearing filters to view all scheduled dates."
                   : bn
-                    ? "এই মুহূর্তে কোনো অনুষ্ঠান নির্ধারিত নেই। নামাজের সময়সূচি দেখতে পারেন।"
-                    : "There are no events scheduled right now. Check back soon or explore our regular prayer timings."}
+                  ? "এই মুহূর্তে কোনো অনুষ্ঠান নির্ধারিত নেই। নামাজের সময়সূচি দেখতে পারেন।"
+                  : "There are no events scheduled right now. Check back soon or explore our regular prayer timings."}
               </p>
 
               <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
-                {(search || selectedCategory !== "All" || selectedMonth !== "all") && (
+                {(search || selectedCategory !== "all") && (
                   <button
                     type="button"
                     onClick={resetFilters}
@@ -218,7 +287,10 @@ export function EventsPage() {
             {showPastEvents && (
               <div className="mt-6 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 animate-fade-in opacity-90">
                 {pastEventsAll.map((event) => (
-                  <div key={event.slug} className="grayscale-[0.4] hover:grayscale-0 transition duration-300">
+                  <div
+                    key={event.id}
+                    className="grayscale-[0.4] hover:grayscale-0 transition duration-300"
+                  >
                     <EventCard event={event} />
                   </div>
                 ))}

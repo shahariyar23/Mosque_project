@@ -1,14 +1,14 @@
 "use client";
 
 import { useLanguage } from "@/components/language-provider";
-import { eventCategories, type EventCategory } from "@/components/events/event-data";
+import { eventCategories } from "@/lib/mosque/types";
 import { Search, X } from "lucide-react";
 
 type Props = {
   search: string;
   onSearchChange: (val: string) => void;
-  selectedCategory: EventCategory;
-  onCategoryChange: (cat: EventCategory) => void;
+  selectedCategory: string;
+  onCategoryChange: (cat: string) => void;
   selectedMonth: string;
   onMonthChange: (month: string) => void;
   availableMonths: string[];
@@ -26,16 +26,17 @@ export function EventsFilters({
   const { language } = useLanguage();
   const bn = language === "bn";
 
-  const getCategoryLabel = (cat: EventCategory) => {
+  const getCategoryLabel = (cat: string) => {
     if (!bn) return cat;
     switch (cat) {
-      case "All": return "সকল কার্যক্রম";
-      case "Worship": return "ইবাদত ও সালাত";
+      case "all": return "সকল কার্যক্রম";
       case "Quran": return "কুরআন শিক্ষা";
       case "Education": return "দ্বীনি ইলম";
       case "Community": return "কমিউনিটি";
       case "Youth": return "যুব সমাজ";
       case "Charity": return "ত্রাণ ও সাহায্য";
+      case "Ramadan": return "রমজান";
+      case "Seminar": return "সেমিনার";
       default: return cat;
     }
   };
@@ -51,6 +52,8 @@ export function EventsFilters({
       year: "numeric",
     }).format(date);
   };
+
+  const allCategories = ["all", ...eventCategories];
 
   return (
     <div className="space-y-4">
@@ -104,7 +107,7 @@ export function EventsFilters({
       {/* Horizontal Scrollable Category Chips (Mobile-First touch targets) */}
       <div className="relative">
         <div className="flex items-center gap-2 overflow-x-auto no-scrollbar py-1 -mx-4 px-4 xs:mx-0 xs:px-0">
-          {eventCategories.map((category) => {
+          {allCategories.map((category) => {
             const isSelected = selectedCategory === category;
             return (
               <button

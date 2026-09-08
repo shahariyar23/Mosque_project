@@ -35,18 +35,43 @@ export class EventsService {
   ) {}
 
   /**
+   * Resolve the mosque ID for a request.
+   * If mosqueId is provided, use it. Otherwise, return the first/primary mosque.
+   * This allows unauthenticated users to see the default mosque's events.
+   */
+  private async resolveMosqueId(mosqueId: string | undefined): Promise<string> {
+    if (mosqueId) {
+      return mosqueId;
+    }
+
+    // For unauthenticated requests, find the first/primary mosque
+    const mosque = await this.prisma.mosque.findFirst({
+      orderBy: { createdAt: 'asc' },
+      select: { id: true },
+    });
+
+    if (!mosque) {
+      throw new Error('No mosque found in the system.');
+    }
+
+    return mosque.id;
+  }
+
+  /**
    * List mosque events.
    * Returns a standard paginated envelope (or all events when query.all is true).
+   * For unauthenticated users, returns events from the primary mosque.
    */
   async findAll(
-    mosqueId: string,
+    mosqueId: string | undefined,
     query: ListEventsQueryDto = {},
   ): Promise<PaginatedEventsDto | EventDto[]> {
+    const resolvedMosqueId = await this.resolveMosqueId(mosqueId);
     const todayStr = new Date().toISOString().slice(0, 10);
     const todayDate = toDateOnly(todayStr);
 
     const where: Prisma.EventWhereInput = {
-      mosqueId,
+      mosqueId: resolvedMosqueId,
       deletedAt: null,
       ...(query.category !== undefined && { category: query.category }),
       ...(query.status !== undefined && { status: query.status }),
@@ -137,11 +162,13 @@ export class EventsService {
 
   /**
    * Find a single event by ID or slug.
+   * For unauthenticated users, finds events from the primary mosque.
    */
-  async findOne(mosqueId: string, idOrSlug: string): Promise<EventDto> {
+  async findOne(mosqueId: string | undefined, idOrSlug: string): Promise<EventDto> {
+    const resolvedMosqueId = await this.resolveMosqueId(mosqueId);
     const isUuid = UUID_REGEX.test(idOrSlug);
     const where: Prisma.EventWhereInput = {
-      mosqueId,
+      mosqueId: resolvedMosqueId,
       deletedAt: null,
       ...(isUuid ? { id: idOrSlug } : { slug: idOrSlug }),
     };

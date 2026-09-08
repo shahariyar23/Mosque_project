@@ -12,6 +12,7 @@ import { ApiBearerAuth, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagg
 
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { Permissions } from '../common/decorators/permissions.decorator';
+import { Public } from '../common/decorators/public.decorator';
 import type { AuthenticatedUser } from '../common/types/authenticated-user';
 import {
   CreateEventDto,
@@ -32,32 +33,36 @@ export class EventsController {
   constructor(private readonly eventsService: EventsService) {}
 
   @Get()
-  @Permissions('event.view')
+  @Public()
   @ApiOperation({
     summary: 'List events',
-    description: 'Returns paginated events for the authenticated mosque, filtered by category, status, search, or date.',
+    description: 'Returns paginated events for the primary mosque, filtered by category, status, search, or date. Accessible without authentication.',
   })
   @ApiResponse({ status: 200, type: PaginatedEventsDto })
   findAll(
-    @CurrentUser() user: AuthenticatedUser,
+    @CurrentUser() user: AuthenticatedUser | undefined,
     @Query() query: ListEventsQueryDto,
   ): Promise<PaginatedEventsDto | EventDto[]> {
-    return this.eventsService.findAll(user.mosqueId, query);
+    // For unauthenticated users, pass undefined and service will use primary mosque
+    const mosqueId = user?.mosqueId;
+    return this.eventsService.findAll(mosqueId, query);
   }
 
   @Get(':id')
-  @Permissions('event.view')
+  @Public()
   @ApiOperation({
     summary: 'Get single event',
-    description: 'Returns event details by UUID id or URL slug.',
+    description: 'Returns event details by UUID id or URL slug. Accessible without authentication.',
   })
   @ApiResponse({ status: 200, type: EventDto })
   @ApiResponse({ status: 404, description: 'Event not found.' })
   findOne(
-    @CurrentUser() user: AuthenticatedUser,
+    @CurrentUser() user: AuthenticatedUser | undefined,
     @Param('id') idOrSlug: string,
   ): Promise<EventDto> {
-    return this.eventsService.findOne(user.mosqueId, idOrSlug);
+    // For unauthenticated users, pass undefined and service will use primary mosque
+    const mosqueId = user?.mosqueId;
+    return this.eventsService.findOne(mosqueId, idOrSlug);
   }
 
   @Post()

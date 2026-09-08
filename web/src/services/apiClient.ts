@@ -172,7 +172,7 @@ type RequestInput = {
 
 /** Whether a path is part of the auth flow, which must never be retried through the auth flow. */
 function isAuthPath(path: string): boolean {
-  return path.startsWith("/auth/");
+  return path === "/auth/refresh" || path === "/auth/login" || path === "/auth/register";
 }
 
 /**

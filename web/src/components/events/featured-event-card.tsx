@@ -9,25 +9,27 @@ import {
   formatEventDayNumber, 
   formatEventMonthShort, 
   formatEventWeekday, 
-  type MosqueEvent 
 } from "@/components/events/event-data";
+import { type MosqueEvent } from "@/lib/mosque/types";
 import { Clock, MapPin, Sparkles, ArrowRight, CalendarPlus, Users } from "lucide-react";
 
 export function FeaturedEventCard({ event }: { event: MosqueEvent }) {
   const { language } = useLanguage();
   const bn = language === "bn";
 
-  const title = bn ? event.bnTitle : event.title;
-  const description = bn ? event.bnDescription : event.description;
-  const location = bn ? (event.bnLocation || event.location) : event.location;
-  const address = bn ? (event.bnAddress || event.address) : event.address;
+  const title = event.title;
+  const description = event.description;
+  const location = event.location;
 
   // Google calendar link with timezone safety
   const startDateTime = `${event.date.replaceAll("-", "")}T${event.startTime.replace(":", "")}00`;
-  const endDateTime = `${event.date.replaceAll("-", "")}T${event.endTime.replace(":", "")}00`;
-  const calendarUrl = `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(event.title)}&dates=${startDateTime}/${endDateTime}&details=${encodeURIComponent(event.description)}&location=${encodeURIComponent(event.address)}`;
+  const endDateTime = `${(event.endTime || "23:59").replaceAll("-", "")}T${(event.endTime || "23:59").replace(":", "")}00`;
+  const calendarUrl = `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(event.title)}&dates=${startDateTime}/${endDateTime}&details=${encodeURIComponent(event.description)}&location=${encodeURIComponent(event.location)}`;
 
   const isFull = event.capacity && event.registered && event.registered >= event.capacity;
+
+  // Provide a fallback image if imageUrl is not available
+  const imageUrl = event.imageUrl || "https://images.unsplash.com/photo-1517457373614-b7152f800fd1?w=600&h=400&fit=crop";
 
   return (
     <section aria-labelledby="featured-event-heading" className="w-full">
@@ -37,7 +39,7 @@ export function FeaturedEventCard({ event }: { event: MosqueEvent }) {
           {/* Photography Side (5 cols on lg) */}
           <div className="relative lg:col-span-5 min-h-[260px] xs:min-h-[300px] sm:min-h-[360px] bg-[#072a20] overflow-hidden">
             <Image
-              src={event.image}
+              src={imageUrl}
               alt={title}
               fill
               priority
@@ -81,11 +83,12 @@ export function FeaturedEventCard({ event }: { event: MosqueEvent }) {
               <div className="flex flex-wrap items-center justify-between gap-2 pb-4 border-b border-[#eae6dc]">
                 <span className="px-3 py-1 rounded-full bg-[#0d4d3b]/10 text-[#0d4d3b] text-xs font-bold tracking-wider uppercase">
                   {bn && event.category === "Education" ? "শিক্ষা" :
-                   bn && event.category === "Worship" ? "ইবাদত" :
                    bn && event.category === "Quran" ? "কুরআন" :
                    bn && event.category === "Youth" ? "যুব" :
                    bn && event.category === "Charity" ? "দান" :
-                   bn && event.category === "Community" ? "কমিউনিটি" : event.category}
+                   bn && event.category === "Community" ? "কমিউনিটি" :
+                   bn && event.category === "Ramadan" ? "রমজান" :
+                   bn && event.category === "Seminar" ? "সেমিনার" : event.category}
                 </span>
 
                 {isFull ? (
@@ -150,10 +153,10 @@ export function FeaturedEventCard({ event }: { event: MosqueEvent }) {
             <div className="mt-8 pt-6 border-t border-[#eae6dc] flex flex-col xs:flex-row items-stretch xs:items-center gap-3">
               <Link
                 href={`/events/${event.slug}`}
-                className="flex-1 inline-flex items-center justify-center gap-2 px-6 py-3.5 rounded-xl bg-[#0d4d3b] text-white font-semibold text-sm transition-all duration-200 hover:bg-[#072a20] active:scale-[0.98] shadow-md min-h-[48px]"
+                className="flex-1 inline-flex items-center justify-center gap-2 px-6 py-3.5 rounded-xl bg-[#0d4d3b] text-white font-semibold text-sm transition-all duration-200 hover:bg-[#072a20] active:scale-[0.98] shadow-md min-h-[48px] hover:text-white"
               >
-                <span>{bn ? "বিস্তারিত দেখুন" : "View Event Details"}</span>
-                <ArrowRight className="w-4 h-4" />
+                <span className="text-white">{bn ? "বিস্তারিত দেখুন" : "View Event Details"}</span>
+                <ArrowRight className="w-4 h-4 text-white" />
               </Link>
 
               <a

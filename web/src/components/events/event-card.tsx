@@ -8,19 +8,22 @@ import {
   formatEventMonthShort,
   formatEventWeekday,
   formatEventTime,
-  type MosqueEvent,
 } from "@/components/events/event-data";
+import { type MosqueEvent } from "@/lib/mosque/types";
 import { Clock, MapPin, ArrowRight, Users } from "lucide-react";
 
 export function EventCard({ event }: { event: MosqueEvent }) {
   const { language } = useLanguage();
   const bn = language === "bn";
 
-  const title = bn ? event.bnTitle : event.title;
-  const description = bn ? event.bnDescription : event.description;
-  const location = bn ? (event.bnLocation || event.location) : event.location;
+  const title = event.title;
+  const description = event.description;
+  const location = event.location;
 
   const isFull = event.capacity && event.registered && event.registered >= event.capacity;
+
+  // Provide a fallback image if imageUrl is not available
+  const imageUrl = event.imageUrl || "https://images.unsplash.com/photo-1517457373614-b7152f800fd1?w=600&h=400&fit=crop";
 
   return (
     <article className="group flex flex-col justify-between overflow-hidden rounded-2xl border border-[#e5e1d3] bg-white shadow-sm transition-all duration-300 hover:border-[#c79a45]/60 hover:shadow-xl hover:-translate-y-1">
@@ -28,7 +31,7 @@ export function EventCard({ event }: { event: MosqueEvent }) {
         {/* Card Image Banner */}
         <div className="relative aspect-[16/10] w-full overflow-hidden bg-[#072a20]">
           <Image
-            src={event.image}
+            src={imageUrl}
             alt={title}
             fill
             sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
@@ -54,11 +57,12 @@ export function EventCard({ event }: { event: MosqueEvent }) {
           <div className="absolute top-3.5 right-3.5 z-10">
             <span className="px-2.5 py-1 rounded-full bg-[#072a20]/90 border border-[#c79a45]/50 text-[#e0be79] text-[10px] font-bold tracking-wider uppercase backdrop-blur-md">
               {bn && event.category === "Education" ? "শিক্ষা" :
-               bn && event.category === "Worship" ? "ইবাদত" :
                bn && event.category === "Quran" ? "কুরআন" :
                bn && event.category === "Youth" ? "যুব" :
                bn && event.category === "Charity" ? "দান" :
-               bn && event.category === "Community" ? "কমিউনিটি" : event.category}
+               bn && event.category === "Community" ? "কমিউনিটি" :
+               bn && event.category === "Ramadan" ? "রমজান" :
+               bn && event.category === "Seminar" ? "সেমিনার" : event.category}
             </span>
           </div>
 
@@ -94,7 +98,7 @@ export function EventCard({ event }: { event: MosqueEvent }) {
           <div className="mt-3 space-y-1.5 text-xs text-[#52605a]">
             <div className="flex items-center gap-2">
               <Clock className="w-3.5 h-3.5 text-[#c79a45] shrink-0" />
-              <span>{formatEventTime(event.startTime, language)} - {formatEventTime(event.endTime, language)}</span>
+              <span>{formatEventTime(event.startTime, language)} - {formatEventTime(event.endTime || "23:59", language)}</span>
             </div>
             <div className="flex items-center gap-2">
               <MapPin className="w-3.5 h-3.5 text-[#c79a45] shrink-0" />

@@ -156,6 +156,14 @@ export function fetchUser(id: string): Promise<User> {
   return apiGet<User>(`/users/${id}`);
 }
 
+/**
+ * Reads the authenticated user's own profile.
+ * `GET /auth/me`
+ */
+export function fetchMyProfile(): Promise<User> {
+  return apiGet<User>("/auth/me");
+}
+
 /** `user.manage`. `409` on a duplicate email or phone. */
 export function createUser(input: CreateUserInput): Promise<User> {
   return apiPost<User>("/users", input);
