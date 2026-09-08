@@ -4,17 +4,12 @@ import { useEffect, useState, useMemo } from "react";
 import Link from "next/link";
 import { useLanguage } from "@/components/language-provider";
 import { PrayerReveal } from "@/components/home/PrayerReveal";
+import { usePublicPrayerTimes } from "@/hooks/use-public-prayer-times";
 import {
   Calendar,
   Clock,
   RotateCcw,
   MapPin,
-  ArrowRight,
-  Sun,
-  Sunrise as SunriseIcon,
-  CloudSun,
-  Sunset as SunsetIcon,
-  Moon,
 } from "lucide-react";
 
 /* ── Custom Prayer Line Icons matching the reference design ── */
@@ -168,6 +163,7 @@ const STATIC_REF_DATE = new Date("2026-08-26T06:00:00+06:00");
 export function PrayerTimesSection() {
   const { language } = useLanguage();
   const bn = language === "bn";
+  const { prayers: livePrayers, jumuah, nextPrayerIndex: liveNextIndex } = usePublicPrayerTimes();
 
   const [isMounted, setIsMounted] = useState(false);
   const [currentTime, setCurrentTime] = useState<Date>(STATIC_REF_DATE);
@@ -179,8 +175,39 @@ export function PrayerTimesSection() {
     return () => clearInterval(timer);
   }, []);
 
-  const prayers = useMemo(
-    () => [
+  // Helper: Convert time string to Date in Asia/Dhaka timezone
+  function parseDhakaToLocal(time24: string, refDate = new Date()) {
+    const [hh, mm] = time24.split(":");
+    const year = refDate.getFullYear();
+    const month = String(refDate.getMonth() + 1).padStart(2, "0");
+    const day = String(refDate.getDate()).padStart(2, "0");
+    const iso = `${year}-${month}-${day}T${hh}:${mm}:00+06:00`;
+    return new Date(iso);
+  }
+
+  const prayers = useMemo(() => {
+    const iconsMap = {
+      fajr: FajrIcon,
+      sunrise: SunriseHeaderIcon,
+      dhuhr: DhuhrIcon,
+      asr: AsrIcon,
+      maghrib: MaghribIcon,
+      isha: IshaIcon,
+    };
+
+    if (livePrayers && livePrayers.length >= 6) {
+      return livePrayers.map((p) => ({
+        id: p.id,
+        nameEn: p.nameEn,
+        nameBn: p.nameBn,
+        timeEn: p.timeEn,
+        timeBn: p.timeBn,
+        time24: p.time24,
+        Icon: iconsMap[p.id as keyof typeof iconsMap] || DhuhrIcon,
+      }));
+    }
+
+    return [
       {
         id: "fajr",
         nameEn: "FAJR",
@@ -235,28 +262,65 @@ export function PrayerTimesSection() {
         time24: "19:48",
         Icon: IshaIcon,
       },
-    ],
-    []
-  );
-
-  // Helper: Convert time string to Date
-  function parseDhakaToLocal(time24: string, refDate = new Date()) {
-    const [hh, mm] = time24.split(":");
-    const year = refDate.getFullYear();
-    const month = String(refDate.getMonth() + 1).padStart(2, "0");
-    const day = String(refDate.getDate()).padStart(2, "0");
-    const iso = `${year}-${month}-${day}T${hh}:${mm}:00+06:00`;
-    return new Date(iso);
-  }
+    ];
+  }, [livePrayers]);
 
   const now = isMounted ? currentTime : STATIC_REF_DATE;
-  const nextIndex = prayers.findIndex((p) => parseDhakaToLocal(p.time24) > now);
-  const activeIndex = nextIndex === -1 ? 0 : nextIndex;
 
-  // Format dynamic date
+  // Compute active next prayer index
+  const activeIndex = useMemo(() => {
+    if (liveNextIndex !== undefined && liveNextIndex >= 0 && liveNextIndex < prayers.length) {
+      return liveNextIndex;
+    }
+    const nextIdx = prayers.findIndex((p) => parseDhakaToLocal(p.time24, now) > now);
+    return nextIdx === -1 ? 0 : nextIdx;
+  }, [liveNextIndex, prayers, now]);
+
+  const activePrayer = prayers[activeIndex] || prayers[0];
+
+  // Calculate remaining time until the next prayer
+  const remainingCountdown = useMemo(() => {
+    if (!activePrayer) return { formatted: "00:00:00" };
+    let target = parseDhakaToLocal(activePrayer.time24, now);
+    if (target.getTime() <= now.getTime()) {
+      target = new Date(target.getTime() + 24 * 60 * 60 * 1000);
+    }
+    const diffMs = Math.max(0, target.getTime() - now.getTime());
+    const totalSeconds = Math.floor(diffMs / 1000);
+    const h = Math.floor(totalSeconds / 3600);
+    const m = Math.floor((totalSeconds % 3600) / 60);
+    const s = totalSeconds % 60;
+
+    const formatted = `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+
+    let humanEn = "";
+    if (h > 0) humanEn += `${h} hr${h > 1 ? "s" : ""} `;
+    humanEn += `${m} min${m > 1 ? "s" : ""}`;
+
+    let humanBn = "";
+    const toBn = (n: number) => String(n).replace(/[0-9]/g, (d) => "০১২৩৪৫৬৭৮৯"[+d]);
+    if (h > 0) humanBn += `${toBn(h)} ঘণ্টা `;
+    humanBn += `${toBn(m)} মিনিট`;
+
+    return {
+      hours: h,
+      minutes: m,
+      seconds: s,
+      formatted,
+      humanEn: humanEn.trim(),
+      humanBn: humanBn.trim(),
+    };
+  }, [activePrayer, now]);
+
+  // Dynamic date formatted
   const dateFormatted = useMemo(() => {
     if (bn) {
-      return "মঙ্গলবার, ১৮ আগস্ট ২০২৫";
+      return now.toLocaleDateString("bn-BD", {
+        weekday: "long",
+        day: "numeric",
+        month: "long",
+        year: "numeric",
+      });
     }
     return now.toLocaleDateString("en-US", {
       weekday: "long",
@@ -266,17 +330,17 @@ export function PrayerTimesSection() {
     });
   }, [now, bn]);
 
-  // Dynamic live digital clock readout
-  const liveClockString = useMemo(() => {
-    if (!isMounted) return "6:00:00 AM";
-    return now.toLocaleTimeString("en-US", {
-      timeZone: "Asia/Dhaka",
-      hour12: true,
-      hour: "numeric",
-      minute: "2-digit",
-      second: "2-digit",
-    });
-  }, [now, isMounted]);
+  // Jumu'ah text string
+  const jumuahText = useMemo(() => {
+    if (jumuah && jumuah.length > 0) {
+      return jumuah
+        .map((j, i) => `${i === 0 ? (bn ? "প্রথম" : "First") : (bn ? "দ্বিতীয়" : "Second")}: ${j.khutbahTime}`)
+        .join("  •  ");
+    }
+    return bn
+      ? "প্রথম জামাত: ১:১৫ অপরাহ্ন  •  দ্বিতীয় জামাত: ২:১৫ অপরাহ্ন"
+      : "First: 1:15 PM  •  Second: 2:15 PM";
+  }, [jumuah, bn]);
 
   return (
     <section id="prayer-times" className="relative bg-[#040e0b] py-10 px-4 sm:px-6 lg:px-8 text-white overflow-hidden">
@@ -308,20 +372,19 @@ export function PrayerTimesSection() {
 
                   <Link
                     href="/prayer-times"
-                    className="inline-flex items-center gap-1.5 sm:gap-2 px-3 py-1.5 xs:px-4 xs:py-2 rounded-lg border border-[#dca74e]/50 bg-black/40 hover:bg-[#dca74e]/20 text-[#f5d78e] text-[11px] sm:text-xs font-semibold tracking-wide transition shadow-sm shrink-0"
+                    className="inline-flex items-center gap-1.5 sm:gap-2 px-3 py-1.5 sm:px-4 sm:py-2 rounded-full border border-[#dca74e]/40 bg-[#dca74e]/10 hover:bg-[#dca74e]/20 text-[#f5d78e] text-xs sm:text-sm font-semibold transition-colors group"
                   >
-                    <Calendar className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
+                    <Calendar className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-[#dca74e]" />
                     <span>{bn ? "সম্পূর্ণ সময়সূচি →" : "Full Timetable →"}</span>
                   </Link>
                 </div>
 
-                {/* 6 Prayer Cards Row */}
-                <div className="grid grid-cols-2 xs:grid-cols-3 lg:grid-cols-6 gap-2 sm:gap-3 pt-1 sm:pt-2">
+                {/* 6 Prayer Cards Grid */}
+                <div className="grid grid-cols-2 xs:grid-cols-3 sm:grid-cols-6 gap-2 sm:gap-3">
                   {prayers.map((prayer, i) => {
                     const isNext = i === activeIndex;
-                    const prayerDate = parseDhakaToLocal(prayer.time24);
-                    const isPassed = prayerDate <= now && !isNext;
-
+                    const prayerTime = parseDhakaToLocal(prayer.time24, now);
+                    const isPassed = !isNext && prayerTime <= now;
                     const IconComponent = prayer.Icon;
                     const [timeNum, period] = (bn ? prayer.timeBn : prayer.timeEn).split(" ");
 
@@ -412,41 +475,58 @@ export function PrayerTimesSection() {
 
                 {/* Top Badge & Next Prayer Title */}
                 <div className="relative z-10 pt-1">
-                  <span className="text-[10px] xs:text-xs font-bold tracking-[0.25em] text-[#dca74e] uppercase block flex items-center justify-center gap-1.5">
+                  <span className="text-[10px] xs:text-xs font-bold tracking-[0.25em] text-[#dca74e] uppercase flex items-center justify-center gap-1.5">
                     <span>✦</span>
                     <span>{bn ? "পরবর্তী নামাজ" : "NEXT PRAYER"}</span>
                     <span>✦</span>
                   </span>
                   <h3 className="text-2xl xs:text-3xl sm:text-4xl font-serif font-bold text-white mt-1 sm:mt-1.5 tracking-wide">
-                    {bn ? prayers[activeIndex].nameBn : prayers[activeIndex].nameEn}
+                    {bn ? activePrayer.nameBn : activePrayer.nameEn}
                   </h3>
                 </div>
 
                 {/* Center Ornate Live Analog Clock */}
                 <OrnateAnalogClock time={now} />
 
-                {/* Live Digital Time Pill */}
-                <div className="relative z-10 bg-black/60 border border-[#dca74e]/50 px-4 py-1.5 xs:px-6 xs:py-2 rounded-full flex flex-col items-center shadow-lg mt-1">
-                  <div className="flex items-center gap-1.5 sm:gap-2 font-mono text-lg xs:text-xl sm:text-2xl font-bold tracking-wider text-white">
-                    <Clock className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-[#dca74e]" />
-                    <span suppressHydrationWarning>{liveClockString}</span>
+                {/* Remaining Time Pill for Next Prayer */}
+                <div className="relative z-10 bg-black/70 border border-[#dca74e]/50 px-4 py-2 xs:px-5 xs:py-2.5 rounded-2xl flex flex-col items-center shadow-lg mt-1 max-w-[290px] w-full">
+                  <div className="flex items-baseline justify-center gap-1 font-mono text-white" suppressHydrationWarning>
+                    <Clock className="w-3.5 h-3.5 text-[#dca74e] shrink-0 self-center mr-1" />
+                    <span className="text-lg xs:text-xl font-bold tabular-nums">
+                      {String(remainingCountdown.hours).padStart(2, "0")}
+                    </span>
+                    <span className="text-[11px] text-[#dca74e] font-semibold mr-1">h</span>
+                    <span className="text-lg xs:text-xl font-bold tabular-nums">
+                      {String(remainingCountdown.minutes).padStart(2, "0")}
+                    </span>
+                    <span className="text-[11px] text-[#dca74e] font-semibold mr-1">m</span>
+                    <span className="text-lg xs:text-xl font-bold tabular-nums text-red-400">
+                      {String(remainingCountdown.seconds).padStart(2, "0")}
+                    </span>
+                    <span className="text-[11px] text-red-400 font-semibold">s</span>
                   </div>
-                  <span className="text-[10px] xs:text-[11px] font-medium text-[#8ea499] uppercase tracking-wider">
-                    {bn ? "ঢাকা সময়" : "Dhaka Time"}
-                  </span>
+
+                  <div className="mt-1 text-center">
+                    <p className="text-[11px] xs:text-xs font-semibold text-[#f5d78e] leading-tight" suppressHydrationWarning>
+                      {bn
+                        ? `${activePrayer.nameBn}-এর আর ${remainingCountdown.humanBn} বাকি`
+                        : `${remainingCountdown.humanEn} remaining for ${activePrayer.nameEn}`}
+                    </p>
+                    <span className="text-[9px] xs:text-[10px] font-bold text-[#8ea499] uppercase tracking-wider block mt-0.5">
+                      {bn ? "পরবর্তী নামাজের বাকি সময়" : "Time Remaining for Next Prayer"}
+                    </span>
+                  </div>
                 </div>
 
                 {/* Bottom Jumu'ah Prayer Info */}
                 <div className="relative z-10 border-t border-[#1b4837] w-full pt-3 sm:pt-4 mt-3 sm:mt-4">
-                  <span className="text-[10px] xs:text-xs font-bold tracking-widest text-[#dca74e] uppercase block flex items-center justify-center gap-1">
+                  <span className="text-[10px] xs:text-xs font-bold tracking-widest text-[#dca74e] uppercase flex items-center justify-center gap-1">
                     <span>✦</span>
                     <span>{bn ? "জুমু'আর নামাজ" : "JUMU'AH PRAYER"}</span>
                     <span>✦</span>
                   </span>
                   <p className="text-[11px] xs:text-xs sm:text-sm font-medium text-white/90 mt-1">
-                    {bn
-                      ? "প্রথম জামাত: ১:১৫ অপরাহ্ন  •  দ্বিতীয় জামাত: ২:১৫ অপরাহ্ন"
-                      : "First: 1:15 PM  •  Second: 2:15 PM"}
+                    {jumuahText}
                   </p>
                 </div>
 

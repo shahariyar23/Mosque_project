@@ -1,0 +1,15 @@
+warning: in the working copy of 'web/src/app/about/page.tsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'web/src/app/layout.tsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'web/src/app/prayer-times/page.tsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'web/src/hooks/use-public-prayer-times.ts', LF will be replaced by CRLF the next time Git touches it
+ .jetro/mcp-config.json                      |  15 [31m-[m
+ web/src/app/about/page.tsx                  | 423 [32m+++[m[31m-----------[m
+ web/src/app/layout.tsx                      |   1 [32m+[m
+ web/src/app/prayer-times/page.tsx           | 840 [32m++++++++++++++[m[31m--------------[m
+ web/src/components/about/GalleryGrid.tsx    |  19 [31m-[m
+ web/src/components/about/ImpactCounters.tsx |  70 [31m---[m
+ web/src/components/about/LeadershipList.tsx |  32 [31m--[m
+ web/src/components/about/Testimonials.tsx   |  27 [31m-[m
+ web/src/components/about/VolunteersForm.tsx |  66 [31m---[m
+ web/src/hooks/use-public-prayer-times.ts    |   2 [32m+[m[31m-[m
+ 10 files changed, 481 insertions(+), 1014 deletions(-)

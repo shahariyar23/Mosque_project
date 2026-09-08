@@ -2,7 +2,9 @@
   "permissions": {
     "allow": [
       "Shell(git:*)",
-      "Shell(npx jest src/notifications/notifications.service.spec.ts --silent 2 >& 1)"
+      "Shell(npx jest src/notifications/notifications.service.spec.ts --silent 2 >& 1)",
+      "Shell(npm:*)",
+      "Shell(npx tsc --noEmit)"
     ],
     "deny": [],
     "defaultMode": "default"

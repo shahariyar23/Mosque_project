@@ -7,6 +7,7 @@ import { NoorLoader } from "@/components/loading/NoorLoader";
 import { ToastProvider } from "@/components/ui/toast";
 
 export const metadata: Metadata = {
+  metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL || "https://noormosque.org"),
   title: "Noor Community Mosque | Faith, Knowledge, Community",
   description: "A welcoming place for worship, learning and community.",
 };

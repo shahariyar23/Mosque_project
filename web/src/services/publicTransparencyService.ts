@@ -64,8 +64,8 @@ export type PublicJummahCollectionListResult = {
   meta: PublicJummahCollectionListMeta;
 };
 
-/** Default public mosque slug used for the primary website tenant. */
-export const DEFAULT_PUBLIC_MOSQUE_SLUG = "noor-community-mosque";
+/** Default public mosque slug used for the primary website tenant. Must match the backend seed's mosque slug. */
+export const DEFAULT_PUBLIC_MOSQUE_SLUG = "noor-jame-masjid";
 
 /**
  * Retrieves all publicly visible funds for a mosque with verified server-side calculated progress metrics.
