@@ -292,7 +292,24 @@ export function PrayerTimesSection() {
     const s = totalSeconds % 60;
 
     const formatted = `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
-    return { formatted };
+
+    let humanEn = "";
+    if (h > 0) humanEn += `${h} hr${h > 1 ? "s" : ""} `;
+    humanEn += `${m} min${m > 1 ? "s" : ""}`;
+
+    let humanBn = "";
+    const toBn = (n: number) => String(n).replace(/[0-9]/g, (d) => "০১২৩৪৫৬৭৮৯"[+d]);
+    if (h > 0) humanBn += `${toBn(h)} ঘণ্টা `;
+    humanBn += `${toBn(m)} মিনিট`;
+
+    return {
+      hours: h,
+      minutes: m,
+      seconds: s,
+      formatted,
+      humanEn: humanEn.trim(),
+      humanBn: humanBn.trim(),
+    };
   }, [activePrayer, now]);
 
   // Dynamic date formatted
@@ -471,15 +488,34 @@ export function PrayerTimesSection() {
                 {/* Center Ornate Live Analog Clock */}
                 <OrnateAnalogClock time={now} />
 
-                {/* Remaining Time Pill for Next Prayer (replaced previous Dhaka time) */}
-                <div className="relative z-10 bg-black/60 border border-[#dca74e]/50 px-4 py-1.5 xs:px-6 xs:py-2 rounded-full flex flex-col items-center shadow-lg mt-1">
-                  <div className="flex items-center gap-1.5 sm:gap-2 font-mono text-lg xs:text-xl sm:text-2xl font-bold tracking-wider text-white">
-                    <Clock className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-[#dca74e]" />
-                    <span suppressHydrationWarning>{remainingCountdown.formatted}</span>
+                {/* Remaining Time Pill for Next Prayer */}
+                <div className="relative z-10 bg-black/70 border border-[#dca74e]/50 px-4 py-2 xs:px-5 xs:py-2.5 rounded-2xl flex flex-col items-center shadow-lg mt-1 max-w-[290px] w-full">
+                  <div className="flex items-baseline justify-center gap-1 font-mono text-white" suppressHydrationWarning>
+                    <Clock className="w-3.5 h-3.5 text-[#dca74e] shrink-0 self-center mr-1" />
+                    <span className="text-lg xs:text-xl font-bold tabular-nums">
+                      {String(remainingCountdown.hours).padStart(2, "0")}
+                    </span>
+                    <span className="text-[11px] text-[#dca74e] font-semibold mr-1">h</span>
+                    <span className="text-lg xs:text-xl font-bold tabular-nums">
+                      {String(remainingCountdown.minutes).padStart(2, "0")}
+                    </span>
+                    <span className="text-[11px] text-[#dca74e] font-semibold mr-1">m</span>
+                    <span className="text-lg xs:text-xl font-bold tabular-nums text-red-400">
+                      {String(remainingCountdown.seconds).padStart(2, "0")}
+                    </span>
+                    <span className="text-[11px] text-red-400 font-semibold">s</span>
                   </div>
-                  <span className="text-[10px] xs:text-[11px] font-medium text-[#8ea499] uppercase tracking-wider">
-                    {bn ? "বাকি সময়" : "Time Remaining"}
-                  </span>
+
+                  <div className="mt-1 text-center">
+                    <p className="text-[11px] xs:text-xs font-semibold text-[#f5d78e] leading-tight" suppressHydrationWarning>
+                      {bn
+                        ? `${activePrayer.nameBn}-এর আর ${remainingCountdown.humanBn} বাকি`
+                        : `${remainingCountdown.humanEn} remaining for ${activePrayer.nameEn}`}
+                    </p>
+                    <span className="text-[9px] xs:text-[10px] font-bold text-[#8ea499] uppercase tracking-wider block mt-0.5">
+                      {bn ? "পরবর্তী নামাজের বাকি সময়" : "Time Remaining for Next Prayer"}
+                    </span>
+                  </div>
                 </div>
 
                 {/* Bottom Jumu'ah Prayer Info */}
