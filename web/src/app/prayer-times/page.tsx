@@ -3,26 +3,13 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { InnerPage } from "@/components/inner-page";
+import { useLanguage } from "@/components/language-provider";
 import { SiteFooter } from "@/components/site-footer";
 import { usePublicPrayerTimes } from "@/hooks/use-public-prayer-times";
 import { getTodayInTimezone } from "@/lib/mosque/format";
 
 const TIMEZONE = "Asia/Dhaka";
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
-const MONTHS = [
-  "January",
-  "February",
-  "March",
-  "April",
-  "May",
-  "June",
-  "July",
-  "August",
-  "September",
-  "October",
-  "November",
-  "December",
-];
 
 function parseTimeToDate(time24: string, timezone: string, refDate: Date): Date {
   const [hh, mm] = time24.split(":").map(Number);
@@ -64,16 +51,16 @@ function formatCountdown(totalSeconds: number): string {
   return `${hours} : ${minutes} : ${seconds}`;
 }
 
-function formatMonthLabel(date: Date): string {
-  return new Intl.DateTimeFormat("en-GB", {
+function formatMonthLabel(date: Date, isBn: boolean): string {
+  return new Intl.DateTimeFormat(isBn ? "bn-BD" : "en-GB", {
     timeZone: TIMEZONE,
     month: "long",
     year: "numeric",
   }).format(date);
 }
 
-function formatLongDate(dateValue: string): string {
-  return new Intl.DateTimeFormat("en-GB", {
+function formatLongDate(dateValue: string, isBn: boolean): string {
+  return new Intl.DateTimeFormat(isBn ? "bn-BD" : "en-GB", {
     timeZone: TIMEZONE,
     day: "numeric",
     month: "long",
@@ -81,18 +68,8 @@ function formatLongDate(dateValue: string): string {
   }).format(new Date(`${dateValue}T12:00:00+06:00`));
 }
 
-function formatDisplayDate(dateValue: string): string {
-  return new Intl.DateTimeFormat("en-GB", {
-    timeZone: TIMEZONE,
-    weekday: "long",
-    day: "numeric",
-    month: "long",
-    year: "numeric",
-  }).format(new Date(`${dateValue}T12:00:00+06:00`));
-}
-
-function formatTodayHeader(dateValue: string): string {
-  return new Intl.DateTimeFormat("en-GB", {
+function formatTodayHeader(dateValue: string, isBn: boolean): string {
+  return new Intl.DateTimeFormat(isBn ? "bn-BD" : "en-GB", {
     timeZone: TIMEZONE,
     weekday: "long",
     day: "numeric",
@@ -111,6 +88,8 @@ function getCalendarDays(year: number, month: number): Array<number | null> {
 }
 
 export default function PrayerTimesPage() {
+  const { language } = useLanguage();
+  const isBn = language === "bn";
   const today = getTodayInTimezone(TIMEZONE);
   const { prayers: livePrayers, jumuah, timezone, hijriDate, nextPrayerIndex, countdownSeconds, loading, error } = usePublicPrayerTimes();
   const [selectedDate, setSelectedDate] = useState(today);
@@ -127,24 +106,31 @@ export default function PrayerTimesPage() {
     setMonthAnchor(new Date(`${today}T12:00:00+06:00`));
   }, [today]);
 
+  const weekDays = useMemo(
+    () =>
+      isBn ? ["সোম", "মঙ্গল", "বুধ", "বৃহঃ", "শুক্র", "শনি", "রবি"] : ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"],
+    [isBn],
+  );
+
   const prayerList = useMemo(() => {
     if (!livePrayers.length) {
       return [
-        { id: "fajr", name: "Fajr", time: "--:--", time24: "" },
-        { id: "sunrise", name: "Sunrise", time: "--:--", time24: "" },
-        { id: "dhuhr", name: "Dhuhr", time: "--:--", time24: "" },
-        { id: "asr", name: "Asr", time: "--:--", time24: "" },
-        { id: "maghrib", name: "Maghrib", time: "--:--", time24: "" },
-        { id: "isha", name: "Isha", time: "--:--", time24: "" },
+        { id: "fajr", name: isBn ? "ফজর" : "Fajr", time: "--:--", time24: "" },
+        { id: "sunrise", name: isBn ? "সূর্যোদয়" : "Sunrise", time: "--:--", time24: "" },
+        { id: "dhuhr", name: isBn ? "যোহর" : "Dhuhr", time: "--:--", time24: "" },
+        { id: "asr", name: isBn ? "আসর" : "Asr", time: "--:--", time24: "" },
+        { id: "maghrib", name: isBn ? "মাগরিব" : "Maghrib", time: "--:--", time24: "" },
+        { id: "isha", name: isBn ? "এশা" : "Isha", time: "--:--", time24: "" },
       ];
     }
+
     return livePrayers.map((prayer) => ({
       id: prayer.id,
-      name: prayer.nameEn,
-      time: prayer.timeEn,
+      name: isBn ? prayer.nameBn : prayer.nameEn,
+      time: isBn ? prayer.timeBn : prayer.timeEn,
       time24: prayer.time24,
     }));
-  }, [livePrayers]);
+  }, [isBn, livePrayers]);
 
   const nextPrayer = useMemo(() => {
     if (!prayerList.length || prayerList[0]?.time === "--:--") {
@@ -169,26 +155,25 @@ export default function PrayerTimesPage() {
     return { ...chosen, remainingSeconds: Math.max(0, Math.floor((chosen.date.getTime() - now.getTime()) / 1000)) };
   }, [prayerList, now, timezone]);
 
-  const activeIndex = nextPrayerIndex >= 0 && nextPrayerIndex < prayerList.length
-    ? nextPrayerIndex
-    :0;
+  const activeIndex = nextPrayerIndex >= 0 && nextPrayerIndex < prayerList.length ? nextPrayerIndex : 0;
 
-  const nextPrayerLabel = nextPrayer?.name ?? "Fajr";
+  const nextPrayerLabel = nextPrayer?.name ?? (isBn ? "ফজর" : "Fajr");
   const nextPrayerTime = nextPrayer?.time ?? "--:--";
   const countdown = nextPrayer?.remainingSeconds ?? countdownSeconds ?? 0;
   const monthDays = getCalendarDays(monthAnchor.getFullYear(), monthAnchor.getMonth());
-  const selectedMonthLabel = formatMonthLabel(monthAnchor);
-  const selectedDayLabel = formatLongDate(selectedDate);
-  const todayLabel = formatTodayHeader(today);
-  const todayTimeText = new Intl.DateTimeFormat("en-GB", { timeZone: TIMEZONE, hour: "2-digit", minute: "2-digit" }).format(now);
-  const todayHijri = hijriDate ? hijriDate : "No hijri date available";
+  const selectedMonthLabel = formatMonthLabel(monthAnchor, isBn);
+  const selectedDayLabel = formatLongDate(selectedDate, isBn);
+  const todayLabel = formatTodayHeader(today, isBn);
+  const todayTimeText = new Intl.DateTimeFormat(isBn ? "bn-BD" : "en-GB", {
+    timeZone: TIMEZONE,
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(now);
+  const todayHijri = hijriDate ? hijriDate : isBn ? "হিজরি তারিখ উপলব্ধ নয়" : "No hijri date available";
 
   const jumuahSummary = jumuah.length
     ? jumuah.map((entry) => `${entry.khutbahTime} / ${entry.prayerTime}`).join(" • ")
-    : "Not configured";
-
-  const selectedMatchesMonth =
-    selectedDate.slice(0, 7) === `${monthAnchor.getFullYear()}-${String(monthAnchor.getMonth() + 1).padStart(2, "0")}`;
+    : isBn ? "কনফিগার করা হয়নি" : "Not configured";
 
   const resetToToday = () => {
     setSelectedDate(today);
@@ -207,7 +192,7 @@ export default function PrayerTimesPage() {
   if (loading && !livePrayers.length) {
     return (
       <>
-        <InnerPage eyebrow="PRAYER TIMES · DHAKA, BANGLADESH" title="Prayer times.">
+        <InnerPage eyebrow={isBn ? "নামাজের সময় · ঢাকা, বাংলাদেশ" : "PRAYER TIMES · DHAKA, BANGLADESH"} title={isBn ? "নামাজের সময়." : "Prayer times."}>
           <div className="space-y-6 p-4 sm:p-6">
             <div className="animate-pulse rounded-2xl border border-[#d9d4c6] bg-white p-5">
               <div className="h-4 w-32 rounded bg-slate-200" />
@@ -228,17 +213,17 @@ export default function PrayerTimesPage() {
   if (error && !livePrayers.length) {
     return (
       <>
-        <InnerPage eyebrow="PRAYER TIMES · DHAKA, BANGLADESH" title="Prayer times.">
+        <InnerPage eyebrow={isBn ? "নামাজের সময় · ঢাকা, বাংলাদেশ" : "PRAYER TIMES · DHAKA, BANGLADESH"} title={isBn ? "নামাজের সময়." : "Prayer times."}>
           <div className="mx-auto max-w-xl rounded-2xl border border-[#e1d9c6] bg-white p-8 text-center shadow-sm">
-            <p className="text-xs font-bold tracking-[0.22em] text-[#c79a45]">UNABLE TO LOAD</p>
-            <h2 className="mt-4 text-3xl font-semibold text-[#11241d]">Unable to load today&apos;s prayer times.</h2>
-            <p className="mt-3 text-sm text-[#607068]">Please refresh the page or try again shortly.</p>
+            <p className="text-xs font-bold tracking-[0.22em] text-[#c79a45]">{isBn ? "লোড করা যায়নি" : "UNABLE TO LOAD"}</p>
+            <h2 className="mt-4 text-3xl font-semibold text-[#11241d]">{isBn ? "আজকের নামাজের সময় লোড করা যায়নি।" : "Unable to load today&apos;s prayer times."}</h2>
+            <p className="mt-3 text-sm text-[#607068]">{isBn ? "দয়া করে পেজটি রিফ্রেশ করুন অথবা কিছুক্ষণ পর আবার চেষ্টা করুন।" : "Please refresh the page or try again shortly."}</p>
             <button
               type="button"
               onClick={() => window.location.reload()}
               className="mt-6 inline-flex min-h-11 items-center justify-center rounded-full bg-[#0d4d3b] px-5 text-sm font-semibold text-white"
             >
-              Try again
+              {isBn ? "আবার চেষ্টা করুন" : "Try again"}
             </button>
           </div>
         </InnerPage>
@@ -249,13 +234,15 @@ export default function PrayerTimesPage() {
 
   return (
     <>
-      <InnerPage eyebrow="PRAYER TIMES · DHAKA, BANGLADESH" title="Prayer times.">
+      <InnerPage eyebrow={isBn ? "নামাজের সময় · ঢাকা, বাংলাদেশ" : "PRAYER TIMES · DHAKA, BANGLADESH"} title={isBn ? "নামাজের সময়." : "Prayer times."}>
         <div className="space-y-8 px-0 pb-8 sm:space-y-10">
           <section className="rounded-[28px] border border-[#d9d4c5] bg-[#f9f6ef] p-4 shadow-[0_16px_40px_rgba(14,39,32,0.05)] sm:p-6 lg:p-8">
             <div className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
               <div>
-                <p className="text-[10px] font-bold tracking-[0.26em] text-[#c79a45]">PRAYER TIMES</p>
-                <h1 className="mt-3 text-3xl font-semibold text-[#12251d] sm:text-4xl">Daily prayer schedule for Noor Community Mosque</h1>
+                <p className="text-[10px] font-bold tracking-[0.26em] text-[#c79a45]">{isBn ? "নামাজের সময়" : "PRAYER TIMES"}</p>
+                <h1 className="mt-3 text-3xl font-semibold text-[#12251d] sm:text-4xl">
+                  {isBn ? "নূর কমিউনিটি মসজিদের দৈনিক নামাজের সময়সূচি" : "Daily prayer schedule for Noor Community Mosque"}
+                </h1>
                 <div className="mt-4 flex flex-wrap items-center gap-3 text-sm text-[#51615d]">
                   <span>{todayLabel}</span>
                   <span className="text-[#c79a45]">•</span>
@@ -273,7 +260,7 @@ export default function PrayerTimesPage() {
             <div className="rounded-[28px] border border-[#d9d4c5] bg-white p-4 shadow-[0_16px_40px_rgba(14,39,32,0.04)] sm:p-6">
               <div className="mb-4 flex items-center justify-between gap-3 border-b border-[#ece6db] pb-4">
                 <div>
-                  <p className="text-[10px] font-bold tracking-[0.24em] text-[#c79a45]">TODAY</p>
+                  <p className="text-[10px] font-bold tracking-[0.24em] text-[#c79a45]">{isBn ? "আজ" : "TODAY"}</p>
                   <h2 className="mt-2 text-xl font-semibold text-[#12251d]">{todayLabel}</h2>
                 </div>
                 <div className="font-mono text-sm text-[#45635a]">{todayTimeText}</div>
@@ -288,9 +275,7 @@ export default function PrayerTimesPage() {
                     <div
                       key={prayer.id}
                       className={`rounded-2xl border p-3 transition-colors ${
-                        isNext
-                          ? "border-[#d7b06c] bg-[#f4efe5]"
-                          : "border-[#e9e4d9] bg-[#fbfaf7]"
+                        isNext ? "border-[#d7b06c] bg-[#f4efe5]" : "border-[#e9e4d9] bg-[#fbfaf7]"
                       }`}
                     >
                       <div className="flex items-center justify-between gap-3">
@@ -299,21 +284,27 @@ export default function PrayerTimesPage() {
                             <span className="text-[10px] font-bold tracking-[0.22em] text-[#76857f]">{prayer.name.toUpperCase()}</span>
                             {isNext && (
                               <span className="rounded-full bg-[#d7b06c] px-2 py-1 text-[9px] font-bold uppercase tracking-[0.12em] text-[#12251d]">
-                                Next
+                                {isBn ? "পরবর্তী" : "Next"}
                               </span>
                             )}
                           </div>
-                          <div className="mt-2 text-2xl font-semibold text-[#12251d]">{isSunrise ? prayer.time : prayer.time}</div>
+                          <div className="mt-2 text-2xl font-semibold text-[#12251d]">{prayer.time}</div>
                         </div>
                         {canShowJamaah ? (
                           <div className="text-right">
-                            <div className="text-[10px] font-bold tracking-[0.18em] text-[#c79a45]">Jama'ah</div>
-                            <div className="mt-1 text-sm font-medium text-[#132d28]">Not configured</div>
+                            <div className="text-[10px] font-bold tracking-[0.18em] text-[#c79a45]">{isBn ? "জামাত" : "Jama'ah"}</div>
+                            <div className="mt-1 text-sm font-medium text-[#132d28]">
+                              {isBn ? "কনফিগার করা হয়নি" : "Not configured"}
+                            </div>
                           </div>
                         ) : (
                           <div className="text-right">
-                            <div className="text-[10px] font-bold tracking-[0.18em] text-[#8a938c]">SUNRISE</div>
-                            <div className="mt-1 text-sm font-medium text-[#607068]">No congregation</div>
+                            <div className="text-[10px] font-bold tracking-[0.18em] text-[#8a938c]">
+                              {isBn ? "সূর্যোদয়" : "SUNRISE"}
+                            </div>
+                            <div className="mt-1 text-sm font-medium text-[#607068]">
+                              {isBn ? "জামাত নির্ধারিত নেই" : "No congregation"}
+                            </div>
                           </div>
                         )}
                       </div>
@@ -324,34 +315,40 @@ export default function PrayerTimesPage() {
             </div>
 
             <aside className="rounded-[28px] border border-[#0d4d3b] bg-[#0d4d3b] p-5 text-white shadow-[0_16px_40px_rgba(13,77,59,0.24)] sm:p-6" aria-live="polite">
-              <p className="text-[10px] font-bold tracking-[0.26em] text-[#deb668]">NEXT PRAYER</p>
+              <p className="text-[10px] font-bold tracking-[0.26em] text-[#deb668]">{isBn ? "পরবর্তী নামাজ" : "NEXT PRAYER"}</p>
               <h2 className="mt-4 text-5xl font-semibold tracking-tight">{nextPrayerLabel}</h2>
               <p className="mt-2 text-xl text-white/80">{nextPrayerTime}</p>
               <div className="mt-6 border-y border-white/20 py-5">
                 <p className="font-mono text-3xl tracking-[0.14em]">{formatCountdown(countdown)}</p>
-                <p className="mt-2 text-sm text-white/65">remaining</p>
+                <p className="mt-2 text-sm text-white/65">{isBn ? "অবশিষ্ট" : "remaining"}</p>
               </div>
-              <div className="mt-5 text-sm text-white/75">Jama'ah {nextPrayerTime}</div>
+              <div className="mt-5 text-sm text-white/75">{isBn ? "জামাত" : "Jama'ah"} {nextPrayerTime}</div>
               <div className="mt-5 text-[10px] font-bold tracking-[0.2em] text-[#d7b06c]">DHAKA • ASIA/DHAKA • UTC+06:00</div>
             </aside>
           </section>
 
           <section className="grid gap-6 lg:grid-cols-[0.9fr_1.1fr]">
             <div className="rounded-[28px] border border-[#d9d4c5] bg-white p-5 shadow-sm sm:p-6">
-              <p className="text-[10px] font-bold tracking-[0.22em] text-[#c79a45]">JUMU'AH</p>
-              <h3 className="mt-3 text-3xl font-semibold text-[#12251d]">Friday Prayer</h3>
+              <p className="text-[10px] font-bold tracking-[0.22em] text-[#c79a45]">{isBn ? "জুমু'আ" : "JUMU'AH"}</p>
+              <h3 className="mt-3 text-3xl font-semibold text-[#12251d]">{isBn ? "জুমার নামাজ" : "Friday Prayer"}</h3>
               <p className="mt-4 text-sm text-[#607068]">{jumuahSummary}</p>
               <div className="mt-6 space-y-3 text-sm">
                 {jumuah.length ? (
                   jumuah.map((entry, index) => (
                     <div key={`${entry.khutbahTime}-${index}`} className="rounded-2xl border border-[#e9e4d9] bg-[#faf8f4] p-3">
-                      <div className="text-[10px] font-bold tracking-[0.18em] text-[#c79a45]">{index === 0 ? "FIRST" : "SECOND"}</div>
-                      <div className="mt-2 font-semibold text-[#12251d]">Khutbah {entry.khutbahTime}</div>
-                      <div className="mt-1 text-[#607068]">Prayer {entry.prayerTime}</div>
+                      <div className="text-[10px] font-bold tracking-[0.18em] text-[#c79a45]">
+                        {index === 0 ? (isBn ? "প্রথম" : "FIRST") : isBn ? "দ্বিতীয়" : "SECOND"}
+                      </div>
+                      <div className="mt-2 font-semibold text-[#12251d]">
+                        {isBn ? "খুতবা" : "Khutbah"} {entry.khutbahTime}
+                      </div>
+                      <div className="mt-1 text-[#607068]">{isBn ? "নামাজ" : "Prayer"} {entry.prayerTime}</div>
                     </div>
                   ))
                 ) : (
-                  <div className="rounded-2xl border border-[#e9e4d9] bg-[#faf8f4] p-3 text-[#607068]">No Friday schedule is configured yet.</div>
+                  <div className="rounded-2xl border border-[#e9e4d9] bg-[#faf8f4] p-3 text-[#607068]">
+                    {isBn ? "এখনও জুমার সময়সূচি কনফিগার করা হয়নি।" : "No Friday schedule is configured yet."}
+                  </div>
                 )}
               </div>
             </div>
@@ -359,7 +356,7 @@ export default function PrayerTimesPage() {
             <div className="rounded-[28px] border border-[#d9d4c5] bg-white p-5 shadow-sm sm:p-6">
               <div className="flex items-center justify-between gap-3">
                 <div>
-                  <p className="text-[10px] font-bold tracking-[0.22em] text-[#c79a45]">PRAYER CALENDAR</p>
+                  <p className="text-[10px] font-bold tracking-[0.22em] text-[#c79a45]">{isBn ? "নামাজের ক্যালেন্ডার" : "PRAYER CALENDAR"}</p>
                   <h3 className="mt-2 text-2xl font-semibold text-[#12251d]">{selectedMonthLabel}</h3>
                 </div>
                 <button
@@ -367,18 +364,32 @@ export default function PrayerTimesPage() {
                   onClick={resetToToday}
                   className="min-h-11 rounded-full border border-[#d7b06c] px-4 text-sm font-semibold text-[#0d4d3b]"
                 >
-                  Today
+                  {isBn ? "আজ" : "Today"}
                 </button>
               </div>
 
               <div className="mt-5 border border-[#ece6db] bg-[#fbfaf7] p-3">
                 <div className="mb-3 flex items-center justify-between">
-                  <button type="button" onClick={() => changeMonth(-1)} aria-label="Previous month" className="min-h-11 min-w-11 rounded-full text-xl text-[#0d4d3b]">←</button>
+                  <button
+                    type="button"
+                    onClick={() => changeMonth(-1)}
+                    aria-label={isBn ? "পূর্ববর্তী মাস" : "Previous month"}
+                    className="min-h-11 min-w-11 rounded-full text-xl text-[#0d4d3b]"
+                  >
+                    ←
+                  </button>
                   <div className="text-sm font-semibold text-[#12251d]">{selectedMonthLabel}</div>
-                  <button type="button" onClick={() => changeMonth(1)} aria-label="Next month" className="min-h-11 min-w-11 rounded-full text-xl text-[#0d4d3b]">→</button>
+                  <button
+                    type="button"
+                    onClick={() => changeMonth(1)}
+                    aria-label={isBn ? "পরবর্তী মাস" : "Next month"}
+                    className="min-h-11 min-w-11 rounded-full text-xl text-[#0d4d3b]"
+                  >
+                    →
+                  </button>
                 </div>
                 <div className="grid grid-cols-7 gap-1 text-center text-[10px] font-bold tracking-[0.12em] text-[#76857f]">
-                  {DAYS.map((day) => (
+                  {weekDays.map((day) => (
                     <div key={day} className="py-2">{day}</div>
                   ))}
                   {monthDays.map((day, index) => {
@@ -407,73 +418,91 @@ export default function PrayerTimesPage() {
           </section>
 
           <section className="rounded-[28px] border border-[#d9d4c5] bg-white p-5 shadow-sm sm:p-6">
-            <p className="text-[10px] font-bold tracking-[0.22em] text-[#c79a45]">SELECTED DAY</p>
+            <p className="text-[10px] font-bold tracking-[0.22em] text-[#c79a45]">{isBn ? "নির্বাচিত দিন" : "SELECTED DAY"}</p>
             <h3 className="mt-3 text-2xl font-semibold text-[#12251d]">{selectedDayLabel}</h3>
             <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
               {prayerList.map((prayer) => (
                 <div key={`${prayer.id}-selected`} className="rounded-2xl border border-[#e9e4d9] bg-[#faf8f4] p-3">
                   <div className="text-[10px] font-bold tracking-[0.18em] text-[#76857f]">{prayer.name.toUpperCase()}</div>
                   <div className="mt-2 text-lg font-semibold text-[#12251d]">{prayer.time}</div>
-                  <div className="mt-2 text-sm text-[#607068]">Jama'ah: Not configured</div>
+                  <div className="mt-2 text-sm text-[#607068]">
+                    {isBn ? "জামাত: কনফিগার করা হয়নি" : "Jama'ah: Not configured"}
+                  </div>
                 </div>
               ))}
             </div>
           </section>
 
           <section className="rounded-[28px] border border-[#d9d4c5] bg-white p-5 shadow-sm sm:p-6">
-            <p className="text-[10px] font-bold tracking-[0.22em] text-[#c79a45]">TIME INFORMATION</p>
+            <p className="text-[10px] font-bold tracking-[0.22em] text-[#c79a45]">{isBn ? "সময় তথ্য" : "TIME INFORMATION"}</p>
             <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
               <div className="rounded-2xl border border-[#e9e4d9] bg-[#faf8f4] p-4">
-                <div className="text-[10px] font-bold tracking-[0.18em] text-[#76857f]">LOCATION</div>
+                <div className="text-[10px] font-bold tracking-[0.18em] text-[#76857f]">{isBn ? "অবস্থান" : "LOCATION"}</div>
                 <div className="mt-2 font-semibold text-[#12251d]">Dhaka, Bangladesh</div>
               </div>
               <div className="rounded-2xl border border-[#e9e4d9] bg-[#faf8f4] p-4">
-                <div className="text-[10px] font-bold tracking-[0.18em] text-[#76857f]">TIMEZONE</div>
+                <div className="text-[10px] font-bold tracking-[0.18em] text-[#76857f]">{isBn ? "সময় অঞ্চল" : "TIMEZONE"}</div>
                 <div className="mt-2 font-semibold text-[#12251d]">{timezone || TIMEZONE}</div>
               </div>
               <div className="rounded-2xl border border-[#e9e4d9] bg-[#faf8f4] p-4">
-                <div className="text-[10px] font-bold tracking-[0.18em] text-[#76857f]">HIJRI</div>
+                <div className="text-[10px] font-bold tracking-[0.18em] text-[#76857f]">{isBn ? "হিজরি" : "HIJRI"}</div>
                 <div className="mt-2 font-semibold text-[#12251d]">{todayHijri}</div>
               </div>
               <div className="rounded-2xl border border-[#e9e4d9] bg-[#faf8f4] p-4">
-                <div className="text-[10px] font-bold tracking-[0.18em] text-[#76857f]">LAST UPDATED</div>
-                <div className="mt-2 font-semibold text-[#12251d]">{new Intl.DateTimeFormat("en-GB", { timeZone: TIMEZONE, dateStyle: "medium", timeStyle: "short" }).format(now)}</div>
+                <div className="text-[10px] font-bold tracking-[0.18em] text-[#76857f]">{isBn ? "শেষ আপডেট" : "LAST UPDATED"}</div>
+                <div className="mt-2 font-semibold text-[#12251d]">
+                  {new Intl.DateTimeFormat(isBn ? "bn-BD" : "en-GB", {
+                    timeZone: TIMEZONE,
+                    dateStyle: "medium",
+                    timeStyle: "short",
+                  }).format(now)}
+                </div>
               </div>
             </div>
           </section>
 
           <section className="rounded-[28px] border border-[#d9d4c5] bg-white p-5 shadow-sm sm:p-6">
-            <p className="text-[10px] font-bold tracking-[0.22em] text-[#c79a45]">QUICK LINKS</p>
+            <p className="text-[10px] font-bold tracking-[0.22em] text-[#c79a45]">{isBn ? "দ্রুত লিংক" : "QUICK LINKS"}</p>
             <div className="mt-4 grid gap-3 md:grid-cols-3">
-              <Link href="/events" className="rounded-2xl border border-[#e9e4d9] bg-[#faf8f4] p-4 text-[#12251d] transition-colors hover:bg-[#f1ebdf]">Upcoming events</Link>
-              <Link href="/about" className="rounded-2xl border border-[#e9e4d9] bg-[#faf8f4] p-4 text-[#12251d] transition-colors hover:bg-[#f1ebdf]">Visit the mosque</Link>
-              <Link href="/donations" className="rounded-2xl border border-[#e9e4d9] bg-[#faf8f4] p-4 text-[#12251d] transition-colors hover:bg-[#f1ebdf]">Support the mosque</Link>
+              <Link href="/events" className="rounded-2xl border border-[#e9e4d9] bg-[#faf8f4] p-4 text-[#12251d] transition-colors hover:bg-[#f1ebdf]">
+                {isBn ? "আসন্ন অনুষ্ঠান" : "Upcoming events"}
+              </Link>
+              <Link href="/about" className="rounded-2xl border border-[#e9e4d9] bg-[#faf8f4] p-4 text-[#12251d] transition-colors hover:bg-[#f1ebdf]">
+                {isBn ? "মসজিদ দেখুন" : "Visit the mosque"}
+              </Link>
+              <Link href="/donations" className="rounded-2xl border border-[#e9e4d9] bg-[#faf8f4] p-4 text-[#12251d] transition-colors hover:bg-[#f1ebdf]">
+                {isBn ? "মসজিদকে সমর্থন করুন" : "Support the mosque"}
+              </Link>
             </div>
           </section>
 
           <section className="rounded-[28px] border border-[#d9d4c5] bg-[#f8f4ed] p-6 text-center shadow-sm">
-            <p className="text-2xl font-medium italic text-[#12251d] sm:text-3xl">“Indeed, prayer has been decreed upon the believers at specified times.”</p>
+            <p className="text-2xl font-medium italic text-[#12251d] sm:text-3xl">
+              {isBn ? "‘নিশ্চয়ই নামাজ believers-এর ওপর নির্দিষ্ট সময়ে ফরজ করা হয়েছে।’" : "“Indeed, prayer has been decreed upon the believers at specified times.”"}
+            </p>
             <p className="mt-3 text-[10px] font-bold tracking-[0.22em] text-[#c79a45]">QUR’AN 4:103</p>
           </section>
 
           <section className="rounded-[28px] bg-[#0d4d3b] p-6 text-white shadow-[0_16px_40px_rgba(13,77,59,0.2)] sm:p-8">
             <div className="flex flex-col gap-5 md:flex-row md:items-center md:justify-between">
               <div className="max-w-xl">
-                <p className="text-[10px] font-bold tracking-[0.22em] text-[#d7b06c]">STAY CONNECTED</p>
-                <h3 className="mt-2 text-3xl font-semibold leading-tight">There is a place for you at Noor.</h3>
+                <p className="text-[10px] font-bold tracking-[0.22em] text-[#d7b06c]">{isBn ? "সাথে থাকুন" : "STAY CONNECTED"}</p>
+                <h3 className="mt-2 text-3xl font-semibold leading-tight">
+                  {isBn ? "নূরের কাছে আপনার স্থান আছে।" : "There is a place for you at Noor."}
+                </h3>
               </div>
               <div className="flex flex-col gap-3 sm:flex-row sm:items-center md:justify-end">
                 <Link
                   href="/events"
                   className="inline-flex min-h-11 items-center justify-center rounded-full border border-white/35 bg-white/5 px-5 text-sm font-semibold text-white transition-colors hover:bg-white/10"
                 >
-                  Upcoming events
+                  {isBn ? "আসন্ন অনুষ্ঠান" : "Upcoming events"}
                 </Link>
                 <Link
                   href="/donations"
                   className="inline-flex min-h-11 items-center justify-center rounded-full bg-[#d7b06c] px-5 text-sm font-semibold text-[#102a24] transition-colors hover:bg-[#e0b76a]"
                 >
-                  Support the mosque
+                  {isBn ? "মসজিদকে সমর্থন করুন" : "Support the mosque"}
                 </Link>
               </div>
             </div>
