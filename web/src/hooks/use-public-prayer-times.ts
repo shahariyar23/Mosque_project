@@ -187,7 +187,7 @@ export function usePublicPrayerTimes(mosqueSlug: string = DEFAULT_PUBLIC_MOSQUE_
         }));
       } catch {
         if (!mounted) return;
-        setState((prev) => ({ ...prev, loading: false, error: null }));
+        setState((prev) => ({ ...prev, loading: false, error: "Unable to load today's prayer times." }));
       }
     }
 
