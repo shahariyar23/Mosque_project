@@ -11,6 +11,7 @@ import { AuditLogService } from '../audit/audit-log.service';
 import { buildPage, toSkipTake } from '../common/pagination/page';
 import type { AuthenticatedUser } from '../common/types/authenticated-user';
 import { fromDateOnly, toDateOnly } from '../common/utils/date-only';
+import { todayInZone } from '../prayer-times/prayer-time.utils';
 import { slugify } from '../common/utils/slug';
 import { PrismaService } from '../prisma/prisma.service';
 import {
@@ -19,7 +20,11 @@ import {
   EventDto,
   EventStatus,
   ListEventsQueryDto,
+  MyEventRegistrationDto,
+  MyRegistrationsQueryDto,
   PaginatedEventsDto,
+  PaginatedMyRegistrationsDto,
+  RegistrationStatus,
   UpdateEventDto,
 } from './dto/event.dto';
 
@@ -348,6 +353,220 @@ export class EventsService {
 
     const registered = row.registrations.reduce((sum, reg) => sum + 1 + (reg.guests || 0), 0);
     return EventDto.from(row, registered);
+  }
+
+  /**
+   * List the current user's own event registrations.
+   *
+   * Ownership and tenancy are enforced from the authenticated actor only:
+   * no userId may be supplied by the client.
+   */
+  async findMyRegistrations(
+    actor: AuthenticatedUser,
+    query: MyRegistrationsQueryDto = {},
+  ): Promise<PaginatedMyRegistrationsDto | MyEventRegistrationDto[]> {
+    const mosque = await this.prisma.mosque.findUnique({
+      where: { id: actor.mosqueId },
+      select: { timezone: true },
+    });
+    const timezone = mosque?.timezone;
+    const now = new Date();
+    const todayDate = toDateOnly(todayInZone(timezone, now));
+
+    const where: Prisma.EventRegistrationWhereInput = {
+      mosqueId: actor.mosqueId,
+      userId: actor.id,
+      deletedAt: null,
+    };
+
+    if (query.status) {
+      where.status = query.status;
+    } else {
+      where.status = { not: RegistrationStatus.cancelled };
+    }
+
+    const eventWhere: Prisma.EventWhereInput = { deletedAt: null };
+
+    if (query.timeframe) {
+      const tf = query.timeframe.toLowerCase();
+      if (tf === 'upcoming') {
+        eventWhere.date = { gte: todayDate };
+      } else if (tf === 'past') {
+        eventWhere.date = { lt: todayDate };
+      }
+    }
+
+    where.event = eventWhere;
+
+    const orderBy: Prisma.EventRegistrationOrderByWithRelationInput[] = [
+      { event: { date: 'desc' } },
+      { registeredAt: 'desc' },
+    ];
+
+    if (query.all) {
+      const rows = await this.prisma.eventRegistration.findMany({
+        where,
+        include: { event: true },
+        orderBy,
+      });
+      return rows.map((row) => this.toMyRegistrationDto(row, timezone, now));
+    }
+
+    const { skip, take } = toSkipTake(query);
+    const [total, rows] = await Promise.all([
+      this.prisma.eventRegistration.count({ where }),
+      this.prisma.eventRegistration.findMany({
+        where,
+        include: { event: true },
+        orderBy,
+        skip,
+        take,
+      }),
+    ]);
+
+    const items = rows.map((row) => this.toMyRegistrationDto(row, timezone, now));
+    return buildPage(items, total, query);
+  }
+
+  /**
+   * Register the current user for an event.
+   *
+   * The caller's own mosque and user id are the only source of truth for ownership and tenancy.
+   */
+  async registerCurrentUser(actor: AuthenticatedUser, eventId: string): Promise<MyEventRegistrationDto> {
+    const event = await this.prisma.event.findFirst({
+      where: { id: eventId, mosqueId: actor.mosqueId, deletedAt: null },
+    });
+
+    if (!event) {
+      throw new NotFoundException('Event not found.');
+    }
+
+    if (!event.isPublished) {
+      throw new BadRequestException('This event is not open for registration.');
+    }
+
+    if (event.status === EventStatus.cancelled) {
+      throw new BadRequestException('This event has been cancelled.');
+    }
+
+    if (event.registrationRequired) {
+      const confirmedCount = await this.prisma.eventRegistration.count({
+        where: {
+          eventId,
+          mosqueId: actor.mosqueId,
+          status: RegistrationStatus.confirmed,
+          deletedAt: null,
+        },
+      });
+
+      if (confirmedCount >= event.capacity) {
+        throw new ConflictException('This event is full.');
+      }
+    }
+
+    const existing = await this.prisma.eventRegistration.findFirst({
+      where: {
+        eventId,
+        userId: actor.id,
+        mosqueId: actor.mosqueId,
+        status: { not: RegistrationStatus.cancelled },
+        deletedAt: null,
+      },
+    });
+
+    if (existing) {
+      throw new ConflictException('You are already registered for this event.');
+    }
+
+    const user = await this.prisma.user.findUnique({
+      where: { id: actor.id },
+      select: { fullName: true, email: true, phone: true },
+    });
+
+    const row = await this.prisma.eventRegistration.create({
+      data: {
+        mosqueId: actor.mosqueId,
+        eventId,
+        userId: actor.id,
+        participantName: user?.fullName?.trim() || actor.email,
+        participantEmail: user?.email?.trim() || null,
+        participantPhone: user?.phone?.trim() || null,
+        guests: 0,
+        status: RegistrationStatus.confirmed,
+      },
+      include: { event: true },
+    });
+
+    await this.audit.record({
+      action: 'EVENT_REGISTERED',
+      resource: 'event_registration',
+      resourceId: row.id,
+      actorId: actor.id,
+      actorName: actor.email,
+      mosqueId: actor.mosqueId,
+      changes: {
+        eventId,
+        eventTitle: event.title,
+        eventDate: fromDateOnly(event.date),
+      },
+    });
+
+    const mosque = await this.prisma.mosque.findUnique({
+      where: { id: actor.mosqueId },
+      select: { timezone: true },
+    });
+
+    return this.toMyRegistrationDto(row, mosque?.timezone, new Date());
+  }
+
+  /**
+   * Map a registration row (with its event) to the user-facing DTO.
+   */
+  private toMyRegistrationDto(
+    row: Prisma.EventRegistrationGetPayload<{ include: { event: true } }>,
+    timezone: string | null | undefined,
+    now: Date,
+  ): MyEventRegistrationDto {
+    const { date: nowDate, time: nowTime } = this.nowInZone(timezone, now);
+    const eventDate = fromDateOnly(row.event.date);
+
+    const isPast = eventDate < nowDate || (eventDate === nowDate && row.event.startTime <= nowTime);
+
+    return {
+      registrationId: row.id,
+      registrationStatus: row.status,
+      guests: row.guests,
+      registeredAt: row.registeredAt.toISOString(),
+      isPast,
+      event: EventDto.from(row.event, 0),
+    };
+  }
+
+  /**
+   * Current calendar date and wall-clock time in a mosque's timezone.
+   */
+  private nowInZone(
+    timezone: string | null | undefined,
+    now: Date,
+  ): { date: string; time: string } {
+    const options: Intl.DateTimeFormatOptions = {
+      timeZone: timezone || undefined,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    };
+
+    const parts = new Intl.DateTimeFormat('en-CA', options).formatToParts(now);
+    const partOf = (type: string) => parts.find((p) => p.type === type)?.value ?? '';
+
+    return {
+      date: `${partOf('year')}-${partOf('month')}-${partOf('day')}`,
+      time: `${partOf('hour')}:${partOf('minute')}`,
+    };
   }
 
   /**

@@ -1,7 +1,7 @@
 import { Reflector } from '@nestjs/core';
 import { Test, TestingModule } from '@nestjs/testing';
 
-import { PERMISSIONS_KEY } from '../common/decorators/permissions.decorator';
+import { ANY_PERMISSION_KEY, PERMISSIONS_KEY } from '../common/decorators/permissions.decorator';
 import type { AuthenticatedUser } from '../common/types/authenticated-user';
 import { BookingsController } from './bookings.controller';
 import { BookingsService } from './bookings.service';
@@ -46,9 +46,9 @@ describe('BookingsController', () => {
   });
 
   describe('Permissions Declarations', () => {
-    it('declares booking.view on GET /bookings', () => {
-      const perms = reflector.get(PERMISSIONS_KEY, controller.findAll);
-      expect(perms).toEqual(['booking.view']);
+    it('declares booking.view / booking.viewOwn on GET /bookings', () => {
+      const perms = reflector.get(ANY_PERMISSION_KEY, controller.findAll);
+      expect(perms).toEqual(['booking.view', 'booking.viewOwn']);
     });
 
     it('declares booking.view on GET /bookings/stats', () => {
@@ -56,29 +56,29 @@ describe('BookingsController', () => {
       expect(perms).toEqual(['booking.view']);
     });
 
-    it('declares booking.view on GET /bookings/:id', () => {
-      const perms = reflector.get(PERMISSIONS_KEY, controller.findOne);
-      expect(perms).toEqual(['booking.view']);
+    it('declares booking.view / booking.viewOwn on GET /bookings/:id', () => {
+      const perms = reflector.get(ANY_PERMISSION_KEY, controller.findOne);
+      expect(perms).toEqual(['booking.view', 'booking.viewOwn']);
     });
 
-    it('declares booking.manage on POST /bookings', () => {
-      const perms = reflector.get(PERMISSIONS_KEY, controller.create);
-      expect(perms).toEqual(['booking.manage']);
+    it('declares booking.manage / booking.createOwn on POST /bookings', () => {
+      const perms = reflector.get(ANY_PERMISSION_KEY, controller.create);
+      expect(perms).toEqual(['booking.manage', 'booking.createOwn']);
     });
 
-    it('declares booking.manage on PATCH /bookings/:id', () => {
-      const perms = reflector.get(PERMISSIONS_KEY, controller.update);
-      expect(perms).toEqual(['booking.manage']);
+    it('declares booking.manage / booking.createOwn on PATCH /bookings/:id', () => {
+      const perms = reflector.get(ANY_PERMISSION_KEY, controller.update);
+      expect(perms).toEqual(['booking.manage', 'booking.createOwn']);
     });
 
-    it('declares booking.manage on PATCH /bookings/:id/status', () => {
-      const perms = reflector.get(PERMISSIONS_KEY, controller.updateStatus);
-      expect(perms).toEqual(['booking.manage']);
+    it('declares booking.manage / booking.createOwn on PATCH /bookings/:id/status', () => {
+      const perms = reflector.get(ANY_PERMISSION_KEY, controller.updateStatus);
+      expect(perms).toEqual(['booking.manage', 'booking.createOwn']);
     });
 
-    it('declares booking.manage on DELETE /bookings/:id', () => {
-      const perms = reflector.get(PERMISSIONS_KEY, controller.remove);
-      expect(perms).toEqual(['booking.manage']);
+    it('declares booking.manage / booking.createOwn on DELETE /bookings/:id', () => {
+      const perms = reflector.get(ANY_PERMISSION_KEY, controller.remove);
+      expect(perms).toEqual(['booking.manage', 'booking.createOwn']);
     });
   });
 
@@ -86,7 +86,7 @@ describe('BookingsController', () => {
     it('delegates findAll to service', async () => {
       const query = { page: 1, pageSize: 10 };
       await controller.findAll(user, query);
-      expect(service.findAll).toHaveBeenCalledWith(MOSQUE_ID, query);
+      expect(service.findAll).toHaveBeenCalledWith(MOSQUE_ID, query, user);
     });
 
     it('delegates getStats to service', async () => {
@@ -96,7 +96,7 @@ describe('BookingsController', () => {
 
     it('delegates findOne to service', async () => {
       await controller.findOne(user, BOOKING_ID);
-      expect(service.findOne).toHaveBeenCalledWith(MOSQUE_ID, BOOKING_ID);
+      expect(service.findOne).toHaveBeenCalledWith(MOSQUE_ID, BOOKING_ID, user);
     });
 
     it('delegates create to service', async () => {

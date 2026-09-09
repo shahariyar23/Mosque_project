@@ -13,8 +13,10 @@ import {
   Min,
   MinLength,
 } from 'class-validator';
-import { EventCategory, EventStatus } from '@prisma/client';
+import { EventCategory, EventStatus, RegistrationStatus } from '@prisma/client';
 import { fromDateOnly } from '../../common/utils/date-only';
+
+export { RegistrationStatus };
 
 export { EventCategory, EventStatus };
 
@@ -274,6 +276,50 @@ export class ListEventsQueryDto {
   @IsOptional()
   @Matches(ISO_DATE_PATTERN, { message: 'to must be in YYYY-MM-DD format' })
   to?: string;
+
+  @ApiPropertyOptional({ description: 'If true, returns all matching rows without pagination' })
+  @IsOptional()
+  @Type(() => Boolean)
+  @IsBoolean()
+  all?: boolean;
+}
+
+export class MyRegistrationsQueryDto {
+  @ApiPropertyOptional({ enum: RegistrationStatus, description: 'Filter by registration status.' })
+  @IsOptional()
+  @IsEnum(RegistrationStatus)
+  status?: RegistrationStatus;
+
+  @ApiPropertyOptional({
+    description: 'Filter preset: upcoming, past, or all.',
+    example: 'upcoming',
+  })
+  @IsOptional()
+  @IsString()
+  timeframe?: 'upcoming' | 'past' | 'all';
+
+  @ApiPropertyOptional({ description: '1-based page number', default: 1 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  page?: number = 1;
+
+  @ApiPropertyOptional({ description: 'Page size (1–100)', default: 10 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(100)
+  pageSize?: number = 10;
+
+  @ApiPropertyOptional({ description: 'Alias for pageSize (1–100)' })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(100)
+  limit?: number;
 
   @ApiPropertyOptional({ description: 'If true, returns all matching rows without pagination' })
   @IsOptional()

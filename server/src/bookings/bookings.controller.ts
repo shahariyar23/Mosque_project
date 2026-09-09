@@ -11,7 +11,7 @@ import {
 import { ApiBearerAuth, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 
 import { CurrentUser } from '../common/decorators/current-user.decorator';
-import { Permissions } from '../common/decorators/permissions.decorator';
+import { AnyPermission, Permissions } from '../common/decorators/permissions.decorator';
 import type { AuthenticatedUser } from '../common/types/authenticated-user';
 import {
   BookingDto,
@@ -34,7 +34,7 @@ export class BookingsController {
   constructor(private readonly bookingsService: BookingsService) {}
 
   @Get()
-  @Permissions('booking.view')
+  @AnyPermission('booking.view', 'booking.viewOwn')
   @ApiOperation({
     summary: 'List bookings',
     description: 'Returns paginated booking requests for the authenticated mosque with search, status, category, and date range filters.',
@@ -44,7 +44,7 @@ export class BookingsController {
     @CurrentUser() user: AuthenticatedUser,
     @Query() query: ListBookingsQueryDto,
   ): Promise<PaginatedBookingsDto | BookingDto[]> {
-    return this.bookingsService.findAll(user.mosqueId, query);
+    return this.bookingsService.findAll(user.mosqueId, query, user);
   }
 
   @Get('stats')
@@ -70,7 +70,7 @@ export class BookingsController {
   }
 
   @Get(':id')
-  @Permissions('booking.view')
+  @AnyPermission('booking.view', 'booking.viewOwn')
   @ApiOperation({
     summary: 'Get single booking',
     description: 'Returns details of a booking request by UUID.',
@@ -81,11 +81,11 @@ export class BookingsController {
     @CurrentUser() user: AuthenticatedUser,
     @Param('id') id: string,
   ): Promise<BookingDto> {
-    return this.bookingsService.findOne(user.mosqueId, id);
+    return this.bookingsService.findOne(user.mosqueId, id, user);
   }
 
   @Post()
-  @Permissions('booking.manage')
+  @AnyPermission('booking.manage', 'booking.createOwn')
   @ApiOperation({
     summary: 'Create booking',
     description: 'Submits a new service booking request.',
@@ -101,7 +101,7 @@ export class BookingsController {
   }
 
   @Patch(':id')
-  @Permissions('booking.manage')
+  @AnyPermission('booking.manage', 'booking.createOwn')
   @ApiOperation({
     summary: 'Update booking',
     description: 'Updates details of an existing booking request.',
@@ -117,7 +117,7 @@ export class BookingsController {
   }
 
   @Patch(':id/status')
-  @Permissions('booking.manage')
+  @AnyPermission('booking.manage', 'booking.createOwn')
   @ApiOperation({
     summary: 'Update booking status',
     description: 'Changes booking status (e.g., Pending -> Confirmed or Cancelled) with transition validation.',
@@ -133,7 +133,7 @@ export class BookingsController {
   }
 
   @Delete(':id')
-  @Permissions('booking.manage')
+  @AnyPermission('booking.manage', 'booking.createOwn')
   @ApiOperation({
     summary: 'Delete / cancel booking',
     description: 'Soft-deletes / cancels a booking request.',

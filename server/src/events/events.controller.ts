@@ -18,7 +18,10 @@ import {
   CreateEventDto,
   EventDto,
   ListEventsQueryDto,
+  MyEventRegistrationDto,
+  MyRegistrationsQueryDto,
   PaginatedEventsDto,
+  PaginatedMyRegistrationsDto,
   UpdateEventDto,
 } from './dto/event.dto';
 import { EventsService } from './events.service';
@@ -63,6 +66,37 @@ export class EventsController {
     // For unauthenticated users, pass undefined and service will use primary mosque
     const mosqueId = user?.mosqueId;
     return this.eventsService.findOne(mosqueId, idOrSlug);
+  }
+
+  @Get('my-registrations')
+  @ApiOperation({
+    summary: 'My registered events',
+    description:
+      'Returns the authenticated user\'s own event registrations, including both upcoming and past events. ' +
+      'Ownership and mosque tenancy are derived from the access token; no userId parameter is accepted.',
+  })
+  @ApiResponse({ status: 200, type: PaginatedMyRegistrationsDto })
+  findMyRegistrations(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query() query: MyRegistrationsQueryDto,
+  ): Promise<PaginatedMyRegistrationsDto | MyEventRegistrationDto[]> {
+    return this.eventsService.findMyRegistrations(user, query);
+  }
+
+  @Post(':id/register')
+  @ApiOperation({
+    summary: 'Register current user for an event',
+    description:
+      'Creates an event registration for the authenticated user. Rejects duplicates and full events.',
+  })
+  @ApiResponse({ status: 201, type: MyEventRegistrationDto })
+  @ApiResponse({ status: 404, description: 'Event not found.' })
+  @ApiResponse({ status: 409, description: 'Already registered or event is full.' })
+  registerCurrentUser(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') eventId: string,
+  ): Promise<MyEventRegistrationDto> {
+    return this.eventsService.registerCurrentUser(user, eventId);
   }
 
   @Post()
