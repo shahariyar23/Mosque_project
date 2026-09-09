@@ -214,82 +214,70 @@ export async function deleteEvent(id: string): Promise<MosqueEvent> {
 }
 
 /* ------------------------------------------------------------------ *
- * User Account Event Registrations Store & Methods
+ * Authenticated user's event registrations
  * ------------------------------------------------------------------ */
 
-const STORAGE_KEY_REGISTRATIONS = "noor_user_registered_events";
+export type BackendMyRegistration = {
+  registrationId: string;
+  registrationStatus: string;
+  guests: number;
+  registeredAt: string;
+  isPast: boolean;
+  event: BackendEvent;
+};
+
+export type MyRegistrationsQuery = {
+  status?: string;
+  timeframe?: "upcoming" | "past" | "all";
+  page?: number;
+  pageSize?: number;
+  limit?: number;
+  all?: boolean;
+};
 
 /**
- * Get registered event IDs for the logged-in user.
+ * Fetch the authenticated user's own event registrations from the backend.
+ * Ownership and mosque tenancy are enforced server-side from the JWT.
  */
-export function getRegisteredEventIds(): string[] {
-  if (typeof window === "undefined") return [];
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY_REGISTRATIONS);
-    if (!raw) return [];
-    return JSON.parse(raw) as string[];
-  } catch {
-    return [];
-  }
-}
+export async function fetchMyRegisteredEvents(
+  query: MyRegistrationsQuery = {},
+): Promise<{ rows: MosqueEvent[]; total: number; page: number; pageSize: number; pageCount: number; registrations: Record<string, BackendMyRegistration> }> {
+  const params: Record<string, string | number | boolean | undefined> = {
+    status: query.status,
+    timeframe: query.timeframe,
+    page: query.page,
+    pageSize: query.pageSize,
+    limit: query.limit,
+    all: query.all,
+  };
 
-/**
- * Set registered event IDs.
- */
-export function setRegisteredEventIds(ids: string[]): void {
-  if (typeof window === "undefined") return;
-  try {
-    localStorage.setItem(STORAGE_KEY_REGISTRATIONS, JSON.stringify(ids));
-  } catch {
-    // Ignore storage errors
-  }
-}
+  const result = await apiGetRaw<BackendMyRegistration[] | { rows: BackendMyRegistration[]; total: number; page: number; pageSize: number; pageCount: number }>(
+    "/events/my-registrations",
+    params,
+  );
 
-/**
- * Register user for an event.
- */
-export function registerUserForEvent(eventId: string): void {
-  const current = getRegisteredEventIds();
-  if (!current.includes(eventId)) {
-    setRegisteredEventIds([...current, eventId]);
-  }
-}
+  const rawRows = Array.isArray(result) ? result : result.rows || [];
+  const total = Array.isArray(result) ? rawRows.length : result.total ?? rawRows.length;
+  const page = Array.isArray(result) ? 1 : result.page ?? 1;
+  const pageSize = Array.isArray(result) ? rawRows.length : result.pageSize ?? 10;
+  const pageCount = Array.isArray(result) ? 1 : result.pageCount ?? 1;
 
-/**
- * Cancel user registration for an event.
- */
-export function cancelUserEventRegistration(eventId: string): void {
-  const current = getRegisteredEventIds();
-  setRegisteredEventIds(current.filter((id) => id !== eventId));
-}
-
-/**
- * Check if the user is registered for an event.
- */
-export function isUserRegistered(eventId: string): boolean {
-  return getRegisteredEventIds().includes(eventId);
-}
-
-/**
- * Fetch only the events that the user has registered for.
- */
-export async function fetchUserRegisteredEvents(): Promise<MosqueEvent[]> {
-  const allEventsRes = await fetchEvents({ all: true });
-  const all = allEventsRes.rows || [];
-  let registeredIds = getRegisteredEventIds();
-
-  // If first visit and never registered/cancelled before, seed initial registered events from available real events
-  if (
-    registeredIds.length === 0 &&
-    typeof window !== "undefined" &&
-    localStorage.getItem(STORAGE_KEY_REGISTRATIONS) === null
-  ) {
-    registeredIds = all.slice(0, Math.min(3, all.length)).map((e) => e.id);
-    setRegisteredEventIds(registeredIds);
+  const rows = rawRows.map((r) => toFrontendEvent(r.event));
+  const registrations: Record<string, BackendMyRegistration> = {};
+  for (const r of rawRows) {
+    registrations[r.event.id] = r;
   }
 
-  const idSet = new Set(registeredIds);
-  return all.filter((e) => idSet.has(e.id) || idSet.has(e.slug));
+  return { rows, total, page, pageSize, pageCount, registrations };
+}
+
+/**
+ * Register the current user for an event.
+ * Returns the created registration together with the event details.
+ */
+export async function registerForEvent(eventId: string): Promise<BackendMyRegistration> {
+  const result = await apiPostRaw<BackendMyRegistration>(`/events/${encodeURIComponent(eventId)}/register`);
+  return result;
 }
 
 

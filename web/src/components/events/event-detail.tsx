@@ -2,19 +2,25 @@
 
 import Image from "next/image";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useLanguage } from "@/components/language-provider";
 import {
   formatEventDate,
   formatEventTime,
   type MosqueEvent,
 } from "@/components/events/event-data";
-import { Clock, MapPin, CalendarPlus, Users, ArrowLeft, Share2, Check } from "lucide-react";
+import { Clock, MapPin, CalendarPlus, Users, ArrowLeft, Share2, Check, Loader2 } from "lucide-react";
 import { useState } from "react";
+import { registerForEvent } from "@/services/eventService";
+import { useToast } from "@/components/ui/toast";
 
 export function EventDetail({ event }: { event: MosqueEvent }) {
   const { language } = useLanguage();
   const bn = language === "bn";
+  const router = useRouter();
+  const { notify } = useToast();
   const [copied, setCopied] = useState(false);
+  const [registering, setRegistering] = useState(false);
 
   const title = bn ? event.bnTitle : event.title;
   const description = bn ? event.bnDescription : event.description;
@@ -33,6 +39,46 @@ export function EventDetail({ event }: { event: MosqueEvent }) {
   const calendarUrl = `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(event.title)}&dates=${startDateTime}/${endDateTime}&details=${encodeURIComponent(event.description)}&location=${encodeURIComponent(event.address)}`;
 
   const isFull = event.capacity && event.registered && event.registered >= event.capacity;
+
+  const handleRegister = async () => {
+    if (registering) return;
+    if (!event.id) {
+      notify({
+        tone: "warning",
+        message: bn ? "অনুষ্ঠান পাওয়া যায়নি" : "Event unavailable",
+        description: bn
+          ? "এই অনুষ্ঠানটি নিবন্ধনের জন্য উপলব্ধ নয়।"
+          : "This event is not available for registration.",
+      });
+      return;
+    }
+    setRegistering(true);
+    try {
+      await registerForEvent(event.id);
+      notify({
+        tone: "success",
+        message: bn ? "নিবন্ধন সফল হয়েছে" : "Registration successful",
+        description: bn
+          ? `আপনি "${event.title}" এ নিবন্ধিত হয়েছেন।`
+          : `You are now registered for "${event.title}".`,
+      });
+      router.push("/account/events");
+    } catch (err: unknown) {
+      const message =
+        err instanceof Error
+          ? err.message
+          : bn
+          ? "নিবন্ধকরণ ব্যর্থ হয়েছে। আবার চেষ্টা করুন."
+          : "Registration failed. Please try again.";
+      notify({
+        tone: "danger",
+        message: bn ? "নিবন্ধকরণ ব্যর্থ" : "Registration failed",
+        description: message,
+      });
+    } finally {
+      setRegistering(false);
+    }
+  };
 
   const handleShare = () => {
     if (typeof window !== "undefined") {
@@ -166,12 +212,21 @@ export function EventDetail({ event }: { event: MosqueEvent }) {
                 {bn ? "এই অনুষ্ঠানের সকল আসন পূর্ণ হয়ে গেছে।" : "Registration is full for this event."}
               </div>
             ) : event.registrationRequired ? (
-              <Link
-                href="/contact"
-                className="w-full inline-flex items-center justify-center py-3.5 px-5 rounded-xl bg-[#0d4d3b] hover:bg-[#072a20] text-white font-semibold text-sm transition shadow-md min-h-[48px]"
+              <button
+                type="button"
+                onClick={handleRegister}
+                disabled={registering}
+                className="w-full inline-flex items-center justify-center gap-2 py-3.5 px-5 rounded-xl bg-[#0d4d3b] hover:bg-[#072a20] text-white font-semibold text-sm transition shadow-md min-h-[48px] disabled:opacity-60 disabled:cursor-not-allowed"
               >
-                {bn ? "এখনই নিবন্ধন করুন" : "Register Now"}
-              </Link>
+                {registering ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <span>{bn ? "নিবন্ধন হচ্ছে..." : "Registering..."}</span>
+                  </>
+                ) : (
+                  bn ? "এখনই নিবন্ধন করুন" : "Register Now"
+                )}
+              </button>
             ) : (
               <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-center text-[#0d4d3b] text-xs sm:text-sm font-semibold">
                 {bn ? "উন্মুক্ত সমাবেশ — নিবন্ধনের প্রয়োজন নেই" : "Free attendance — No registration needed"}

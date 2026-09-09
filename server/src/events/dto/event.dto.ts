@@ -420,3 +420,39 @@ export class PaginatedEventsDto {
   pageCount!: number;
 }
 
+export class MyEventRegistrationDto {
+  @ApiProperty({ description: 'The registration id.' }) registrationId!: string;
+
+  @ApiProperty({ enum: RegistrationStatus, description: 'The registration status.' })
+  registrationStatus!: RegistrationStatus;
+
+  @ApiProperty({ description: 'Number of guests included in this registration.', example: 0 })
+  guests!: number;
+
+  @ApiProperty({ description: 'When the registration was created.', example: '2026-08-20T10:00:00.000Z' })
+  registeredAt!: string;
+
+  @ApiProperty({ description: 'Whether the event start has already passed in the mosque timezone.' })
+  isPast!: boolean;
+
+  @ApiProperty({ type: EventDto, description: 'The event this registration is for.' })
+  event!: EventDto;
+}
+
+export class PaginatedMyRegistrationsDto {
+  @ApiProperty({ type: [MyEventRegistrationDto] })
+  rows!: MyEventRegistrationDto[];
+
+  @ApiProperty({ example: 12 })
+  total!: number;
+
+  @ApiProperty({ example: 1 })
+  page!: number;
+
+  @ApiProperty({ example: 10 })
+  pageSize!: number;
+
+  @ApiProperty({ example: 2 })
+  pageCount!: number;
+}
+

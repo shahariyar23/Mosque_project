@@ -8,6 +8,7 @@ export type EventCategory =
   | "Charity";
 
 export type MosqueEvent = {
+  id?: string;
   slug: string;
   title: string;
   bnTitle: string;

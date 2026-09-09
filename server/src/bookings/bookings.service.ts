@@ -236,8 +236,8 @@ export class BookingsService {
       dto.requesterEmail = user.email;
     }
 
-    // 3. Validate user if given
-    if (dto.userId) {
+    // 3. Validate user if given for another account
+    if (dto.userId && dto.userId !== user.id) {
       const existingUser = await this.prisma.user.findFirst({
         where: { id: dto.userId, mosqueId: user.mosqueId, deletedAt: null },
       });

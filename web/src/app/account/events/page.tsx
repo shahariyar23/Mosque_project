@@ -7,21 +7,17 @@ import {
   MapPin,
   Clock,
   User,
-  Users,
   Search,
   RefreshCw,
   AlertCircle,
   Sparkles,
-  ArrowRight,
   Tag,
   CheckCircle2,
-  QrCode,
   Ticket,
-  XCircle,
 } from "lucide-react";
 import {
-  fetchUserRegisteredEvents,
-  cancelUserEventRegistration,
+  fetchMyRegisteredEvents,
+  type BackendMyRegistration,
 } from "@/services/eventService";
 import { useToast } from "@/components/ui/toast";
 import type { MosqueEvent } from "@/lib/mosque/types";
@@ -52,18 +48,19 @@ function formatTimeRange(start: string, end?: string | null, label?: string | nu
 export default function AccountEventsPage() {
   const { notify } = useToast();
   const [events, setEvents] = useState<MosqueEvent[]>([]);
+  const [registrations, setRegistrations] = useState<Record<string, BackendMyRegistration>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [activeTab, setActiveTab] = useState<"all" | "upcoming" | "past">("upcoming");
-  const [cancellingId, setCancellingId] = useState<string | null>(null);
 
   const loadRegisteredEvents = async () => {
     setLoading(true);
     setError(null);
     try {
-      const userEvents = await fetchUserRegisteredEvents();
-      setEvents(userEvents);
+      const result = await fetchMyRegisteredEvents({ all: true });
+      setEvents(result.rows);
+      setRegistrations(result.registrations);
     } catch (err: unknown) {
       setError(
         err instanceof Error
@@ -79,28 +76,15 @@ export default function AccountEventsPage() {
     void loadRegisteredEvents();
   }, []);
 
-  const handleCancelRegistration = (eventId: string, eventTitle: string) => {
-    if (window.confirm(`Are you sure you want to cancel your registration for "${eventTitle}"?`)) {
-      setCancellingId(eventId);
-      cancelUserEventRegistration(eventId);
-      setEvents((prev) => prev.filter((e) => e.id !== eventId));
-      notify({
-        tone: "info",
-        message: "Registration cancelled",
-        description: `Your registration for ${eventTitle} has been removed.`,
-      });
-      setCancellingId(null);
-    }
-  };
-
+  // Use the backend-provided isPast flag (derived from mosque timezone) to split tabs.
   const upcomingEvents = useMemo(
-    () => events.filter((e) => e.status === "Upcoming" || e.status === "Ongoing"),
-    [events],
+    () => events.filter((e) => !registrations[e.id]?.isPast),
+    [events, registrations],
   );
 
   const pastEvents = useMemo(
-    () => events.filter((e) => e.status === "Completed" || e.status === "Cancelled"),
-    [events],
+    () => events.filter((e) => registrations[e.id]?.isPast),
+    [events, registrations],
   );
 
   const filteredEvents = useMemo(() => {
@@ -243,7 +227,8 @@ export default function AccountEventsPage() {
       {!loading && !error && filteredEvents.length > 0 && (
         <div className="grid gap-6 sm:grid-cols-2">
           {filteredEvents.map((event) => {
-            const isPast = event.status === "Completed" || event.status === "Cancelled";
+            const registration = registrations[event.id];
+            const isPast = registration?.isPast ?? false;
             const dateText = formatDisplayDate(event.date);
             const timeText = formatTimeRange(event.startTime, event.endTime, event.timeLabel);
 
@@ -276,7 +261,7 @@ export default function AccountEventsPage() {
                     </span>
                   </div>
 
-                  {/* Registration Confirmed Badge */}
+                  {/* Registration Status Badge */}
                   <div className="absolute top-3 right-3">
                     <span className="inline-flex items-center gap-1 rounded-full bg-emerald-600 px-3 py-1 text-xs font-bold !text-white shadow-md">
                       <CheckCircle2 className="h-3.5 w-3.5 text-white" />
@@ -321,14 +306,14 @@ export default function AccountEventsPage() {
                   </div>
 
                   {/* Registration Pass Ticket Box */}
-                  {!isPast && (
+                  {!isPast && registration && (
                     <div className="rounded-xl border border-[#073a2d]/15 bg-[#faf9f4] p-3 flex items-center justify-between gap-3 text-xs">
                       <div className="flex items-center gap-2.5">
-                        <QrCode className="h-8 w-8 text-[#073a2d] shrink-0" />
+                        <Ticket className="h-8 w-8 text-[#073a2d] shrink-0" />
                         <div>
                           <p className="font-bold text-[#17211d]">Check-in Ticket</p>
                           <p className="font-mono text-[11px] text-[#69726d]">
-                            Pass #{event.id.slice(0, 8)}
+                            Pass #{registration.registrationId.slice(0, 8).toUpperCase()}
                           </p>
                         </div>
                       </div>
@@ -337,7 +322,7 @@ export default function AccountEventsPage() {
                         href={`/account/events/${event.id}`}
                         className="rounded-md bg-white border border-[#e5e2d8] px-2.5 py-1 text-[11px] font-semibold text-[#073a2d] hover:bg-[#073a2d] hover:!text-white transition-colors"
                       >
-                        Show QR
+                        View Pass
                       </Link>
                     </div>
                   )}
@@ -349,19 +334,13 @@ export default function AccountEventsPage() {
                       className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#073a2d] hover:underline"
                     >
                       <Ticket className="h-3.5 w-3.5" />
-                      <span>View Pass & Info</span>
+                      <span>View Details</span>
                     </Link>
 
-                    {!isPast && (
-                      <button
-                        type="button"
-                        disabled={cancellingId === event.id}
-                        onClick={() => handleCancelRegistration(event.id, event.title)}
-                        className="inline-flex items-center gap-1 text-xs font-medium text-red-600 hover:text-red-700 hover:underline disabled:opacity-50"
-                      >
-                        <XCircle className="h-3.5 w-3.5" />
-                        <span>Cancel Pass</span>
-                      </button>
+                    {registration && (
+                      <span className="text-[11px] text-[#69726d]">
+                        {registration.guests > 0 ? `+${registration.guests} guest${registration.guests > 1 ? "s" : ""}` : "Registered"}
+                      </span>
                     )}
                   </div>
                 </div>
