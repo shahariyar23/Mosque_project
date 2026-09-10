@@ -223,7 +223,36 @@ export type BackendMyRegistration = {
   guests: number;
   registeredAt: string;
   isPast: boolean;
+  isCheckedIn?: boolean;
+  checkedInAt?: string | null;
+  checkedInByName?: string | null;
   event: BackendEvent;
+};
+
+export type TicketVerificationResult = {
+  valid: boolean;
+  message: string;
+  registrationId: string;
+  participantName: string;
+  participantEmail?: string | null;
+  guests: number;
+  status: string;
+  registeredAt: string;
+  isCheckedIn: boolean;
+  checkedInAt?: string | null;
+  checkedInByName?: string | null;
+  event: BackendEvent;
+};
+
+export type CheckInResult = {
+  success: boolean;
+  alreadyCheckedIn: boolean;
+  message: string;
+  checkedInAt: string;
+  checkedInByName: string;
+  registrationId: string;
+  participantName: string;
+  eventTitle: string;
 };
 
 export type MyRegistrationsQuery = {
@@ -269,6 +298,30 @@ export async function fetchMyRegisteredEvents(
   }
 
   return { rows, total, page, pageSize, pageCount, registrations };
+}
+
+/**
+ * Fetch a single registration for the current user by registration UUID or event ID/slug.
+ */
+export async function fetchMyRegistration(idOrEventId: string): Promise<BackendMyRegistration> {
+  const result = await apiGetRaw<BackendMyRegistration>(`/events/my-registrations/${encodeURIComponent(idOrEventId)}`);
+  return result;
+}
+
+/**
+ * Verify a ticket by registration id.
+ */
+export async function verifyTicket(registrationId: string): Promise<TicketVerificationResult> {
+  const result = await apiGetRaw<TicketVerificationResult>(`/events/verify-ticket/${encodeURIComponent(registrationId)}`);
+  return result;
+}
+
+/**
+ * Perform check-in of a registration by id (admin / staff only).
+ */
+export async function checkInTicket(registrationId: string): Promise<CheckInResult> {
+  const result = await apiPostRaw<CheckInResult>(`/events/check-in`, { registrationId });
+  return result;
 }
 
 /**

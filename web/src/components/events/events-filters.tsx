@@ -27,7 +27,7 @@ export function EventsFilters({
   const bn = language === "bn";
 
   const getCategoryLabel = (cat: string) => {
-    if (!bn) return cat;
+    if (!bn) return cat === "all" ? "All" : cat;
     switch (cat) {
       case "all": return "সকল কার্যক্রম";
       case "Quran": return "কুরআন শিক্ষা";

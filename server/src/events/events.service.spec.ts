@@ -11,6 +11,7 @@ import { EventCategory, EventStatus } from './dto/event.dto';
 const MOSQUE_ID = 'c0a80121-7ac0-11d1-898c-00c04fd8d5c0';
 const OTHER_MOSQUE_ID = 'd0b80121-7ac0-11d1-898c-00c04fd8d5c1';
 const EVENT_ID = '1b4e28ba-2fa1-11d2-883f-0016d3cca427';
+const REGISTRATION_ID = '3651b4de-280c-4eb2-97af-5d3290b3e9cb';
 
 const ACTOR: AuthenticatedUser = {
   id: 'actor-123',
@@ -60,6 +61,27 @@ function mockEventRow(overrides: Record<string, unknown> = {}) {
   };
 }
 
+function mockRegistrationRow(overrides: Record<string, unknown> = {}) {
+  return {
+    id: REGISTRATION_ID,
+    mosqueId: MOSQUE_ID,
+    eventId: EVENT_ID,
+    userId: ACTOR.id,
+    participantName: 'Test User',
+    participantEmail: 'test@noor.org',
+    participantPhone: null,
+    guests: 1,
+    status: RegistrationStatus.confirmed,
+    specialRequirements: null,
+    registeredAt: new Date('2026-08-20T10:00:00.000Z'),
+    createdAt: new Date('2026-08-20T10:00:00.000Z'),
+    updatedAt: new Date('2026-08-20T10:00:00.000Z'),
+    deletedAt: null,
+    event: mockEventRow(),
+    ...overrides,
+  };
+}
+
 describe('EventsService', () => {
   let service: EventsService;
   let prisma: PrismaService;
@@ -87,6 +109,11 @@ describe('EventsService', () => {
               findFirst: jest.fn(),
               count: jest.fn(),
               create: jest.fn(),
+              update: jest.fn(),
+            },
+            auditLog: {
+              findMany: jest.fn().mockResolvedValue([]),
+              findFirst: jest.fn().mockResolvedValue(null),
             },
             user: {
               findUnique: jest.fn(),
@@ -105,6 +132,9 @@ describe('EventsService', () => {
     service = module.get(EventsService);
     prisma = module.get(PrismaService);
     audit = module.get(AuditLogService);
+
+    (prisma.auditLog.findMany as jest.Mock).mockResolvedValue([]);
+    (prisma.auditLog.findFirst as jest.Mock).mockResolvedValue(null);
   });
 
   const table = () => prisma.event as unknown as Record<string, jest.Mock>;
@@ -195,7 +225,9 @@ describe('EventsService', () => {
       table()
         .findFirst.mockResolvedValueOnce({ id: 'existing-1' }) // first attempt collides
         .mockResolvedValueOnce(null); // second attempt succeeds
-      table().create.mockResolvedValue(mockEventRow({ slug: 'youth-islamic-seminar-2', registrations: [] }));
+      table().create.mockResolvedValue(
+        mockEventRow({ slug: 'youth-islamic-seminar-2', registrations: [] }),
+      );
 
       const created = await service.create(ACTOR, {
         title: 'Youth Islamic Seminar',
@@ -233,9 +265,9 @@ describe('EventsService', () => {
         .findFirst.mockResolvedValueOnce(mockEventRow()) // getOwned
         .mockResolvedValueOnce({ id: 'another-event-id' }); // slug conflict check
 
-      await expect(
-        service.update(ACTOR, EVENT_ID, { slug: 'conflicting-slug' }),
-      ).rejects.toThrow(ConflictException);
+      await expect(service.update(ACTOR, EVENT_ID, { slug: 'conflicting-slug' })).rejects.toThrow(
+        ConflictException,
+      );
     });
 
     it('throws NotFoundException when updating an event from another mosque', async () => {
@@ -250,7 +282,9 @@ describe('EventsService', () => {
   describe('remove', () => {
     it('soft deletes event and records audit log', async () => {
       table().findFirst.mockResolvedValue(mockEventRow());
-      table().update.mockResolvedValue(mockEventRow({ deletedAt: new Date(), status: EventStatus.cancelled }));
+      table().update.mockResolvedValue(
+        mockEventRow({ deletedAt: new Date(), status: EventStatus.cancelled }),
+      );
 
       const removed = await service.remove(ACTOR, EVENT_ID);
 
@@ -280,25 +314,6 @@ describe('EventsService', () => {
     const mosqueTable = () => prisma.mosque as unknown as Record<string, jest.Mock>;
     const regTable = () => prisma.eventRegistration as unknown as Record<string, jest.Mock>;
 
-    const mockRegistrationRow = (overrides: Record<string, unknown> = {}) => ({
-      id: 'reg-001',
-      mosqueId: MOSQUE_ID,
-      eventId: EVENT_ID,
-      userId: ACTOR.id,
-      participantName: 'Test User',
-      participantEmail: 'test@noor.org',
-      participantPhone: null,
-      guests: 1,
-      status: RegistrationStatus.confirmed,
-      specialRequirements: null,
-      registeredAt: new Date('2026-08-20T10:00:00.000Z'),
-      createdAt: new Date('2026-08-20T10:00:00.000Z'),
-      updatedAt: new Date('2026-08-20T10:00:00.000Z'),
-      deletedAt: null,
-      event: mockEventRow(),
-      ...overrides,
-    });
-
     it('scopes query to the authenticated user and their mosque only', async () => {
       mosqueTable().findUnique.mockResolvedValue({ timezone: 'Asia/Dhaka' });
       regTable().count.mockResolvedValue(1);
@@ -319,7 +334,7 @@ describe('EventsService', () => {
 
       if (!Array.isArray(result)) {
         expect(result.rows).toHaveLength(1);
-        expect(result.rows[0].registrationId).toBe('reg-001');
+        expect(result.rows[0].registrationId).toBe(REGISTRATION_ID);
         expect(result.rows[0].event.title).toBe('Youth Islamic Seminar');
       }
     });
@@ -405,7 +420,9 @@ describe('EventsService', () => {
     it('throws NotFound when event belongs to another mosque', async () => {
       table().findFirst.mockResolvedValue(null);
 
-      await expect(service.registerCurrentUser(OTHER_ACTOR, EVENT_ID)).rejects.toThrow(NotFoundException);
+      await expect(service.registerCurrentUser(OTHER_ACTOR, EVENT_ID)).rejects.toThrow(
+        NotFoundException,
+      );
     });
 
     it('throws Conflict when user is already registered', async () => {
@@ -423,5 +440,187 @@ describe('EventsService', () => {
       await expect(service.registerCurrentUser(ACTOR, EVENT_ID)).rejects.toThrow(ConflictException);
     });
   });
-});
 
+  describe('findMyRegistration', () => {
+    const regTable = () => prisma.eventRegistration as unknown as Record<string, jest.Mock>;
+    const mosqueTable = () => prisma.mosque as unknown as Record<string, jest.Mock>;
+
+    it('returns registration by registration id with check-in status', async () => {
+      mosqueTable().findUnique.mockResolvedValue({ timezone: 'Asia/Dhaka' });
+      regTable().findFirst.mockResolvedValue(mockRegistrationRow());
+
+      const result = await service.findMyRegistration(ACTOR, REGISTRATION_ID);
+
+      expect(result.registrationId).toBe(REGISTRATION_ID);
+      expect(result.isCheckedIn).toBe(false);
+    });
+
+    it('throws NotFoundException when registration does not belong to user', async () => {
+      regTable().findFirst.mockResolvedValue(null);
+
+      await expect(service.findMyRegistration(ACTOR, REGISTRATION_ID)).rejects.toThrow(NotFoundException);
+    });
+  });
+
+  describe('verifyTicket', () => {
+    const regTable = () => prisma.eventRegistration as unknown as Record<string, jest.Mock>;
+    const mosqueTable = () => prisma.mosque as unknown as Record<string, jest.Mock>;
+    const auditTable = () => prisma.auditLog as unknown as Record<string, jest.Mock>;
+
+    it('verifies valid ticket for admin of the same mosque', async () => {
+      mosqueTable().findUnique.mockResolvedValue({ timezone: 'Asia/Dhaka' });
+      regTable().findFirst.mockResolvedValue(mockRegistrationRow());
+      auditTable().findFirst.mockResolvedValue(null);
+
+      const result = await service.verifyTicket(MOSQUE_ID, REGISTRATION_ID);
+
+      expect(result.valid).toBe(true);
+      expect(result.registrationId).toBe(REGISTRATION_ID);
+      expect(result.isCheckedIn).toBe(false);
+    });
+
+    it('rejects cross-mosque ticket with 404', async () => {
+      regTable().findFirst.mockResolvedValue(null);
+
+      await expect(service.verifyTicket(OTHER_MOSQUE_ID, REGISTRATION_ID)).rejects.toThrow(NotFoundException);
+    });
+
+    it('shows ticket is already checked in when audit log exists', async () => {
+      mosqueTable().findUnique.mockResolvedValue({ timezone: 'Asia/Dhaka' });
+      regTable().findFirst.mockResolvedValue(mockRegistrationRow());
+      auditTable().findFirst.mockResolvedValue({
+        createdAt: new Date('2026-08-25T18:00:00.000Z'),
+        actorName: 'admin@noor.org',
+      });
+
+      const result = await service.verifyTicket(MOSQUE_ID, REGISTRATION_ID);
+
+      expect(result.valid).toBe(true);
+      expect(result.isCheckedIn).toBe(true);
+      expect(result.checkedInByName).toBe('admin@noor.org');
+    });
+  });
+
+  describe('checkInTicket', () => {
+    const regTable = () => prisma.eventRegistration as unknown as Record<string, jest.Mock>;
+    const auditTable = () => prisma.auditLog as unknown as Record<string, jest.Mock>;
+
+    it('successfully checks in an attendee and records audit log', async () => {
+      regTable().findFirst.mockResolvedValue(mockRegistrationRow());
+      auditTable().findFirst.mockResolvedValue(null);
+
+      const result = await service.checkInTicket(ACTOR, REGISTRATION_ID);
+
+      expect(result.success).toBe(true);
+      expect(result.alreadyCheckedIn).toBe(false);
+      expect(audit.record).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: 'EVENT_CHECKED_IN',
+          resource: 'event_registration',
+          resourceId: REGISTRATION_ID,
+        }),
+      );
+    });
+
+    it('returns alreadyCheckedIn: true on duplicate check-in', async () => {
+      regTable().findFirst.mockResolvedValue(mockRegistrationRow());
+      auditTable().findFirst.mockResolvedValue({
+        createdAt: new Date('2026-08-25T18:00:00.000Z'),
+        actorName: 'admin@noor.org',
+      });
+
+      const result = await service.checkInTicket(ACTOR, REGISTRATION_ID);
+
+      expect(result.success).toBe(false);
+      expect(result.alreadyCheckedIn).toBe(true);
+      expect(result.message).toContain('already checked in');
+    });
+
+    it('rejects cross-mosque check-in with NotFoundException if registration not found', async () => {
+      regTable().findFirst.mockResolvedValue(null);
+
+      await expect(service.checkInTicket(OTHER_ACTOR, REGISTRATION_ID)).rejects.toThrow(NotFoundException);
+    });
+  });
+
+  describe('findAllRegistrations', () => {
+    const regTable = () => prisma.eventRegistration as unknown as Record<string, jest.Mock>;
+
+    it('returns all registrations scoped to the mosque', async () => {
+      regTable().findMany.mockResolvedValue([mockRegistrationRow()]);
+
+      const result = await service.findAllRegistrations(ACTOR, { all: true });
+
+      expect(Array.isArray(result)).toBe(true);
+      if (Array.isArray(result)) {
+        expect(result).toHaveLength(1);
+        expect(result[0].id).toBe(REGISTRATION_ID);
+        expect(result[0].eventTitle).toBe('Youth Islamic Seminar');
+      }
+    });
+
+    it('paginates registrations when all: false', async () => {
+      regTable().count.mockResolvedValue(1);
+      regTable().findMany.mockResolvedValue([mockRegistrationRow()]);
+
+      const result = await service.findAllRegistrations(ACTOR, { page: 1, pageSize: 50 });
+
+      expect(Array.isArray(result)).toBe(false);
+      if (!Array.isArray(result)) {
+        expect(result.rows).toHaveLength(1);
+        expect(result.total).toBe(1);
+      }
+    });
+  });
+
+  describe('updateRegistration', () => {
+    const regTable = () => prisma.eventRegistration as unknown as Record<string, jest.Mock>;
+
+    it('updates registration status and creates audit log', async () => {
+      regTable().findFirst.mockResolvedValue(mockRegistrationRow());
+      regTable().update.mockResolvedValue(
+        mockRegistrationRow({ status: RegistrationStatus.cancelled }),
+      );
+
+      const result = await service.updateRegistration(ACTOR, REGISTRATION_ID, {
+        status: RegistrationStatus.cancelled,
+      });
+
+      expect(result.status).toBe(RegistrationStatus.cancelled);
+      expect(audit.record).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: 'EVENT_REGISTRATION_UPDATED',
+          resource: 'event_registration',
+          resourceId: REGISTRATION_ID,
+        }),
+      );
+    });
+
+    it('throws NotFoundException when registration does not exist', async () => {
+      regTable().findFirst.mockResolvedValue(null);
+
+      await expect(
+        service.updateRegistration(ACTOR, REGISTRATION_ID, { status: RegistrationStatus.cancelled }),
+      ).rejects.toThrow(NotFoundException);
+    });
+  });
+
+  describe('deleteRegistration', () => {
+    const regTable = () => prisma.eventRegistration as unknown as Record<string, jest.Mock>;
+
+    it('soft deletes registration and records audit log', async () => {
+      regTable().findFirst.mockResolvedValue(mockRegistrationRow());
+      regTable().update.mockResolvedValue(mockRegistrationRow());
+
+      const result = await service.deleteRegistration(ACTOR, REGISTRATION_ID);
+
+      expect(result.success).toBe(true);
+      expect(regTable().update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: REGISTRATION_ID },
+          data: expect.objectContaining({ status: RegistrationStatus.cancelled }),
+        }),
+      );
+    });
+  });
+});

@@ -1,13 +1,4 @@
-import {
-  Body,
-  Controller,
-  Delete,
-  Get,
-  Param,
-  Patch,
-  Post,
-  Query,
-} from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 
 import { CurrentUser } from '../common/decorators/current-user.decorator';
@@ -15,14 +6,20 @@ import { Permissions } from '../common/decorators/permissions.decorator';
 import { Public } from '../common/decorators/public.decorator';
 import type { AuthenticatedUser } from '../common/types/authenticated-user';
 import {
+  CheckInResponseDto,
+  CheckInTicketDto,
   CreateEventDto,
   EventDto,
+  EventRegistrationDto,
+  ListEventRegistrationsQueryDto,
   ListEventsQueryDto,
   MyEventRegistrationDto,
   MyRegistrationsQueryDto,
   PaginatedEventsDto,
+  PaginatedEventRegistrationsDto,
   PaginatedMyRegistrationsDto,
   UpdateEventDto,
+  VerifyTicketResponseDto,
 } from './dto/event.dto';
 import { EventsService } from './events.service';
 
@@ -39,7 +36,8 @@ export class EventsController {
   @Public()
   @ApiOperation({
     summary: 'List events',
-    description: 'Returns paginated events for the primary mosque, filtered by category, status, search, or date. Accessible without authentication.',
+    description:
+      'Returns paginated events for the primary mosque, filtered by category, status, search, or date. Accessible without authentication.',
   })
   @ApiResponse({ status: 200, type: PaginatedEventsDto })
   findAll(
@@ -55,7 +53,7 @@ export class EventsController {
   @ApiOperation({
     summary: 'My registered events',
     description:
-      'Returns the authenticated user\'s own event registrations, including both upcoming and past events. ' +
+      "Returns the authenticated user's own event registrations, including both upcoming and past events. " +
       'Ownership and mosque tenancy are derived from the access token; no userId parameter is accepted.',
   })
   @ApiResponse({ status: 200, type: PaginatedMyRegistrationsDto })
@@ -64,6 +62,74 @@ export class EventsController {
     @Query() query: MyRegistrationsQueryDto,
   ): Promise<PaginatedMyRegistrationsDto | MyEventRegistrationDto[]> {
     return this.eventsService.findMyRegistrations(user, query);
+  }
+
+  @Get('my-registrations/:idOrEventId')
+  @ApiOperation({
+    summary: 'Get single registration for current user',
+    description:
+      "Returns the user's own registration and entrance ticket details for a given registration ID or event ID.",
+  })
+  @ApiResponse({ status: 200, type: MyEventRegistrationDto })
+  @ApiResponse({ status: 404, description: 'Registration not found.' })
+  findMyRegistration(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('idOrEventId') idOrEventId: string,
+  ): Promise<MyEventRegistrationDto> {
+    return this.eventsService.findMyRegistration(user, idOrEventId);
+  }
+
+  @Get('verify-ticket/:id')
+  @Public()
+  @ApiOperation({
+    summary: 'Verify event registration ticket',
+    description:
+      'Public/Admin verification endpoint to validate ticket authenticity, attendee details, and check-in status from a scanned QR pass.',
+  })
+  @ApiResponse({ status: 200, type: VerifyTicketResponseDto })
+  @ApiResponse({ status: 404, description: 'Ticket not found.' })
+  verifyTicket(
+    @CurrentUser() user: AuthenticatedUser | undefined,
+    @Param('id') registrationId: string,
+  ): Promise<VerifyTicketResponseDto> {
+    return this.eventsService.verifyTicket(user?.mosqueId, registrationId);
+  }
+
+  @Post('check-in')
+  @Permissions('event.update')
+  @ApiOperation({
+    summary: 'Check in event attendee',
+    description:
+      'Authorized mosque desk check-in for an event attendee using their registration id or scanned ticket token.',
+  })
+  @ApiResponse({ status: 200, type: CheckInResponseDto })
+  @ApiResponse({ status: 400, description: 'Validation failed or cancelled ticket.' })
+  @ApiResponse({ status: 403, description: 'Ticket belongs to a different mosque.' })
+  @ApiResponse({ status: 404, description: 'Registration not found.' })
+  checkInTicket(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() dto: CheckInTicketDto,
+  ): Promise<CheckInResponseDto> {
+    return this.eventsService.checkInTicket(user, dto.registrationId);
+  }
+
+  @Get(':id/registrations')
+  @Permissions('event.view')
+  @ApiOperation({
+    summary: 'List registrations for an event',
+    description:
+      "Returns the registration rows for a single event, scoped to the authenticated admin's mosque. " +
+      "The event is resolved within the admin's mosque first, so a foreign event id resolves to 404. " +
+      'Cancelled registrations are excluded unless status=cancelled is requested.',
+  })
+  @ApiResponse({ status: 200, type: PaginatedEventRegistrationsDto })
+  @ApiResponse({ status: 404, description: 'Event not found.' })
+  listRegistrations(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+    @Query() query: ListEventRegistrationsQueryDto,
+  ): Promise<PaginatedEventRegistrationsDto | EventRegistrationDto[]> {
+    return this.eventsService.listRegistrations(user, id, query);
   }
 
   @Get(':id')
@@ -107,10 +173,7 @@ export class EventsController {
   })
   @ApiResponse({ status: 201, type: EventDto })
   @ApiResponse({ status: 400, description: 'Validation failed.' })
-  create(
-    @CurrentUser() user: AuthenticatedUser,
-    @Body() dto: CreateEventDto,
-  ): Promise<EventDto> {
+  create(@CurrentUser() user: AuthenticatedUser, @Body() dto: CreateEventDto): Promise<EventDto> {
     return this.eventsService.create(user, dto);
   }
 
@@ -138,11 +201,7 @@ export class EventsController {
   })
   @ApiResponse({ status: 200, type: EventDto })
   @ApiResponse({ status: 404, description: 'Event not found.' })
-  remove(
-    @CurrentUser() user: AuthenticatedUser,
-    @Param('id') id: string,
-  ): Promise<EventDto> {
+  remove(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string): Promise<EventDto> {
     return this.eventsService.remove(user, id);
   }
 }
-

@@ -20,7 +20,7 @@ import { PersonCell } from "@/components/ui/avatar";
 import { StatGrid } from "@/components/ui/stat-card";
 import { EventCategoryChip, EventStatusBadge, RegistrationStatusBadge } from "@/components/ui/status-badge";
 import { useToast } from "@/components/ui/toast";
-import { registrationsForEvent } from "@/data/registrations";
+import { fetchRegistrationsForEvent } from "@/services/registrationService";
 import {
   formatClockTime,
   formatCount,
@@ -35,6 +35,7 @@ import {
   type EventDraft,
   type EventStatus,
   type MosqueEvent,
+  type Registration,
   type StatMetric,
 } from "@/lib/mosque/types";
 import {
@@ -550,7 +551,31 @@ function EventDetailDrawer({
   onEdit: () => void;
   onDelete: () => void;
 }) {
-  const registrations = registrationsForEvent(event.id);
+  const [registrations, setRegistrations] = useState<Registration[]>([]);
+  const [registrationsLoading, setRegistrationsLoading] = useState(true);
+  const [registrationsError, setRegistrationsError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setRegistrationsLoading(true);
+    setRegistrationsError(null);
+    fetchRegistrationsForEvent(event.id, { all: true })
+      .then(({ rows }) => {
+        if (!cancelled) setRegistrations(rows);
+      })
+      .catch((err: unknown) => {
+        if (!cancelled) {
+          setRegistrationsError(err instanceof Error ? err.message : "Failed to load registrations.");
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setRegistrationsLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [event.id]);
+
   const confirmed = registrations.filter((registration) => registration.status === "Confirmed");
   const guests = registrations.reduce((total, registration) => total + registration.guests, 0);
 
@@ -630,8 +655,16 @@ function EventDetailDrawer({
           </DetailSection>
         )}
 
-        <DetailSection title={`Registrations (${registrations.length})`}>
-          {registrations.length === 0 ? (
+        <DetailSection title={`Registrations (${registrationsLoading ? "…" : registrations.length})`}>
+          {registrationsLoading ? (
+            <p className="rounded-lg border border-dashed border-[#dcdacd] bg-[#faf9f4] px-3.5 py-6 text-center text-[13px] text-[#69726d]">
+              Loading registrations…
+            </p>
+          ) : registrationsError ? (
+            <p className="rounded-lg border border-red-200 bg-red-50 px-3.5 py-6 text-center text-[13px] text-red-700">
+              {registrationsError}
+            </p>
+          ) : registrations.length === 0 ? (
             <p className="rounded-lg border border-dashed border-[#dcdacd] bg-[#faf9f4] px-3.5 py-6 text-center text-[13px] text-[#69726d]">
               No registrations found for this event yet.
             </p>

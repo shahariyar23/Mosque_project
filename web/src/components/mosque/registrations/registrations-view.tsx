@@ -13,11 +13,12 @@ import { StatCard } from "@/components/ui/stat-card";
 import { RegistrationStatusBadge } from "@/components/ui/status-badge";
 import { useToast } from "@/components/ui/toast";
 import { eventFilterOptions } from "@/data/events";
-import { fetchRegistrations } from "@/services/registrationService";
+import { fetchRegistrations, updateRegistration } from "@/services/registrationService";
 import { registrationStatuses, type Registration, type StatMetric } from "@/lib/mosque/types";
 import { Button, ButtonLink, IconButton } from "@/components/finance/ui/button";
 import { formatCount, formatLongDate } from "@/lib/mosque/format";
 import { downloadCsv } from "@/lib/mosque/export";
+import { CheckInModal } from "./checkin-modal";
 
 function pluralise(count: number, singular: string, plural = `${singular}s`): string {
   return `${count} ${count === 1 ? singular : plural}`;
@@ -37,11 +38,13 @@ export function RegistrationsView() {
   const [to, setTo] = useState("");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [cancelling, setCancelling] = useState<Registration | null>(null);
+  const [checkInModalOpen, setCheckInModalOpen] = useState(false);
+  const [checkInTargetId, setCheckInTargetId] = useState<string | null>(null);
 
   const loadData = useCallback(async () => {
     setLoading(true);
     try {
-      const { rows } = await fetchRegistrations();
+      const { rows } = await fetchRegistrations({ all: true });
       setRegistrations(rows);
       const newTotals = rows.reduce(
         (acc, r) => {
@@ -166,11 +169,24 @@ export function RegistrationsView() {
     setTo("");
   };
 
-  const setStatusOf = (id: string, next: Registration["status"]) => {
+  const setStatusOf = async (id: string, next: Registration["status"]) => {
     const target = registrations.find((registration) => registration.id === id);
     setRegistrations((current) =>
       current.map((registration) => (registration.id === id ? { ...registration, status: next } : registration))
     );
+
+    try {
+      await updateRegistration(id, { status: next });
+    } catch (err: unknown) {
+      console.error("Failed to update registration status:", err);
+      notify({
+        tone: "danger",
+        message: "Failed to update registration status.",
+        description: err instanceof Error ? err.message : "Please try again.",
+      });
+      loadData();
+      return;
+    }
 
     if (next === "Confirmed") {
       notify({
@@ -266,6 +282,16 @@ export function RegistrationsView() {
         <span className="flex items-center justify-end gap-1">
           <IconButton icon="eye" label={`View ${row.participantName}'s registration`} onClick={() => setSelectedId(row.id)} />
           <Can permission="event.update">
+            {row.status === "Confirmed" ? (
+              <IconButton
+                icon="check-circle"
+                label={`Check in ${row.participantName}`}
+                onClick={() => {
+                  setCheckInTargetId(row.id);
+                  setCheckInModalOpen(true);
+                }}
+              />
+            ) : null}
             {row.status === "Confirmed" || row.status === "Cancelled" ? null : (
               <IconButton
                 icon="check"
@@ -303,9 +329,24 @@ export function RegistrationsView() {
           description="Everyone who has booked a place, and whether that place is held."
           icon="clipboard-check"
           actions={
-            <Button variant="secondary" size="sm" icon="download" onClick={exportCsv}>
-              Export
-            </Button>
+            <div className="flex items-center gap-2">
+              <Can permission="event.update">
+                <Button
+                  variant="primary"
+                  size="sm"
+                  icon="check-circle"
+                  onClick={() => {
+                    setCheckInTargetId(null);
+                    setCheckInModalOpen(true);
+                  }}
+                >
+                  Check-In Desk
+                </Button>
+              </Can>
+              <Button variant="secondary" size="sm" icon="download" onClick={exportCsv}>
+                Export
+              </Button>
+            </div>
           }
         />
 
@@ -382,8 +423,25 @@ export function RegistrationsView() {
             setCancelling(selected);
             setSelectedId(null);
           }}
+          onCheckIn={(id) => {
+            setSelectedId(null);
+            setCheckInTargetId(id);
+            setCheckInModalOpen(true);
+          }}
         />
       ) : null}
+
+      <CheckInModal
+        isOpen={checkInModalOpen}
+        initialId={checkInTargetId}
+        onClose={() => {
+          setCheckInModalOpen(false);
+          setCheckInTargetId(null);
+        }}
+        onSuccess={() => {
+          loadData();
+        }}
+      />
 
       <ConfirmDialog
         open={cancelling !== null}
@@ -429,11 +487,13 @@ function RegistrationDetailDrawer({
   onClose,
   onConfirm,
   onCancel,
+  onCheckIn,
 }: {
   registration: Registration;
   onClose: () => void;
   onConfirm: () => void;
   onCancel: () => void;
+  onCheckIn: (id: string) => void;
 }) {
   return (
     <DetailDrawer
@@ -447,6 +507,15 @@ function RegistrationDetailDrawer({
       footer={
         <>
           <Can permission="event.update">
+            {registration.status === "Confirmed" ? (
+              <Button
+                size="sm"
+                icon="check-circle"
+                onClick={() => onCheckIn(registration.id)}
+              >
+                Check in attendee
+              </Button>
+            ) : null}
             {registration.status !== "Confirmed" && registration.status !== "Cancelled" ? (
               <Button size="sm" icon="check" onClick={onConfirm}>
                 Confirm place

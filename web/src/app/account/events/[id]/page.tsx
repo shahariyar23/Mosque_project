@@ -18,7 +18,13 @@ import {
   Tag,
   CheckCircle2,
 } from "lucide-react";
-import { fetchEvent } from "@/services/eventService";
+import {
+  fetchEvent,
+  fetchMyRegistration,
+  toFrontendEvent,
+  type BackendMyRegistration,
+} from "@/services/eventService";
+import { QRCode } from "@/components/ui/qr-code";
 import type { MosqueEvent } from "@/lib/mosque/types";
 
 function formatDisplayDate(dateStr: string): string {
@@ -44,6 +50,7 @@ export default function AccountEventDetailPage({
 }) {
   const resolvedParams = use(params);
   const [event, setEvent] = useState<MosqueEvent | null>(null);
+  const [registration, setRegistration] = useState<BackendMyRegistration | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -51,8 +58,23 @@ export default function AccountEventDetailPage({
     setLoading(true);
     setError(null);
     try {
-      const data = await fetchEvent(resolvedParams.id);
-      setEvent(data);
+      const [eventResult, regResult] = await Promise.allSettled([
+        fetchEvent(resolvedParams.id),
+        fetchMyRegistration(resolvedParams.id),
+      ]);
+
+      if (regResult.status === "fulfilled" && regResult.value) {
+        setRegistration(regResult.value);
+        if (regResult.value.event) {
+          setEvent(toFrontendEvent(regResult.value.event));
+        }
+      }
+
+      if (eventResult.status === "fulfilled" && eventResult.value) {
+        setEvent(eventResult.value);
+      } else if (regResult.status === "rejected" && eventResult.status === "rejected") {
+        throw eventResult.reason || new Error("Event not found or failed to load.");
+      }
     } catch (err: unknown) {
       setError(
         err instanceof Error
@@ -230,37 +252,67 @@ export default function AccountEventDetailPage({
           )}
 
           {/* Ticket / Check-in QR pass for active events */}
-          {!isPast && (
-            <div className="rounded-2xl border border-[#073a2d]/20 bg-[#073a2d]/5 p-6 flex flex-col sm:flex-row items-center gap-6">
-              <div className="rounded-xl bg-white p-3 shadow-sm shrink-0 border border-[#e5e2d8]">
-                <QrCode className="h-24 w-24 text-[#073a2d]" />
-              </div>
-              <div className="text-center sm:text-left flex-1">
-                <div className="inline-flex items-center gap-1.5 text-xs font-bold text-[#073a2d] uppercase tracking-wider">
-                  <Sparkles className="h-3.5 w-3.5 text-[#c79a45]" />
-                  <span>Entry Pass & Verification</span>
+          {!isPast && (() => {
+            const registrationId = registration?.registrationId;
+            const verificationId = registrationId || event.id;
+            const refDisplay = registrationId
+              ? `REG-${registrationId.slice(0, 8).toUpperCase()}`
+              : event.id.slice(0, 13);
+
+            return (
+              <div className="rounded-2xl border border-[#073a2d]/20 bg-[#073a2d]/5 p-6 flex flex-col sm:flex-row items-center gap-6">
+                <div className="rounded-xl bg-white p-3 shadow-sm shrink-0 border border-[#e5e2d8] flex items-center justify-center">
+                  <QRCode
+                    value={verificationId}
+                    size={180}
+                    fgColor="#073a2d"
+                    bgColor="#ffffff"
+                    ariaLabel="Entrance Ticket QR Code"
+                  />
                 </div>
-                <h3 className="mt-1 font-bold text-[#17211d] text-base">Mosque Check-in Ticket</h3>
-                <p className="mt-1 text-xs text-[#69726d] leading-relaxed">
-                  Present this QR code or event ID at the mosque registration desk upon arrival.
-                </p>
-                <div className="mt-3 flex flex-wrap items-center justify-center sm:justify-start gap-2">
-                  <span className="font-mono text-xs bg-white px-2.5 py-1 rounded border border-[#e5e2d8] text-[#17211d]">
-                    Ref ID: {event.id.slice(0, 13)}
-                  </span>
-                  {event.contribution ? (
-                    <span className="text-xs font-bold text-[#073a2d] bg-white px-2.5 py-1 rounded border border-[#e5e2d8]">
-                      Fee: ৳{event.contribution.toLocaleString()}
+                <div className="text-center sm:text-left flex-1">
+                  <div className="inline-flex items-center gap-1.5 text-xs font-bold text-[#073a2d] uppercase tracking-wider">
+                    <Sparkles className="h-3.5 w-3.5 text-[#c79a45]" />
+                    <span>Entry Pass & Verification</span>
+                  </div>
+                  <h3 className="mt-1 font-bold text-[#17211d] text-base">Mosque Check-in Ticket</h3>
+                  <p className="mt-1 text-xs text-[#69726d] leading-relaxed">
+                    Present this QR code or Ref ID at the mosque registration desk upon arrival.
+                  </p>
+                  <div className="mt-3 flex flex-wrap items-center justify-center sm:justify-start gap-2">
+                    <span className="font-mono text-xs bg-white px-2.5 py-1 rounded border border-[#e5e2d8] text-[#17211d]">
+                      Ref ID: {refDisplay}
                     </span>
-                  ) : (
-                    <span className="text-xs font-medium text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200 flex items-center gap-1">
-                      <CheckCircle2 className="h-3 w-3" /> Confirmed
-                    </span>
-                  )}
+                    {registration?.isCheckedIn ? (
+                      <span className="text-xs font-semibold text-emerald-800 bg-emerald-100 px-2.5 py-1 rounded border border-emerald-300 flex items-center gap-1">
+                        <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" />
+                        <span>
+                          Checked In
+                          {registration.checkedInAt
+                            ? ` (${new Date(registration.checkedInAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })})`
+                            : ""}
+                        </span>
+                      </span>
+                    ) : (
+                      <span className="text-xs font-medium text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded border border-emerald-200 flex items-center gap-1">
+                        <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" /> Confirmed
+                      </span>
+                    )}
+                    {event.contribution && (
+                      <span className="text-xs font-bold text-[#073a2d] bg-white px-2.5 py-1 rounded border border-[#e5e2d8]">
+                        Fee: ৳{event.contribution.toLocaleString()}
+                      </span>
+                    )}
+                    {registration && registration.guests > 0 && (
+                      <span className="text-xs text-[#69726d] bg-white px-2 py-0.5 rounded border border-[#e5e2d8]">
+                        +{registration.guests} guest{registration.guests > 1 ? "s" : ""}
+                      </span>
+                    )}
+                  </div>
                 </div>
               </div>
-            </div>
-          )}
+            );
+          })()}
 
           {/* Action Buttons */}
           <div className="border-t border-[#e5e2d8] pt-5 flex flex-col sm:flex-row gap-3">

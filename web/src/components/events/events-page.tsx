@@ -20,6 +20,7 @@ export function EventsPage() {
 
   const [search, setSearch] = useState("");
   const [selectedCategory, setSelectedCategory] = useState<string>("all");
+  const [selectedMonth, setSelectedMonth] = useState<string>("all");
   const [showPastEvents, setShowPastEvents] = useState(false);
   const [allEvents, setAllEvents] = useState<MosqueEvent[]>([]);
   const [registeredIds, setRegisteredIds] = useState<Set<string>>(new Set());
@@ -98,20 +99,16 @@ export function EventsPage() {
     return Array.from(monthsSet).sort();
   }, [upcomingEventsAll]);
 
-  // Filter upcoming events based on search and category
+  // Filter upcoming events based on search, category, and month
   const filteredUpcoming = useMemo(() => {
     return upcomingEventsAll.filter((event) => {
-      // Exclude featured event if no active search or filter is applied (so it doesn't duplicate right away)
-      const hasActiveFilter = search.trim() !== "" || selectedCategory !== "all";
-      if (!hasActiveFilter && featuredEvent && event.id === featuredEvent.id) {
-        // Keep in grid only if multiple events exist, otherwise show it
-        if (upcomingEventsAll.length > 1) {
-          return false;
-        }
-      }
-
       // Category filter
       if (selectedCategory !== "all" && event.category !== selectedCategory) {
+        return false;
+      }
+
+      // Month filter
+      if (selectedMonth !== "all" && !event.date.startsWith(selectedMonth)) {
         return false;
       }
 
@@ -129,12 +126,13 @@ export function EventsPage() {
 
       return true;
     });
-  }, [upcomingEventsAll, search, selectedCategory, featuredEvent]);
+  }, [upcomingEventsAll, search, selectedCategory, selectedMonth]);
 
   // Reset filters
   const resetFilters = () => {
     setSearch("");
     setSelectedCategory("all");
+    setSelectedMonth("all");
   };
 
   // Show loading state
@@ -224,8 +222,8 @@ export function EventsPage() {
             onSearchChange={setSearch}
             selectedCategory={selectedCategory}
             onCategoryChange={setSelectedCategory}
-            selectedMonth="all"
-            onMonthChange={() => {}}
+            selectedMonth={selectedMonth}
+            onMonthChange={setSelectedMonth}
             availableMonths={availableMonths}
           />
         </section>

@@ -29,13 +29,30 @@ describe('EventsController', () => {
         {
           provide: EventsService,
           useValue: {
-            findAll: jest.fn().mockResolvedValue({ rows: [], total: 0, page: 1, pageSize: 10, pageCount: 1 }),
-            findOne: jest.fn().mockResolvedValue({ id: 'evt-1', slug: 'youth-seminar', title: 'Youth Seminar' }),
-            findMyRegistrations: jest.fn().mockResolvedValue({ rows: [], total: 0, page: 1, pageSize: 10, pageCount: 1 }),
+            findAll: jest
+              .fn()
+              .mockResolvedValue({ rows: [], total: 0, page: 1, pageSize: 10, pageCount: 1 }),
+            findOne: jest
+              .fn()
+              .mockResolvedValue({ id: 'evt-1', slug: 'youth-seminar', title: 'Youth Seminar' }),
+            findMyRegistrations: jest
+              .fn()
+              .mockResolvedValue({ rows: [], total: 0, page: 1, pageSize: 10, pageCount: 1 }),
+            findMyRegistration: jest
+              .fn()
+              .mockResolvedValue({ registrationId: 'reg-1', eventId: 'evt-1' }),
+            verifyTicket: jest.fn().mockResolvedValue({ valid: true, registrationId: 'reg-1' }),
+            checkInTicket: jest.fn().mockResolvedValue({ success: true, alreadyCheckedIn: false }),
             registerCurrentUser: jest.fn().mockResolvedValue({ id: 'reg-1', eventId: 'evt-1' }),
-            create: jest.fn().mockResolvedValue({ id: 'evt-1', slug: 'youth-seminar', title: 'Youth Seminar' }),
-            update: jest.fn().mockResolvedValue({ id: 'evt-1', slug: 'youth-seminar', title: 'Youth Seminar' }),
-            remove: jest.fn().mockResolvedValue({ id: 'evt-1', slug: 'youth-seminar', title: 'Youth Seminar' }),
+            create: jest
+              .fn()
+              .mockResolvedValue({ id: 'evt-1', slug: 'youth-seminar', title: 'Youth Seminar' }),
+            update: jest
+              .fn()
+              .mockResolvedValue({ id: 'evt-1', slug: 'youth-seminar', title: 'Youth Seminar' }),
+            remove: jest
+              .fn()
+              .mockResolvedValue({ id: 'evt-1', slug: 'youth-seminar', title: 'Youth Seminar' }),
           },
         },
       ],
@@ -70,6 +87,16 @@ describe('EventsController', () => {
       const perms = reflector.get(PERMISSIONS_KEY, controller.remove);
       expect(perms).toEqual(['event.delete']);
     });
+
+    it('declares event.update on POST /events/check-in', () => {
+      const perms = reflector.get(PERMISSIONS_KEY, controller.checkInTicket);
+      expect(perms).toEqual(['event.update']);
+    });
+
+    it('declares public access on GET /events/verify-ticket/:id', () => {
+      const isPublic = reflector.get(IS_PUBLIC_KEY, controller.verifyTicket);
+      expect(isPublic).toBe(true);
+    });
   });
 
   describe('Route Handlers', () => {
@@ -88,6 +115,21 @@ describe('EventsController', () => {
       const query = { page: 1, pageSize: 10 };
       await controller.findMyRegistrations(user, query);
       expect(service.findMyRegistrations).toHaveBeenCalledWith(user, query);
+    });
+
+    it('delegates findMyRegistration with user and idOrEventId', async () => {
+      await controller.findMyRegistration(user, 'evt-1');
+      expect(service.findMyRegistration).toHaveBeenCalledWith(user, 'evt-1');
+    });
+
+    it('delegates verifyTicket with mosqueId and registrationId', async () => {
+      await controller.verifyTicket(user, 'reg-123');
+      expect(service.verifyTicket).toHaveBeenCalledWith(MOSQUE_ID, 'reg-123');
+    });
+
+    it('delegates checkInTicket with user and registrationId', async () => {
+      await controller.checkInTicket(user, { registrationId: 'reg-123' });
+      expect(service.checkInTicket).toHaveBeenCalledWith(user, 'reg-123');
     });
 
     it('delegates registerCurrentUser with user and eventId', async () => {
@@ -143,4 +185,3 @@ describe('EventsController', () => {
     });
   });
 });
-
