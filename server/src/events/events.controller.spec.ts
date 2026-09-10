@@ -1,6 +1,7 @@
 import { Reflector } from '@nestjs/core';
 import { Test, TestingModule } from '@nestjs/testing';
 
+import { IS_PUBLIC_KEY } from '../common/decorators/public.decorator';
 import { PERMISSIONS_KEY } from '../common/decorators/permissions.decorator';
 import type { AuthenticatedUser } from '../common/types/authenticated-user';
 import { EventsController } from './events.controller';
@@ -30,6 +31,8 @@ describe('EventsController', () => {
           useValue: {
             findAll: jest.fn().mockResolvedValue({ rows: [], total: 0, page: 1, pageSize: 10, pageCount: 1 }),
             findOne: jest.fn().mockResolvedValue({ id: 'evt-1', slug: 'youth-seminar', title: 'Youth Seminar' }),
+            findMyRegistrations: jest.fn().mockResolvedValue({ rows: [], total: 0, page: 1, pageSize: 10, pageCount: 1 }),
+            registerCurrentUser: jest.fn().mockResolvedValue({ id: 'reg-1', eventId: 'evt-1' }),
             create: jest.fn().mockResolvedValue({ id: 'evt-1', slug: 'youth-seminar', title: 'Youth Seminar' }),
             update: jest.fn().mockResolvedValue({ id: 'evt-1', slug: 'youth-seminar', title: 'Youth Seminar' }),
             remove: jest.fn().mockResolvedValue({ id: 'evt-1', slug: 'youth-seminar', title: 'Youth Seminar' }),
@@ -43,14 +46,14 @@ describe('EventsController', () => {
   });
 
   describe('Permissions Declarations', () => {
-    it('declares event.view on GET /events', () => {
-      const perms = reflector.get(PERMISSIONS_KEY, controller.findAll);
-      expect(perms).toEqual(['event.view']);
+    it('declares public access on GET /events', () => {
+      const isPublic = reflector.get(IS_PUBLIC_KEY, controller.findAll);
+      expect(isPublic).toBe(true);
     });
 
-    it('declares event.view on GET /events/:id', () => {
-      const perms = reflector.get(PERMISSIONS_KEY, controller.findOne);
-      expect(perms).toEqual(['event.view']);
+    it('declares public access on GET /events/:id', () => {
+      const isPublic = reflector.get(IS_PUBLIC_KEY, controller.findOne);
+      expect(isPublic).toBe(true);
     });
 
     it('declares event.create on POST /events', () => {
@@ -79,6 +82,17 @@ describe('EventsController', () => {
     it('delegates findOne with mosqueId and idOrSlug', async () => {
       await controller.findOne(user, 'youth-seminar');
       expect(service.findOne).toHaveBeenCalledWith(MOSQUE_ID, 'youth-seminar');
+    });
+
+    it('delegates findMyRegistrations with user and query', async () => {
+      const query = { page: 1, pageSize: 10 };
+      await controller.findMyRegistrations(user, query);
+      expect(service.findMyRegistrations).toHaveBeenCalledWith(user, query);
+    });
+
+    it('delegates registerCurrentUser with user and eventId', async () => {
+      await controller.registerCurrentUser(user, 'evt-1');
+      expect(service.registerCurrentUser).toHaveBeenCalledWith(user, 'evt-1');
     });
 
     it('delegates create with actor and dto', async () => {

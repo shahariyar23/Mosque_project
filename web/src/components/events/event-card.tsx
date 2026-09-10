@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { useLanguage } from "@/components/language-provider";
@@ -10,9 +11,17 @@ import {
   formatEventTime,
 } from "@/components/events/event-data";
 import { type MosqueEvent } from "@/lib/mosque/types";
-import { Clock, MapPin, ArrowRight, Users } from "lucide-react";
+import { Clock, MapPin, ArrowRight, Users, CheckCircle2 } from "lucide-react";
 
-export function EventCard({ event }: { event: MosqueEvent }) {
+const FALLBACK_IMAGE = "/alim-L7J4ytEFRCg-unsplash.jpg";
+
+export function EventCard({
+  event,
+  isRegistered = false,
+}: {
+  event: MosqueEvent;
+  isRegistered?: boolean;
+}) {
   const { language } = useLanguage();
   const bn = language === "bn";
 
@@ -21,9 +30,7 @@ export function EventCard({ event }: { event: MosqueEvent }) {
   const location = event.location;
 
   const isFull = event.capacity && event.registered && event.registered >= event.capacity;
-
-  // Provide a fallback image if imageUrl is not available
-  const imageUrl = event.imageUrl || "https://images.unsplash.com/photo-1517457373614-b7152f800fd1?w=600&h=400&fit=crop";
+  const [imgSrc, setImgSrc] = useState(event.imageUrl || FALLBACK_IMAGE);
 
   return (
     <article className="group flex flex-col justify-between overflow-hidden rounded-2xl border border-[#e5e1d3] bg-white shadow-sm transition-all duration-300 hover:border-[#c79a45]/60 hover:shadow-xl hover:-translate-y-1">
@@ -31,12 +38,13 @@ export function EventCard({ event }: { event: MosqueEvent }) {
         {/* Card Image Banner */}
         <div className="relative aspect-[16/10] w-full overflow-hidden bg-[#072a20]">
           <Image
-            src={imageUrl}
+            src={imgSrc}
             alt={title}
             fill
             sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
             className="object-cover object-center transition-transform duration-500 ease-out group-hover:scale-105"
             loading="lazy"
+            onError={() => setImgSrc(FALLBACK_IMAGE)}
           />
           <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/20 to-transparent" />
 
@@ -68,7 +76,12 @@ export function EventCard({ event }: { event: MosqueEvent }) {
 
           {/* Registration status badge (Bottom-Left overlay) */}
           <div className="absolute bottom-3 left-3 z-10">
-            {isFull ? (
+            {isRegistered ? (
+              <span className="px-2 py-0.5 rounded bg-emerald-600 text-white text-[10px] font-bold flex items-center gap-1 shadow-sm">
+                <CheckCircle2 className="w-3 h-3 text-white" />
+                <span>{bn ? "নিবন্ধিত" : "Registered"}</span>
+              </span>
+            ) : isFull ? (
               <span className="px-2 py-0.5 rounded bg-red-600/90 text-white text-[10px] font-semibold">
                 {bn ? "আসন পূর্ণ" : "Event Full"}
               </span>

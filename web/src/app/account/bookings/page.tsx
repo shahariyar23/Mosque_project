@@ -166,7 +166,7 @@ export default function AccountBookingsPage() {
 
   const openCreateModal = () => {
     const defaultService = services.length > 0
-      ? services.find((s) => s.status === "active") || services[0]
+      ? services.find((s) => s.status === "Active") || services[0]
       : undefined;
 
     const todayStr = new Date().toISOString().slice(0, 10);
@@ -630,8 +630,8 @@ export default function AccountBookingsPage() {
                     -- Choose service --
                   </option>
                   {services.map((s) => (
-                    <option key={s.id} value={s.id} disabled={s.status !== "active"}>
-                      {s.name} ({s.category}) {s.fee ? `• $${s.fee}` : "• Free"} {s.status !== "active" ? "(Unavailable)" : ""}
+                    <option key={s.id} value={s.id} disabled={s.status !== "Active"}>
+                      {s.name} ({s.category}) {s.fee ? `• $${s.fee}` : "• Free"} {s.status !== "Active" ? "(Unavailable)" : ""}
                     </option>
                   ))}
                 </select>

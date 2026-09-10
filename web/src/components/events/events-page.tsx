@@ -1,10 +1,11 @@
 "use client";
 
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { useLanguage } from "@/components/language-provider";
+import { useAuth } from "@/components/auth-provider";
 import { type MosqueEvent, type EventCategory } from "@/lib/mosque/types";
-import { fetchEvents } from "@/services/eventService";
+import { fetchEvents, fetchMyRegisteredEvents } from "@/services/eventService";
 import { EventsHero } from "@/components/events/events-hero";
 import { FeaturedEventCard } from "@/components/events/featured-event-card";
 import { EventsFilters } from "@/components/events/events-filters";
@@ -15,13 +16,32 @@ import { Calendar, ChevronDown, ChevronUp, History, Sparkles, Clock, AlertCircle
 export function EventsPage() {
   const { language } = useLanguage();
   const bn = language === "bn";
+  const { session } = useAuth();
 
   const [search, setSearch] = useState("");
   const [selectedCategory, setSelectedCategory] = useState<string>("all");
   const [showPastEvents, setShowPastEvents] = useState(false);
   const [allEvents, setAllEvents] = useState<MosqueEvent[]>([]);
+  const [registeredIds, setRegisteredIds] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  const loadRegistrations = useCallback(async () => {
+    if (!session?.user) {
+      setRegisteredIds(new Set());
+      return;
+    }
+    try {
+      const myRegs = await fetchMyRegisteredEvents({ all: true });
+      setRegisteredIds(new Set(Object.keys(myRegs.registrations)));
+    } catch {
+      // Ignore if not logged in or error
+    }
+  }, [session?.user]);
+
+  useEffect(() => {
+    void loadRegistrations();
+  }, [loadRegistrations]);
 
   // Fetch events from API
   useEffect(() => {
@@ -171,7 +191,11 @@ export function EventsPage() {
                 <span>{bn ? "আসন্ন মূল আয়োজন" : "NEXT UPCOMING GATHERING"}</span>
               </div>
             </div>
-            <FeaturedEventCard event={featuredEvent} />
+            <FeaturedEventCard
+              event={featuredEvent}
+              isRegistered={Boolean(featuredEvent.id && registeredIds.has(featuredEvent.id))}
+              onRegistrationChange={loadRegistrations}
+            />
           </div>
         )}
 
@@ -211,7 +235,11 @@ export function EventsPage() {
           {filteredUpcoming.length > 0 ? (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 sm:gap-8">
               {filteredUpcoming.map((event) => (
-                <EventCard key={event.id} event={event} />
+                <EventCard
+                  key={event.id}
+                  event={event}
+                  isRegistered={Boolean(event.id && registeredIds.has(event.id))}
+                />
               ))}
             </div>
           ) : (
@@ -291,7 +319,10 @@ export function EventsPage() {
                     key={event.id}
                     className="grayscale-[0.4] hover:grayscale-0 transition duration-300"
                   >
-                    <EventCard event={event} />
+                    <EventCard
+                      event={event}
+                      isRegistered={Boolean(event.id && registeredIds.has(event.id))}
+                    />
                   </div>
                 ))}
               </div>

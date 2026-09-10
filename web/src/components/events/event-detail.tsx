@@ -4,28 +4,51 @@ import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useLanguage } from "@/components/language-provider";
+import { useAuth } from "@/components/auth-provider";
 import {
   formatEventDate,
   formatEventTime,
-  type MosqueEvent,
 } from "@/components/events/event-data";
-import { Clock, MapPin, CalendarPlus, Users, ArrowLeft, Share2, Check, Loader2 } from "lucide-react";
-import { useState } from "react";
-import { registerForEvent } from "@/services/eventService";
+import type { MosqueEvent as FrontendMosqueEvent } from "@/lib/mosque/types";
+import { Clock, MapPin, CalendarPlus, Users, ArrowLeft, Share2, Check, Loader2, Ticket, CheckCircle2 } from "lucide-react";
+import { useEffect, useState } from "react";
+import { registerForEvent, fetchMyRegisteredEvents } from "@/services/eventService";
 import { useToast } from "@/components/ui/toast";
 
-export function EventDetail({ event }: { event: MosqueEvent }) {
+const FALLBACK_IMAGE = "/alim-L7J4ytEFRCg-unsplash.jpg";
+
+export function EventDetail({ event }: { event: any }) {
   const { language } = useLanguage();
   const bn = language === "bn";
   const router = useRouter();
   const { notify } = useToast();
+  const { session } = useAuth();
   const [copied, setCopied] = useState(false);
   const [registering, setRegistering] = useState(false);
+  const [isRegistered, setIsRegistered] = useState(false);
+  const [imgSrc, setImgSrc] = useState(event.imageUrl || event.image || FALLBACK_IMAGE);
 
-  const title = bn ? event.bnTitle : event.title;
-  const description = bn ? event.bnDescription : event.description;
-  const location = bn ? (event.bnLocation || event.location) : event.location;
-  const address = bn ? (event.bnAddress || event.address) : event.address;
+  // Check if current user is already registered for this event
+  useEffect(() => {
+    if (!session?.user || !event.id) return;
+    let isMounted = true;
+    void fetchMyRegisteredEvents({ all: true })
+      .then((res) => {
+        if (!isMounted) return;
+        if (res.registrations[event.id]) {
+          setIsRegistered(true);
+        }
+      })
+      .catch(() => {});
+    return () => {
+      isMounted = false;
+    };
+  }, [session?.user, event.id]);
+
+  const title = bn && event.bnTitle ? event.bnTitle : event.title;
+  const description = bn && event.bnDescription ? event.bnDescription : event.description;
+  const location = bn && event.bnLocation ? event.bnLocation : event.location;
+  const address = bn && event.bnAddress ? event.bnAddress : (event.address || event.location);
 
   const dateLabel = formatEventDate(event.date, language, {
     weekday: "long",
@@ -35,13 +58,18 @@ export function EventDetail({ event }: { event: MosqueEvent }) {
   });
 
   const startDateTime = `${event.date.replaceAll("-", "")}T${event.startTime.replace(":", "")}00`;
-  const endDateTime = `${event.date.replaceAll("-", "")}T${event.endTime.replace(":", "")}00`;
-  const calendarUrl = `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(event.title)}&dates=${startDateTime}/${endDateTime}&details=${encodeURIComponent(event.description)}&location=${encodeURIComponent(event.address)}`;
+  const endTimeStr = event.endTime || "23:59";
+  const endDateTime = `${event.date.replaceAll("-", "")}T${endTimeStr.replace(":", "")}00`;
+  const calendarUrl = `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(event.title)}&dates=${startDateTime}/${endDateTime}&details=${encodeURIComponent(event.description || "")}&location=${encodeURIComponent(address || location || "")}`;
 
   const isFull = event.capacity && event.registered && event.registered >= event.capacity;
 
   const handleRegister = async () => {
     if (registering) return;
+    if (!session?.user) {
+      router.push(`/sign-in?redirect=/events/${event.slug || event.id}`);
+      return;
+    }
     if (!event.id) {
       notify({
         tone: "warning",
@@ -55,6 +83,7 @@ export function EventDetail({ event }: { event: MosqueEvent }) {
     setRegistering(true);
     try {
       await registerForEvent(event.id);
+      setIsRegistered(true);
       notify({
         tone: "success",
         message: bn ? "নিবন্ধন সফল হয়েছে" : "Registration successful",
@@ -62,7 +91,6 @@ export function EventDetail({ event }: { event: MosqueEvent }) {
           ? `আপনি "${event.title}" এ নিবন্ধিত হয়েছেন।`
           : `You are now registered for "${event.title}".`,
       });
-      router.push("/account/events");
     } catch (err: unknown) {
       const message =
         err instanceof Error
@@ -79,7 +107,6 @@ export function EventDetail({ event }: { event: MosqueEvent }) {
       setRegistering(false);
     }
   };
-
   const handleShare = () => {
     if (typeof window !== "undefined") {
       navigator.clipboard.writeText(window.location.href);
@@ -106,12 +133,13 @@ export function EventDetail({ event }: { event: MosqueEvent }) {
         <article className="space-y-6">
           <div className="relative aspect-[16/9] w-full overflow-hidden rounded-3xl border border-[#c79a45]/30 bg-[#072a20] shadow-xl">
             <Image
-              src={event.image}
+              src={imgSrc}
               alt={title}
               fill
               priority
               sizes="(max-width: 1024px) 100vw, 60vw"
               className="object-cover object-center"
+              onError={() => setImgSrc(FALLBACK_IMAGE)}
             />
             <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent" />
             <div className="absolute bottom-4 left-4">
@@ -207,7 +235,26 @@ export function EventDetail({ event }: { event: MosqueEvent }) {
 
           {/* Registration / Status CTA */}
           <div className="pt-4 border-t border-[#eae6dc] space-y-3">
-            {isFull ? (
+            {isRegistered ? (
+              <div className="p-4 rounded-2xl bg-[#073a2d]/5 border border-[#073a2d]/20 space-y-2.5 text-center">
+                <div className="flex items-center justify-center gap-1.5 text-[#073a2d] font-bold text-sm">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                  <span>{bn ? "আপনি ইতিমধ্যে নিবন্ধিত আছেন" : "You are Registered"}</span>
+                </div>
+                <p className="text-xs text-[#52605a]">
+                  {bn
+                    ? "অনুষ্ঠানে প্রবেশের জন্য আপনার ডিজিটাল টিকিট প্রস্তুত আছে।"
+                    : "Your digital attendance pass is ready in your account."}
+                </p>
+                <Link
+                  href={`/account/events/${event.id}`}
+                  className="w-full inline-flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl bg-[#073a2d] text-white font-semibold text-xs hover:bg-[#0b503f] transition shadow-sm"
+                >
+                  <Ticket className="w-4 h-4 text-[#c79a45]" />
+                  <span>{bn ? "ডিজিটাল পাস দেখুন" : "View Check-in Pass"}</span>
+                </Link>
+              </div>
+            ) : isFull ? (
               <div className="p-3.5 rounded-xl bg-red-50 border border-red-200 text-center text-red-700 text-xs sm:text-sm font-semibold">
                 {bn ? "এই অনুষ্ঠানের সকল আসন পূর্ণ হয়ে গেছে।" : "Registration is full for this event."}
               </div>

@@ -433,9 +433,14 @@ export class EventsService {
    *
    * The caller's own mosque and user id are the only source of truth for ownership and tenancy.
    */
-  async registerCurrentUser(actor: AuthenticatedUser, eventId: string): Promise<MyEventRegistrationDto> {
+  async registerCurrentUser(actor: AuthenticatedUser, eventIdOrSlug: string): Promise<MyEventRegistrationDto> {
+    const isUuid = UUID_REGEX.test(eventIdOrSlug);
     const event = await this.prisma.event.findFirst({
-      where: { id: eventId, mosqueId: actor.mosqueId, deletedAt: null },
+      where: {
+        ...(isUuid ? { id: eventIdOrSlug } : { slug: eventIdOrSlug }),
+        mosqueId: actor.mosqueId,
+        deletedAt: null,
+      },
     });
 
     if (!event) {
@@ -449,6 +454,8 @@ export class EventsService {
     if (event.status === EventStatus.cancelled) {
       throw new BadRequestException('This event has been cancelled.');
     }
+
+    const eventId = event.id;
 
     if (event.registrationRequired) {
       const confirmedCount = await this.prisma.eventRegistration.count({

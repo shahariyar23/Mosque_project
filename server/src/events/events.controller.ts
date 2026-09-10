@@ -51,6 +51,21 @@ export class EventsController {
     return this.eventsService.findAll(mosqueId, query);
   }
 
+  @Get('my-registrations')
+  @ApiOperation({
+    summary: 'My registered events',
+    description:
+      'Returns the authenticated user\'s own event registrations, including both upcoming and past events. ' +
+      'Ownership and mosque tenancy are derived from the access token; no userId parameter is accepted.',
+  })
+  @ApiResponse({ status: 200, type: PaginatedMyRegistrationsDto })
+  findMyRegistrations(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query() query: MyRegistrationsQueryDto,
+  ): Promise<PaginatedMyRegistrationsDto | MyEventRegistrationDto[]> {
+    return this.eventsService.findMyRegistrations(user, query);
+  }
+
   @Get(':id')
   @Public()
   @ApiOperation({
@@ -66,21 +81,6 @@ export class EventsController {
     // For unauthenticated users, pass undefined and service will use primary mosque
     const mosqueId = user?.mosqueId;
     return this.eventsService.findOne(mosqueId, idOrSlug);
-  }
-
-  @Get('my-registrations')
-  @ApiOperation({
-    summary: 'My registered events',
-    description:
-      'Returns the authenticated user\'s own event registrations, including both upcoming and past events. ' +
-      'Ownership and mosque tenancy are derived from the access token; no userId parameter is accepted.',
-  })
-  @ApiResponse({ status: 200, type: PaginatedMyRegistrationsDto })
-  findMyRegistrations(
-    @CurrentUser() user: AuthenticatedUser,
-    @Query() query: MyRegistrationsQueryDto,
-  ): Promise<PaginatedMyRegistrationsDto | MyEventRegistrationDto[]> {
-    return this.eventsService.findMyRegistrations(user, query);
   }
 
   @Post(':id/register')
