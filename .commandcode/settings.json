@@ -5,7 +5,16 @@
       "Shell(npx jest src/notifications/notifications.service.spec.ts --silent 2 >& 1)",
       "Shell(npm:*)",
       "Shell(npx tsc --noEmit)",
-      "Shell(xxd:*)"
+      "Shell(xxd:*)",
+      "Shell(npx jest --silent src/events/events.service.spec.ts src/events/events.controller.spec.ts 2 >& 1)",
+      "Shell(npx jest src/events/events.service.spec.ts src/events/events.controller.spec.ts 2 >& 1)",
+      "Shell(npx eslint src/events/**/*.ts --fix 2 >& 1)",
+      "Shell(npx tsc --noEmit -p tsconfig.json 2 >& 1)",
+      "Shell(npx eslint src/events/events.service.ts src/events/events.controller.ts src/events/dto/event.dto.ts 2 >& 1)",
+      "Shell(npx eslint src/events/events.service.ts --fix 2 >& 1)",
+      "Shell(npx jest src/events/ 2 >& 1)",
+      "Shell(npx jest src/events/events.e2e.spec.ts > /tmp/e2e.log 2>&1; echo \"exit:$?\"; grep -E \"✓|✕|●|Expected|Received|toBe|FAIL\" /tmp/e2e.log | head -50)",
+      "Shell(npx jest src/events/ > /tmp/events-all.log 2>&1; echo \"exit:$?\"; tail -10 /tmp/events-all.log)"
     ],
     "deny": [],
     "defaultMode": "default"
