@@ -91,6 +91,7 @@ export type UserQuery = {
   status?: UserStatus;
   role?: Role;
   position?: Position;
+  hasPositions?: boolean;
   /** Soft-deleted rows only. Silently ignored without `user.viewDeleted`. */
   deleted?: boolean;
 };
@@ -148,6 +149,7 @@ export function fetchUsers(query: UserQuery = {}): Promise<ListResult<User>> {
     status: query.status,
     role: query.role,
     position: query.position,
+    hasPositions: query.hasPositions,
     deleted: query.deleted,
   });
 }

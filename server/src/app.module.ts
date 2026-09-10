@@ -49,6 +49,7 @@ import { NotificationsModule } from './notifications/notifications.module';
 import { AnnouncementsModule } from './announcements/announcements.module';
 import { QuranModule } from './quran/quran.module';
 import { SearchModule } from './search/search.module';
+import { CloudinaryModule } from './common/cloudinary/cloudinary.module';
 
 /**
  * The composition root.
@@ -138,6 +139,7 @@ import { SearchModule } from './search/search.module';
     AnnouncementsModule,
     QuranModule,
     SearchModule,
+    CloudinaryModule,
 
     // Then what the money was meant for and who it went to. Budgets and salaries are independent of each
     // other and of the three above; reports come last because they read all four tables and nothing reads

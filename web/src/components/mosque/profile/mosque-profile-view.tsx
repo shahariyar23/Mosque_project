@@ -12,6 +12,7 @@ import { Modal } from "@/components/finance/ui/modal";
 import { ConfirmDialog } from "@/components/finance/ui/dialogs";
 import { TableSkeleton } from "@/components/finance/ui/skeleton";
 import { useToast } from "@/components/ui/toast";
+import Link from "next/link";
 import { committee, mosqueFacts, mosqueProfile } from "@/data/mosque-profile";
 import type { MosqueProfile } from "@/lib/mosque/types";
 import { 
@@ -25,6 +26,9 @@ import {
   type UpdateMosqueInput,
   type CreateFacilityInput
 } from "@/services/mosqueService";
+import { fetchUsers, type User } from "@/services/userService";
+import { RoleBadge } from "@/components/ui/status-badge";
+import { positionLabels, type Position } from "@/lib/permissions";
 
 const divisions = ["Dhaka", "Chattogram", "Rajshahi", "Khulna", "Barishal", "Sylhet", "Rangpur", "Mymensingh"];
 
@@ -35,6 +39,7 @@ export function MosqueProfileView() {
   const [editing, setEditing] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [committeeUsers, setCommitteeUsers] = useState<User[]>([]);
 
   // Facilities State
   const [facilities, setFacilities] = useState<Facility[]>([]);
@@ -50,9 +55,10 @@ export function MosqueProfileView() {
   const loadData = async () => {
     try {
       setLoading(true);
-      const [m, f] = await Promise.all([
+      const [m, f, c] = await Promise.all([
         fetchMosque().catch(() => null),
         fetchFacilities().catch(() => []),
+        fetchUsers({ hasPositions: true, limit: 50 }).catch(() => ({ rows: [] as User[] })),
       ]);
 
       if (m) {
@@ -75,6 +81,9 @@ export function MosqueProfileView() {
       }
       if (f) {
         setFacilities(f);
+      }
+      if (c?.rows) {
+        setCommitteeUsers(c.rows);
       }
     } finally {
       setLoading(false);
@@ -605,23 +614,57 @@ export function MosqueProfileView() {
       {/* Committee */}
       <Panel>
         <PanelHeader
-          title="Committee"
-          description="Display only. A committee post grants no permission on its own — access comes from the person's role."
+          title="Committee & Leadership"
+          description="Mosque committee members and leaders. Posts assigned here are displayed on the public About page."
           icon="users"
+          actions={
+            <Link href="/dashboard/committee">
+              <Button variant="secondary" size="sm" icon="users">
+                Manage Committee
+              </Button>
+            </Link>
+          }
         />
         <PanelBody>
-          <ul className="grid gap-2.5 sm:grid-cols-2 xl:grid-cols-3">
-            {committee.map((member) => (
-              <li
-                key={member.name}
-                className="rounded-lg border border-[#e7e6dc] bg-[#faf9f4] px-3.5 py-3"
-              >
-                <p className="text-[13.5px] font-semibold text-[#17211d]">{member.name}</p>
-                <p className="mt-0.5 text-[12.5px] text-[#69726d]">{member.position}</p>
-                <p className="mt-1 text-[11.5px] text-[#8b938d]">In post since {member.since}</p>
-              </li>
-            ))}
-          </ul>
+          {committeeUsers.length === 0 ? (
+            <div className="p-8 text-center bg-[#faf9f4] rounded-xl border border-[#eae6db]">
+              <p className="text-sm font-semibold text-[#17211d]">No Committee Members Assigned</p>
+              <p className="text-xs text-[#69726d] mt-1">Assign leaders and committee posts to display them here and on the About page.</p>
+              <div className="mt-4">
+                <Link href="/dashboard/committee">
+                  <Button variant="primary" size="sm" icon="plus">
+                    Add Committee Member
+                  </Button>
+                </Link>
+              </div>
+            </div>
+          ) : (
+            <ul className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+              {committeeUsers.map((member) => (
+                <li
+                  key={member.id}
+                  className="rounded-xl border border-[#e7e6dc] bg-[#faf9f4] p-3.5 flex flex-col justify-between"
+                >
+                  <div>
+                    <div className="flex items-center justify-between">
+                      <p className="text-[13.5px] font-bold text-[#17211d]">{member.fullName}</p>
+                      <RoleBadge role={member.role} />
+                    </div>
+                    <div className="mt-2 flex flex-wrap gap-1">
+                      {member.positions.map((pos) => (
+                        <Badge key={pos} tone="gold">
+                          {positionLabels[pos]?.en || pos}
+                        </Badge>
+                      ))}
+                    </div>
+                  </div>
+                  {member.phone && (
+                    <p className="mt-3 text-[11px] text-[#69726d] font-medium">{member.phone}</p>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
         </PanelBody>
       </Panel>
 

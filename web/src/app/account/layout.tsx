@@ -1,3 +1,6 @@
+"use client";
+
+import { usePathname } from "next/navigation";
 import { AccountGate } from "@/components/account/account-gate";
 import { SiteHeader } from "@/components/site-header";
 import { SiteFooter } from "@/components/site-footer";
@@ -22,6 +25,7 @@ const accountLinks = [
   { href: "/account/events", label: "Events", icon: CalendarDays },
   { href: "/account/bookings", label: "Bookings", icon: Ticket },
   { href: "/account/classes", label: "Classes", icon: GraduationCap },
+  { href: "/account/contributions", label: "Contributions", icon: HandCoins },
   { href: "/account/saved", label: "Saved Content", icon: Bookmark },
   { href: "/account/notifications", label: "Notifications", icon: Bell },
   { href: "/account/settings", label: "Settings", icon: Settings },
@@ -32,6 +36,8 @@ export default function AccountLayout({
 }: {
   children: React.ReactNode;
 }) {
+  const pathname = usePathname();
+
   return (
     <AccountGate>
       <div className="flex min-h-screen flex-col bg-[#faf9f4]">
@@ -47,13 +53,26 @@ export default function AccountLayout({
               <nav className="flex flex-col gap-1 rounded-xl border border-[#e5e2d8] bg-white p-3 shadow-sm">
                 {accountLinks.map((link) => {
                   const Icon = link.icon;
+                  const isActive =
+                    pathname === link.href ||
+                    (link.href !== "/account" && pathname.startsWith(link.href + "/"));
+
                   return (
                     <Link
                       key={link.href}
                       href={link.href}
-                      className="flex items-center gap-3 rounded-lg px-4 py-2.5 text-sm font-medium text-[#69726d] transition-colors hover:bg-[#faf9f4] hover:text-[#0d4d3b]"
+                      aria-current={isActive ? "page" : undefined}
+                      className={`flex items-center gap-3 rounded-lg px-3.5 py-2.5 text-sm transition-all border-l-4 ${
+                        isActive
+                          ? "border-[#0d4d3b] bg-emerald-50 font-semibold text-[#0d4d3b] shadow-xs"
+                          : "border-transparent font-medium text-[#69726d] hover:bg-[#faf9f4] hover:text-[#0d4d3b]"
+                      }`}
                     >
-                      <Icon className="h-5 w-5 opacity-70" />
+                      <Icon
+                        className={`h-5 w-5 transition-colors ${
+                          isActive ? "text-[#0d4d3b]" : "opacity-70"
+                        }`}
+                      />
                       {link.label}
                     </Link>
                   );
@@ -63,15 +82,26 @@ export default function AccountLayout({
 
             {/* Mobile Nav */}
             <nav className="flex gap-2 overflow-x-auto pb-4 lg:hidden">
-              {accountLinks.map((link) => (
-                <Link
-                  key={link.href}
-                  href={link.href}
-                  className="whitespace-nowrap rounded-full border border-[#e5e2d8] bg-white px-4 py-2 text-sm font-medium text-[#69726d] shadow-sm hover:bg-[#faf9f4]"
-                >
-                  {link.label}
-                </Link>
-              ))}
+              {accountLinks.map((link) => {
+                const isActive =
+                  pathname === link.href ||
+                  (link.href !== "/account" && pathname.startsWith(link.href + "/"));
+
+                return (
+                  <Link
+                    key={link.href}
+                    href={link.href}
+                    aria-current={isActive ? "page" : undefined}
+                    className={`whitespace-nowrap rounded-full border px-4 py-2 text-sm transition-colors ${
+                      isActive
+                        ? "border-emerald-600/30 bg-emerald-50 font-semibold text-[#0d4d3b] shadow-xs ring-1 ring-emerald-600/20"
+                        : "border-[#e5e2d8] bg-white font-medium text-[#69726d] shadow-sm hover:bg-[#faf9f4] hover:text-[#0d4d3b]"
+                    }`}
+                  >
+                    {link.label}
+                  </Link>
+                );
+              })}
             </nav>
 
             {/* Content */}

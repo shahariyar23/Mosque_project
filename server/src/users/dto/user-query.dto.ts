@@ -103,4 +103,12 @@ export class UserQueryDto {
   @Type(() => Boolean)
   @IsBoolean()
   deleted?: boolean;
+
+  @ApiPropertyOptional({
+    description: 'When true, returns users who hold at least one committee post.',
+  })
+  @IsOptional()
+  @Type(() => Boolean)
+  @IsBoolean()
+  hasPositions?: boolean;
 }

@@ -2,6 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { NotFoundException } from '@nestjs/common';
 import { MosqueService } from './mosque.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { CloudinaryService } from '../common/cloudinary/cloudinary.service';
 
 describe('MosqueService', () => {
   let service: MosqueService;
@@ -33,6 +34,14 @@ describe('MosqueService', () => {
               update: jest.fn(),
               delete: jest.fn(),
             },
+          },
+        },
+        {
+          provide: CloudinaryService,
+          useValue: {
+            uploadImage: jest.fn(),
+            deleteAsset: jest.fn(),
+            isConfigured: jest.fn().mockReturnValue(true),
           },
         },
       ],

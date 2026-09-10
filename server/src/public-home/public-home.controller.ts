@@ -67,4 +67,40 @@ export class PublicHomeController {
   getStats(@Param('slug') slug: string) {
     return this.publicHome.getCommunityStats(slug);
   }
+
+  @Get('facilities')
+  @ApiOperation({ summary: 'Public active facilities' })
+  @ApiOkResponse({ description: 'Active facilities available at the mosque.' })
+  getFacilities(@Param('slug') slug: string) {
+    return this.publicHome.getFacilities(slug);
+  }
+
+  @Get('leadership')
+  @ApiOperation({ summary: 'Public mosque leadership & imams' })
+  @ApiOkResponse({ description: 'Public leadership profiles.' })
+  getLeadership(@Param('slug') slug: string) {
+    return this.publicHome.getLeadership(slug);
+  }
+
+  @Get('milestones')
+  @ApiOperation({ summary: 'Public historical milestones' })
+  @ApiOkResponse({ description: 'Published chronological milestones.' })
+  getMilestones(@Param('slug') slug: string) {
+    return this.publicHome.getMilestones(slug);
+  }
+
+  @Get('values')
+  @ApiOperation({ summary: 'Public core beliefs and values' })
+  @ApiOkResponse({ description: 'Published core value pillars.' })
+  getValues(@Param('slug') slug: string) {
+    return this.publicHome.getValues(slug);
+  }
+
+  @Get('gallery')
+  @ApiOperation({ summary: 'Public gallery photos' })
+  @ApiParam({ name: 'category', required: false, description: 'Filter by category (e.g. Architecture)' })
+  @ApiOkResponse({ description: 'Published photos for the mosque gallery.' })
+  getGallery(@Param('slug') slug: string, @Query('category') category?: string) {
+    return this.publicHome.getGallery(slug, category);
+  }
 }

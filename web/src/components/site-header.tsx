@@ -7,6 +7,7 @@ import { useAuth } from "@/components/auth-provider";
 import { UserMenu } from "@/components/account/UserMenu";
 import { gsap, useIsomorphicLayoutEffect } from "@/lib/gsap";
 import { siteConfig } from "@/config/site";
+import { usePublicPrayerTimes } from "@/hooks/use-public-prayer-times";
 
 const links = [
   { label: "Home", href: "/", section: "home" },
@@ -30,6 +31,13 @@ export function SiteHeader() {
   const menuRef = useRef<HTMLDivElement | null>(null);
   const headerRef = useRef<HTMLElement | null>(null);
   const pathname = usePathname();
+  const {
+    prayers,
+    hijri,
+    nextPrayerIndex,
+    countdownSeconds,
+    loading: prayerTimesLoading,
+  } = usePublicPrayerTimes();
 
   // scroll behavior: scrolled state + hide on scroll down / show on scroll up
   useEffect(() => {
@@ -82,8 +90,11 @@ export function SiteHeader() {
   const routeActiveIndex = links.findIndex((link) => link.href === pathname);
   const currentActiveIndex = pathname === "/" ? 0 : routeActiveIndex;
 
-  const isAppPage = pathname.startsWith("/account") || pathname.startsWith("/dashboard");
-  const forceScrolled = scrolled || isAppPage;
+  const needsGlassHeader =
+    pathname.startsWith("/account") ||
+    pathname.startsWith("/dashboard") ||
+    pathname.startsWith("/transparency");
+  const forceScrolled = scrolled || needsGlassHeader;
 
   useIsomorphicLayoutEffect(() => {
     const ctx = gsap.context(() => {
@@ -106,12 +117,6 @@ export function SiteHeader() {
         "-=0.3"
       )
       .fromTo(
-        ".nav-lang-btn",
-        { opacity: 0, y: -10 },
-        { opacity: 1, y: 0, duration: 0.4 },
-        "-=0.2"
-      )
-      .fromTo(
         ".nav-user-menu, .donate-btn",
         { opacity: 0, y: -10 },
         { opacity: 1, y: 0, duration: 0.4 },
@@ -126,6 +131,14 @@ export function SiteHeader() {
       ref={headerRef}
       className={`fixed inset-x-0 top-0 z-40 text-white transition-all duration-300 ${forceScrolled ? "site-header--scrolled" : ""} ${hidden ? "-translate-y-full" : "translate-y-0"}`}
     >
+      <MosqueInformationBar
+        language={language}
+        setLanguage={setLanguage}
+        hijri={hijri}
+        prayer={prayers[nextPrayerIndex]}
+        countdownSeconds={countdownSeconds}
+        loading={prayerTimesLoading}
+      />
       <nav
         className="mx-auto flex max-w-7xl items-center justify-between px-5 py-5 lg:px-8"
         aria-label="Main navigation"
@@ -162,14 +175,6 @@ export function SiteHeader() {
             );
           })}
 
-          <button
-            onClick={() => setLanguage(language === "bn" ? "en" : "bn")}
-            className="nav-lang-btn text-xs text-[#e0be79]"
-            aria-label="Switch between English and Bangla"
-          >
-            {language === "bn" ? "English" : "বাংলা"}
-          </button>
-          
           {loading ? (
             <SessionPlaceholder />
           ) : session ? (
@@ -233,13 +238,6 @@ export function SiteHeader() {
               {t(link.label)}
             </Link>
           ))}
-          <button
-            onClick={() => setLanguage(language === "bn" ? "en" : "bn")}
-            className="mt-4 text-sm text-[#e0be79]"
-          >
-            {language === "bn" ? "English" : "বাংলা"}
-          </button>
-          
           {!loading && !session && (
             <>
               <Link
@@ -261,6 +259,134 @@ export function SiteHeader() {
       </div>
     </header>
   );
+}
+
+type MosqueInformationBarProps = {
+  language: "en" | "bn";
+  setLanguage: (language: "en" | "bn") => void;
+  hijri: {
+    date: string | null;
+    day: number | null;
+    month: number | null;
+    monthName: string | null;
+    year: number | null;
+  } | null;
+  prayer: {
+    nameEn: string;
+    nameBn: string;
+    timeEn: string;
+    timeBn: string;
+  } | undefined;
+  countdownSeconds: number;
+  loading: boolean;
+};
+
+function MosqueInformationBar({
+  language,
+  setLanguage,
+  hijri,
+  prayer,
+  countdownSeconds,
+  loading,
+}: MosqueInformationBarProps) {
+  const isBangla = language === "bn";
+  const hijriLabel = formatHijriDate(hijri, isBangla);
+  const prayerLabel = prayer ? (isBangla ? prayer.nameBn : prayer.nameEn) : null;
+  const prayerTime = prayer ? (isBangla ? prayer.timeBn : prayer.timeEn) : null;
+  const countdown = formatPrayerCountdown(countdownSeconds, isBangla);
+
+  return (
+    <aside
+      className="border-b border-[#c79a45]/35 bg-[var(--green-deep)] text-[var(--ivory)]"
+      aria-label={isBangla ? "মসজিদের আজকের তথ্য" : "Today's mosque information"}
+    >
+      <div className="mx-auto grid max-w-7xl grid-cols-[minmax(0,1fr)_auto] items-center gap-x-2 px-5 py-1 text-[10px] leading-5 sm:flex sm:flex-row sm:flex-wrap sm:gap-x-3 sm:py-1.5 sm:text-[11px] lg:flex-nowrap lg:px-8">
+        <p className="min-w-0 truncate font-medium tracking-[0.08em] text-white/90 sm:whitespace-nowrap">
+          <span className="mr-1 hidden text-[9px] font-semibold tracking-[0.16em] text-[var(--gold)] sm:inline">
+            {isBangla ? "হিজরি" : "HIJRI"}
+          </span>
+          {loading ? "···" : hijriLabel ?? "—"}
+        </p>
+
+        <span className="hidden h-3 w-px bg-[#c79a45]/45 sm:block" aria-hidden="true" />
+
+        <p className="col-span-2 min-w-0 whitespace-nowrap text-white/90 sm:col-auto" aria-live="polite">
+          <span className="mr-1 text-[8px] font-semibold tracking-[0.14em] text-[var(--gold)] sm:text-[9px] sm:tracking-[0.16em]">
+            {isBangla ? "পরবর্তী নামাজ" : "NEXT PRAYER"}
+          </span>
+          {loading ? (
+            "···"
+          ) : prayerLabel && prayerTime ? (
+            <>
+              <strong className="font-semibold">{prayerLabel}</strong>{" "}
+              <span className="font-medium tabular-nums">{prayerTime}</span>
+              <span className="mx-1 text-[var(--gold)]" aria-hidden="true">•</span>
+              <span className="tabular-nums text-white/65">
+                {isBangla ? `${countdown} বাকি` : `in ${countdown}`}
+              </span>
+            </>
+          ) : (
+            <span className="text-white/65">{isBangla ? "সময় পাওয়া যাচ্ছে না" : "Times unavailable"}</span>
+          )}
+        </p>
+
+        <div className="col-start-2 row-start-1 flex items-center gap-1 justify-self-end sm:ml-auto" aria-label="Language">
+          <button
+            type="button"
+            onClick={() => setLanguage("en")}
+            aria-pressed={language === "en"}
+            className={`min-h-8 rounded px-1.5 text-[11px] font-medium transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--ivory)] ${language === "en" ? "bg-[var(--gold)] text-[var(--ink)]" : "text-white/70 hover:text-white"}`}
+          >
+            English
+          </button>
+          <span className="text-[#c79a45]" aria-hidden="true">|</span>
+          <button
+            type="button"
+            onClick={() => setLanguage("bn")}
+            aria-pressed={language === "bn"}
+            className={`min-h-8 rounded px-1.5 text-[11px] font-medium transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--ivory)] ${language === "bn" ? "bg-[var(--gold)] text-[var(--ink)]" : "text-white/70 hover:text-white"}`}
+          >
+            বাংলা
+          </button>
+        </div>
+      </div>
+    </aside>
+  );
+}
+
+function formatHijriDate(hijri: MosqueInformationBarProps["hijri"], isBangla: boolean) {
+  if (!hijri) return null;
+
+  const [dayFromDate, monthFromDate, yearFromDate] = (hijri.date ?? "")
+    .split("-")
+    .map(Number);
+  const day = hijri.day ?? dayFromDate;
+  const month = hijri.month ?? monthFromDate;
+  const year = hijri.year ?? yearFromDate;
+  if (!day || !month || !year) return null;
+
+  const monthNames = isBangla
+    ? ["মুহাররম", "সফর", "রবিউল আউয়াল", "রবিউস সানি", "জমাদিউল আউয়াল", "জমাদিউস সানি", "রজব", "শাবান", "রমজান", "শাওয়াল", "জিলকদ", "জিলহজ"]
+    : ["Muharram", "Safar", "Rabi al-Awwal", "Rabi al-Thani", "Jumada al-Awwal", "Jumada al-Thani", "Rajab", "Sha'ban", "Ramadan", "Shawwal", "Dhu al-Qidah", "Dhu al-Hijjah"];
+  const monthName = isBangla ? monthNames[month - 1] : hijri.monthName ?? monthNames[month - 1];
+  if (!monthName) return null;
+
+  return isBangla
+    ? `${toBengaliNumerals(day)} ${monthName} ${toBengaliNumerals(year)} হিজরি`
+    : `${day} ${monthName} ${year} AH`;
+}
+
+function formatPrayerCountdown(countdownSeconds: number, isBangla: boolean) {
+  const totalMinutes = Math.max(0, Math.floor(countdownSeconds / 60));
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  const value = hours ? (minutes ? `${hours}h ${minutes}m` : `${hours}h`) : `${minutes}m`;
+  return isBangla ? toBengaliNumerals(value) : value;
+}
+
+function toBengaliNumerals(value: string | number) {
+  const digits = ["০", "১", "২", "৩", "৪", "৫", "৬", "৭", "৮", "৯"];
+  return String(value).replace(/\d/g, (digit) => digits[Number(digit)] ?? digit);
 }
 
 /**

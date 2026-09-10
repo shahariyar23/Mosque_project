@@ -668,6 +668,7 @@ export class UsersService {
       // `positions` is a scalar list, so the filter asks whether it contains the post rather than
       // whether it equals it: someone who is both treasurer and cashier must appear under each.
       ...(query.position ? { positions: { has: query.position } } : {}),
+      ...(query.hasPositions === true ? { positions: { isEmpty: false } } : {}),
       ...(search
         ? {
             OR: [

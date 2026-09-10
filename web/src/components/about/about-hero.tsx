@@ -4,10 +4,35 @@ import Image from "next/image";
 import Link from "next/link";
 import { ArrowDown, Clock } from "lucide-react";
 import { useLanguage } from "@/components/language-provider";
+import { type PublicMosqueInfo } from "@/services/publicHomeService";
 
-export function AboutHero() {
+interface AboutHeroProps {
+  mosque?: PublicMosqueInfo | null;
+  loading?: boolean;
+}
+
+export function AboutHero({ mosque, loading = false }: AboutHeroProps) {
   const { language } = useLanguage();
   const bn = language === "bn";
+
+  const mosqueName = mosque?.name || (bn ? "নূর কমিউনিটি মসজিদ" : "Noor Community Mosque");
+  const headline = bn ? (
+    <>
+      ইবাদত, জ্ঞান ও <br />
+      <span className="text-[#e0be79] italic">ভ্রাতৃত্বের</span> একটি পবিত্র অঙ্গন
+    </>
+  ) : (
+    <>
+      A Place of Worship, <br />
+      <span className="text-[#e0be79] italic font-normal">Knowledge</span> & Community
+    </>
+  );
+
+  const defaultDescription = bn
+    ? "নূর কমিউনিটি মসজিদ শুধু একটি ইবাদতখানা নয়—এটি আত্মশুদ্ধি, কুরআন শিক্ষা, পারস্পরিক সেবা এবং প্রতিটি বিশ্বাসী অন্তরের জন্য একটি প্রশান্তির ঠিকানা।"
+    : "Noor Community Mosque is a sanctuary for spiritual devotion, Islamic scholarship, community welfare, and lifelong brotherhood—welcoming all seekers of truth and peace.";
+
+  const description = (!bn && mosque?.description) ? mosque.description : defaultDescription;
 
   return (
     <section className="relative min-h-[640px] xs:min-h-[700px] sm:min-h-[760px] lg:min-h-[820px] flex items-center justify-center overflow-hidden bg-[#041510] text-white pt-28 pb-16 px-4 xs:px-6 lg:px-8">
@@ -15,7 +40,7 @@ export function AboutHero() {
       <div className="absolute inset-0 z-0">
         <Image
           src="/golden-mosque-with-minarets-at-sunset.jpg"
-          alt={bn ? "নূর কমিউনিটি মসজিদ এর সূর্যাস্তের মনোরম দৃশ্য" : "Noor Community Mosque with golden minarets at sunset"}
+          alt={bn ? `${mosqueName} এর সূর্যাস্তের মনোরম দৃশ্য` : `${mosqueName} with golden minarets at sunset`}
           fill
           priority
           sizes="100vw"
@@ -34,30 +59,18 @@ export function AboutHero() {
         {/* Eyebrow with Islamic Star Accents */}
         <div className="inline-flex items-center gap-2.5 px-3.5 py-1.5 rounded-full border border-[#c79a45]/40 bg-[#072a20]/80 backdrop-blur-sm text-[#e0be79] text-xs xs:text-sm font-semibold tracking-[0.2em] uppercase shadow-lg">
           <span className="text-[10px]">✦</span>
-          <span>{bn ? "আমাদের সম্পর্কে জানুন" : "ABOUT NOOR MOSQUE"}</span>
+          <span>{bn ? "আমাদের সম্পর্কে জানুন" : `ABOUT ${mosque?.name ? mosque.name.toUpperCase() : "NOOR MOSQUE"}`}</span>
           <span className="text-[10px]">✦</span>
         </div>
 
         {/* Main Editorial Headline */}
         <h1 className="mt-5 xs:mt-6 text-3xl xs:text-4xl sm:text-5xl md:text-6xl lg:text-7xl font-serif font-bold text-[#f8f5ee] leading-[1.15] tracking-tight max-w-4xl drop-shadow-sm">
-          {bn ? (
-            <>
-              ইবাদত, জ্ঞান ও <br />
-              <span className="text-[#e0be79] italic">ভ্রাতৃত্বের</span> একটি পবিত্র অঙ্গন
-            </>
-          ) : (
-            <>
-              A Place of Worship, <br />
-              <span className="text-[#e0be79] italic font-normal">Knowledge</span> & Community
-            </>
-          )}
+          {headline}
         </h1>
 
         {/* Supporting Narrative */}
         <p className="mt-4 xs:mt-5 max-w-2xl text-sm xs:text-base sm:text-lg text-white/80 leading-relaxed font-light">
-          {bn
-            ? "নূর কমিউনিটি মসজিদ শুধু একটি ইবাদতখানা নয়—এটি আত্মশুদ্ধি, কুরআন শিক্ষা, পারস্পরিক সেবা এবং প্রতিটি বিশ্বাসী অন্তরের জন্য একটি প্রশান্তির ঠিকানা।"
-            : "Noor Community Mosque is a sanctuary for spiritual devotion, Islamic scholarship, community welfare, and lifelong brotherhood—welcoming all seekers of truth and peace."}
+          {description}
         </p>
 
         {/* Dual CTA Actions (Touch-friendly, min 44px targets) */}
@@ -90,4 +103,3 @@ export function AboutHero() {
     </section>
   );
 }
-

@@ -18,9 +18,14 @@ import { ServicesService } from '../services/services.service';
 import {
   PublicCommunityStatsDto,
   PublicEventDto,
+  PublicFacilityDto,
+  PublicGalleryDto,
   PublicJumuahEntryDto,
+  PublicLeadershipDto,
+  PublicMilestoneDto,
   PublicMosqueDto,
   PublicServiceDto,
+  PublicValueDto,
 } from './dto/public-home.dto';
 
 /**
@@ -70,10 +75,17 @@ export class PublicHomeService {
         slug: true,
         name: true,
         description: true,
+        story: true,
+        mission: true,
+        vision: true,
         addressLine: true,
         city: true,
         district: true,
         country: true,
+        postalCode: true,
+        phone: true,
+        email: true,
+        website: true,
         establishedYear: true,
         logoUrl: true,
       },
@@ -165,32 +177,116 @@ export class PublicHomeService {
     const today = new Date();
     today.setUTCHours(0, 0, 0, 0);
 
-    const [activeServices, upcomingEvents, publicFunds, members] = await Promise.all([
-      this.prisma.service.count({
-        where: { mosqueId: mosque.id, status: ServiceStatus.active, deletedAt: null },
-      }),
-      this.prisma.event.count({
-        where: {
-          mosqueId: mosque.id,
-          deletedAt: null,
-          isPublished: true,
-          status: { in: [EventStatus.upcoming, EventStatus.ongoing] },
-          date: { gte: today },
-        },
-      }),
-      this.prisma.donationFund.count({
-        where: {
-          mosqueId: mosque.id,
-          isPublic: true,
-          status: { in: [FundStatus.active, FundStatus.completed] },
-        },
-      }),
-      this.prisma.user.count({
-        where: { mosqueId: mosque.id, role: Role.member, isActive: true, deletedAt: null },
-      }),
-    ]);
+    const [activeServices, upcomingEvents, publicFunds, members, activeVolunteers] =
+      await Promise.all([
+        this.prisma.service.count({
+          where: { mosqueId: mosque.id, status: ServiceStatus.active, deletedAt: null },
+        }),
+        this.prisma.event.count({
+          where: {
+            mosqueId: mosque.id,
+            deletedAt: null,
+            isPublished: true,
+            status: { in: [EventStatus.upcoming, EventStatus.ongoing] },
+            date: { gte: today },
+          },
+        }),
+        this.prisma.donationFund.count({
+          where: {
+            mosqueId: mosque.id,
+            isPublic: true,
+            status: { in: [FundStatus.active, FundStatus.completed] },
+          },
+        }),
+        this.prisma.user.count({
+          where: { mosqueId: mosque.id, role: Role.member, isActive: true, deletedAt: null },
+        }),
+        this.prisma.volunteer.count({
+          where: {
+            user: { mosqueId: mosque.id, isActive: true, deletedAt: null },
+            status: 'active',
+          },
+        }),
+      ]);
 
-    return { activeServices, upcomingEvents, publicFunds, members };
+    return { activeServices, upcomingEvents, publicFunds, members, activeVolunteers };
+  }
+
+  /**
+   * Public facilities and amenities for a mosque.
+   */
+  async getFacilities(slug: string): Promise<PublicFacilityDto[]> {
+    const mosque = await this.getPublicMosque(slug);
+    const rows = await this.prisma.facility.findMany({
+      where: { mosqueId: mosque.id, isAvailable: true },
+      orderBy: { createdAt: 'asc' },
+    });
+    return rows.map((row) => PublicFacilityDto.from(row));
+  }
+
+  /**
+   * Public leadership team, imams, scholars & committee posts.
+   * Only safe public identifiers and positions are returned.
+   */
+  async getLeadership(slug: string): Promise<PublicLeadershipDto[]> {
+    const mosque = await this.getPublicMosque(slug);
+    const rows = await this.prisma.user.findMany({
+      where: {
+        mosqueId: mosque.id,
+        isActive: true,
+        deletedAt: null,
+        positions: { isEmpty: false },
+      },
+      select: {
+        id: true,
+        fullName: true,
+        avatarUrl: true,
+        positions: true,
+        role: true,
+      },
+      orderBy: { createdAt: 'asc' },
+    });
+    return rows.map((row) => PublicLeadershipDto.from(row));
+  }
+
+  /**
+   * Public chronological history milestones.
+   */
+  async getMilestones(slug: string): Promise<PublicMilestoneDto[]> {
+    const mosque = await this.getPublicMosque(slug);
+    const rows = await this.prisma.mosqueMilestone.findMany({
+      where: { mosqueId: mosque.id, isPublished: true },
+      orderBy: [{ sortOrder: 'asc' }, { year: 'asc' }],
+    });
+    return rows.map((row) => PublicMilestoneDto.from(row));
+  }
+
+  /**
+   * Public core beliefs and values pillars.
+   */
+  async getValues(slug: string): Promise<PublicValueDto[]> {
+    const mosque = await this.getPublicMosque(slug);
+    const rows = await this.prisma.mosqueValue.findMany({
+      where: { mosqueId: mosque.id, isPublished: true },
+      orderBy: [{ sortOrder: 'asc' }, { num: 'asc' }],
+    });
+    return rows.map((row) => PublicValueDto.from(row));
+  }
+
+  /**
+   * Public gallery photos for Life at Noor.
+   */
+  async getGallery(slug: string, category?: string): Promise<PublicGalleryDto[]> {
+    const mosque = await this.getPublicMosque(slug);
+    const rows = await this.prisma.mosqueGalleryItem.findMany({
+      where: {
+        mosqueId: mosque.id,
+        isPublished: true,
+        ...(category ? { category } : {}),
+      },
+      orderBy: [{ sortOrder: 'asc' }, { createdAt: 'desc' }],
+    });
+    return rows.map((row) => PublicGalleryDto.from(row));
   }
 
   /**

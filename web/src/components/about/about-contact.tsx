@@ -3,10 +3,25 @@
 import { useLanguage } from "@/components/language-provider";
 import { siteConfig } from "@/config/site";
 import { MapPin, Phone, Mail, Clock, ExternalLink } from "lucide-react";
+import { type PublicMosqueInfo } from "@/services/publicHomeService";
 
-export function AboutContact() {
+interface AboutContactProps {
+  mosque?: PublicMosqueInfo | null;
+  loading?: boolean;
+}
+
+export function AboutContact({ mosque, loading = false }: AboutContactProps) {
   const { language } = useLanguage();
   const bn = language === "bn";
+
+  const mosqueName = mosque?.name || (bn ? siteConfig.fullNameBn : siteConfig.fullName);
+  const address = [mosque?.addressLine, mosque?.city, mosque?.district, mosque?.country]
+    .filter(Boolean)
+    .join(", ") || (bn ? "১২৩ পিস অ্যাভিনিউ, ঢাকা, বাংলাদেশ" : "123 Peace Avenue, Dhaka, Bangladesh");
+
+  const phone = mosque?.phone || "+880 1712 345678";
+  const email = mosque?.email || siteConfig.email;
+  const mapQuery = encodeURIComponent(`${mosqueName} ${mosque?.city || "Dhaka"}`);
 
   return (
     <section id="contact" className="py-20 sm:py-28 bg-[#fdfbf7] text-[#17211d] border-b border-[#eae6db]">
@@ -44,12 +59,12 @@ export function AboutContact() {
                       {bn ? "মসজিদের ঠিকানা" : "Physical Address"}
                     </span>
                     <address className="not-italic text-sm text-[#384640] font-medium mt-0.5 leading-snug">
-                      {bn ? siteConfig.fullNameBn : siteConfig.fullName}
+                      {mosqueName}
                       <br />
-                      {bn ? "১২৩ পিস অ্যাভিনিউ, ঢাকা, বাংলাদেশ" : "123 Peace Avenue, Dhaka, Bangladesh"}
+                      {address}
                     </address>
                     <a
-                      href="https://www.google.com/maps/search/?api=1&query=Noor+Community+Mosque+Dhaka"
+                      href={`https://www.google.com/maps/search/?api=1&query=${mapQuery}`}
                       target="_blank"
                       rel="noreferrer"
                       className="inline-flex items-center gap-1 text-xs font-semibold text-[#c79a45] hover:underline mt-1.5"
@@ -70,10 +85,10 @@ export function AboutContact() {
                       {bn ? "টেলিফোন ও হেল্পলাইন" : "Direct Helpline"}
                     </span>
                     <a
-                      href="tel:+8801712345678"
+                      href={`tel:${phone.replace(/\s+/g, '')}`}
                       className="text-sm font-semibold text-[#0e2a22] hover:text-[#c79a45] transition block mt-0.5"
                     >
-                      +880 1712 345678
+                      {phone}
                     </a>
                     <span className="text-xs text-[#718079]">
                       {bn ? "সকাল ৯টা থেকে বিকাল ৫টা পর্যন্ত" : "Available 9:00 AM – 5:00 PM"}
@@ -91,10 +106,10 @@ export function AboutContact() {
                       {bn ? "অফিসিয়াল ইমেইল" : "Inquiries & Support"}
                     </span>
                     <a
-                      href={`mailto:${siteConfig.email}`}
+                      href={`mailto:${email}`}
                       className="text-sm font-semibold text-[#0e2a22] hover:text-[#c79a45] transition block mt-0.5"
                     >
-                      {siteConfig.email}
+                      {email}
                     </a>
                     <span className="text-xs text-[#718079]">
                       {bn ? "আমরা সাধারণত ২৪ ঘণ্টার মধ্যে উত্তর দিই" : "Responses typically within 24 hours"}
@@ -170,10 +185,10 @@ export function AboutContact() {
                   {bn ? "সরাসরি ফোন করুন:" : "Need immediate assistance?"}
                 </span>
                 <a
-                  href="tel:+8801712345678"
+                  href={`tel:${phone.replace(/\s+/g, '')}`}
                   className="px-5 py-2.5 rounded-xl bg-[#0d4d3b] text-white font-semibold text-xs hover:bg-[#09382b] transition shadow-sm w-full sm:w-auto text-center"
                 >
-                  {bn ? "কল করুন: +880 1712 345678" : "Call +880 1712 345678"}
+                  {bn ? `কল করুন: ${phone}` : `Call ${phone}`}
                 </a>
               </div>
             </div>
@@ -184,4 +199,3 @@ export function AboutContact() {
     </section>
   );
 }
-

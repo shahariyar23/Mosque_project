@@ -2,10 +2,32 @@
 
 import { useLanguage } from "@/components/language-provider";
 import { Compass, Eye, Sparkles } from "lucide-react";
+import { type PublicMosqueInfo } from "@/services/publicHomeService";
 
-export function AboutMissionVision() {
+interface AboutMissionVisionProps {
+  mosque?: PublicMosqueInfo | null;
+  loading?: boolean;
+}
+
+export function AboutMissionVision({ mosque, loading = false }: AboutMissionVisionProps) {
   const { language } = useLanguage();
   const bn = language === "bn";
+
+  if (!loading && mosque && !mosque.mission && !mosque.vision) {
+    return null;
+  }
+
+  const missionText = (!bn && mosque?.mission)
+    ? mosque.mission
+    : bn
+      ? "আমাদের লক্ষ্য হলো প্রতিটি মানুষকে আল্লাহর আনুগত্যে উৎসাহিত করা, বিশুদ্ধ কুরআন-সুন্নাহর শিক্ষা সর্বস্তরে ছড়িয়ে দেওয়া এবং অভাবী ও পীড়িত মানুষের পাশে কার্যকর সমাজসেবা নিয়ে দাঁড়ানো।"
+      : "We are devoted to nurturing spiritual growth across generations, cultivating moral integrity, providing relief to those facing adversity, and serving as a model of civic responsibility and harmony.";
+
+  const visionText = (!bn && mosque?.vision)
+    ? mosque.vision
+    : bn
+      ? "আমরা স্বপ্ন দেখি এমন একটি ভবিষ্যৎ সমাজের—যেখানে আমাদের নতুন প্রজন্ম নৈতিক শিক্ষায় বলীয়ান হবে, পরিবারসমূহ প্রশান্তি ও সম্প্রীতিতে গড়ে উঠবে এবং সমাজ সেবায় ইসলামের সৌন্দর্য প্রতিভাত হবে।"
+      : "We envision a vibrant future where our youth embrace their Islamic identity with pride and conviction, families thrive in spiritual harmony, and the timeless beauty of Islam enlightens the wider world.";
 
   return (
     <section className="relative py-20 sm:py-28 bg-[#072a20] text-white overflow-hidden">
@@ -38,7 +60,7 @@ export function AboutMissionVision() {
         {/* Asymmetric Editorial Grid */}
         <div className="grid gap-12 lg:gap-16 lg:grid-cols-12 items-stretch">
           
-          {/* Mission Column (7 cols on lg) */}
+          {/* Mission Column (6 cols on lg) */}
           <div className="lg:col-span-6 flex flex-col justify-between p-8 sm:p-10 rounded-3xl bg-[#0a3528]/80 border border-[#c79a45]/30 shadow-2xl backdrop-blur-sm relative overflow-hidden group">
             <div className="absolute top-0 right-0 p-8 text-[#c79a45]/10 group-hover:text-[#c79a45]/20 transition duration-500 pointer-events-none">
               <Compass className="w-32 h-32" />
@@ -57,9 +79,7 @@ export function AboutMissionVision() {
               </h3>
 
               <p className="mt-4 text-sm sm:text-base text-white/80 leading-relaxed font-light">
-                {bn
-                  ? "আমাদের লক্ষ্য হলো প্রতিটি মানুষকে আল্লাহর আনুগত্যে উৎসাহিত করা, বিশুদ্ধ কুরআন-সুন্নাহর শিক্ষা সর্বস্তরে ছড়িয়ে দেওয়া এবং অভাবী ও পীড়িত মানুষের পাশে কার্যকর সমাজসেবা নিয়ে দাঁড়ানো।"
-                  : "We are devoted to nurturing spiritual growth across generations, cultivating moral integrity, providing relief to those facing adversity, and serving as a model of civic responsibility and harmony."}
+                {missionText}
               </p>
             </div>
 
@@ -88,9 +108,7 @@ export function AboutMissionVision() {
               </h3>
 
               <p className="mt-4 text-sm sm:text-base text-white/80 leading-relaxed font-light">
-                {bn
-                  ? "আমরা স্বপ্ন দেখি এমন একটি ভবিষ্যৎ সমাজের—যেখানে আমাদের নতুন প্রজন্ম নৈতিক শিক্ষায় বলীয়ান হবে, পরিবারসমূহ প্রশান্তি ও সম্প্রীতিতে গড়ে উঠবে এবং সমাজ সেবায় ইসলামের সৌন্দর্য প্রতিভাত হবে।"
-                  : "We envision a vibrant future where our youth embrace their Islamic identity with pride and conviction, families thrive in spiritual harmony, and the timeless beauty of Islam enlightens the wider world."}
+                {visionText}
               </p>
             </div>
 
@@ -105,4 +123,3 @@ export function AboutMissionVision() {
     </section>
   );
 }
-

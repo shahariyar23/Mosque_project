@@ -585,17 +585,17 @@ export function SiteFooter() {
             ========================================================================= */}
         <div className="relative mt-12 sm:mt-16 overflow-hidden rounded-2xl sm:rounded-3xl border border-[#c79a45]/20 bg-[#02130e]">
           {/* Mosque Skyline Background Art */}
-          <div className="absolute inset-0 pointer-events-none opacity-45 sm:opacity-55">
+          <div className="absolute inset-0 pointer-events-none opacity-75 sm:opacity-85">
             <Image
               src="/footer-mosque-skyline.jpg"
               alt="Mosque Silhouette"
               fill
-              className="object-cover object-bottom"
+              className="object-cover object-center"
               priority={false}
             />
             {/* Smooth gradient blend overlays */}
-            <div className="absolute inset-0 bg-gradient-to-t from-[#02130e] via-[#02130e]/60 to-[#02130e]/90" />
-            <div className="absolute inset-0 bg-gradient-to-r from-[#02130e] via-transparent to-[#02130e]" />
+            <div className="absolute inset-0 bg-gradient-to-t from-[#02130e]/60 via-[#02130e]/20 to-[#02130e]/45" />
+            <div className="absolute inset-0 bg-gradient-to-r from-[#02130e]/55 via-transparent to-[#02130e]/55" />
           </div>
 
           {/* Quick Action Cards Content */}

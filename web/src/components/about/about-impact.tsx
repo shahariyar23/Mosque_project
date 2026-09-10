@@ -2,13 +2,22 @@
 
 import { useLanguage } from "@/components/language-provider";
 import { usePublicHomeData } from "@/hooks/use-public-home-data";
-import { ShieldCheck, Heart, CalendarCheck, BookOpen } from "lucide-react";
+import { ShieldCheck } from "lucide-react";
+import { type PublicCommunityStats, type PublicMosqueInfo } from "@/services/publicHomeService";
 
-export function AboutImpact() {
+interface AboutImpactProps {
+  stats?: PublicCommunityStats | null;
+  mosque?: PublicMosqueInfo | null;
+  loading?: boolean;
+}
+
+export function AboutImpact({ stats: propStats, mosque: propMosque, loading: propLoading }: AboutImpactProps) {
   const { language } = useLanguage();
   const bn = language === "bn";
-  const { data, loading } = usePublicHomeData();
-  const { mosque, stats } = data;
+  const { data: homeData, loading: homeLoading } = usePublicHomeData();
+
+  const mosque = propMosque !== undefined ? propMosque : homeData.mosque;
+  const stats = propStats !== undefined ? propStats : homeData.stats;
 
   // Calculate actual years serving based on verified establishedYear (1987)
   const currentYear = new Date().getFullYear();
@@ -16,8 +25,8 @@ export function AboutImpact() {
   const yearsServing = Math.max(1, currentYear - establishedYear);
 
   const activeServices = stats?.activeServices ?? 0;
-  const upcomingEvents = stats?.upcomingEvents ?? 0;
   const members = stats?.members ?? 0;
+  const activeVolunteers = stats?.activeVolunteers ?? 0;
 
   return (
     <section className="py-20 sm:py-28 bg-[#07261d] text-white overflow-hidden relative">
@@ -68,7 +77,7 @@ export function AboutImpact() {
               </p>
             </div>
             <div className="mt-6 pt-4 border-t border-white/10 text-[11px] font-medium text-[#e0be79] uppercase tracking-wider">
-              {bn ? "প্রতিষ্ঠিত ১৯৮৭" : `ESTABLISHED ${establishedYear}`}
+              {bn ? `প্রতিষ্ঠিত ${establishedYear}` : `ESTABLISHED ${establishedYear}`}
             </div>
           </div>
 
@@ -112,19 +121,19 @@ export function AboutImpact() {
             </div>
           </div>
 
-          {/* 4. Inclusive Fellowship */}
+          {/* 4. Inclusive Fellowship / Volunteers */}
           <div className="p-6 sm:p-8 rounded-3xl bg-[#083125]/80 border border-white/15 flex flex-col justify-between shadow-xl backdrop-blur-sm">
             <div>
               <span className="text-4xl sm:text-5xl font-serif font-bold text-white">
-                {members > 0 ? `${members}+` : "1,000+"}
+                {activeVolunteers > 0 ? `${activeVolunteers}+` : (members > 0 ? `${members}+` : "1,000+")}
               </span>
               <h3 className="mt-2 text-base font-serif font-bold text-white">
-                {bn ? "মুসলিম পরিবারের মিলনমেলা" : "Families & Worshippers"}
+                {bn ? (activeVolunteers > 0 ? "নিবেদিতপ্রাণ সেবক" : "মুসলিম পরিবারের মিলনমেলা") : (activeVolunteers > 0 ? "Dedicated Volunteers" : "Families & Worshippers")}
               </h3>
               <p className="mt-2 text-xs text-white/70 leading-relaxed">
                 {bn
-                  ? "প্রতিটি জুমুআ ও ঈদের দিনে শত শত মুসল্লির ভ্রাতৃত্বপূর্ণ সমাগম।"
-                  : "Welcoming worshippers from every neighborhood for congregational harmony."}
+                  ? "প্রতিটি জুমুআ ও সামাজিক উদ্যোগে আন্তরিক সহযোগিতায় নিবেদিত।"
+                  : "Active community volunteers and worshippers united in service and faith."}
               </p>
             </div>
             <div className="mt-6 pt-4 border-t border-white/10 text-[11px] font-medium text-[#e0be79] uppercase tracking-wider">
@@ -138,4 +147,3 @@ export function AboutImpact() {
     </section>
   );
 }
-

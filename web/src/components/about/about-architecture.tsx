@@ -2,9 +2,15 @@
 
 import Image from "next/image";
 import { useLanguage } from "@/components/language-provider";
-import { Sparkles, Maximize2, Compass, Sun } from "lucide-react";
+import { Sparkles, Compass, Sun } from "lucide-react";
+import { type PublicGalleryItem } from "@/services/publicHomeService";
 
-export function AboutArchitecture() {
+interface AboutArchitectureProps {
+  gallery?: PublicGalleryItem[];
+  loading?: boolean;
+}
+
+export function AboutArchitecture({ gallery = [], loading = false }: AboutArchitectureProps) {
   const { language } = useLanguage();
   const bn = language === "bn";
 
@@ -32,6 +38,13 @@ export function AboutArchitecture() {
     },
   ];
 
+  // Find architecture image from backend gallery if available
+  const archPhoto = gallery.find(
+    (g) => g.category?.toLowerCase() === "architecture"
+  );
+  const heroImageSrc = archPhoto?.imageUrl || "/grand-golden-chandelier-in-ornate-mosque-interior.jpg";
+  const heroImageAlt = archPhoto?.altText || (bn ? "নূর মসজিদের মূল প্রার্থনা হলের সোনালী ঝাড়বাতি ও খিলান" : "Grand golden chandelier in ornate mosque interior at Noor Community Mosque");
+
   return (
     <section className="relative py-20 sm:py-28 bg-[#041610] text-white overflow-hidden">
       {/* Subtle Background Glow */}
@@ -55,11 +68,11 @@ export function AboutArchitecture() {
           </p>
         </div>
 
-        {/* Hero Architectural Image Showcase (Replacing old fake 3D placeholder) */}
+        {/* Hero Architectural Image Showcase */}
         <div className="relative w-full aspect-[16/9] sm:aspect-[21/9] rounded-3xl overflow-hidden border border-[#c79a45]/30 shadow-2xl bg-[#08261e]">
           <Image
-            src="/grand-golden-chandelier-in-ornate-mosque-interior.jpg"
-            alt={bn ? "নূর মসজিদের মূল প্রার্থনা হলের সোনালী ঝাড়বাতি ও খিলান" : "Grand golden chandelier in ornate mosque interior at Noor Community Mosque"}
+            src={heroImageSrc}
+            alt={heroImageAlt}
             fill
             sizes="(max-width: 1280px) 100vw, 1280px"
             className="object-cover object-center filter brightness-[0.9] hover:scale-105 transition-transform duration-700 ease-out"
@@ -109,4 +122,3 @@ export function AboutArchitecture() {
     </section>
   );
 }
-

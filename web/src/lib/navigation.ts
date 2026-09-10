@@ -70,6 +70,13 @@ export const NAVIGATION: NavGroup[] = [
         permission: "mosque.view",
       },
       {
+        label: "Committee",
+        labelBn: "কমিটি ও নেতৃবৃন্দ",
+        href: "/dashboard/committee",
+        icon: "users",
+        permission: "mosque.view",
+      },
+      {
         label: "Settings",
         labelBn: "সেটিংস",
         href: "/dashboard/settings",

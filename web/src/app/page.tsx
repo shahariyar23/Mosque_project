@@ -4,7 +4,7 @@ import { QuickLinks } from "@/components/home/QuickLinks";
 import { PrayerTimesSection } from "@/components/prayer-times-section";
 import { AboutSection } from "@/components/about-section";
 import { ServicesEventsSection } from "@/components/services-events-section";
-import { DonationFooterSection } from "@/components/donation-footer-section";
+import { HowNoorWorks } from "@/components/home/HowNoorWorks";
 import { SiteFooter } from "@/components/site-footer";
 
 export default function Home() {
@@ -16,7 +16,7 @@ export default function Home() {
       <PrayerTimesSection />
       <AboutSection />
       <ServicesEventsSection />
-      <DonationFooterSection />
+      <HowNoorWorks />
       <SiteFooter />
     </main>
   );

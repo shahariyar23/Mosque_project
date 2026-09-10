@@ -9,7 +9,6 @@ import {
   UserRound,
   Heart,
   HandCoins,
-  Receipt,
   CalendarDays,
   Ticket,
   GraduationCap,
@@ -154,8 +153,8 @@ export function UserMenu() {
               <Link href="/account/donations" className="flex items-center gap-3 rounded-lg px-3 py-2 text-sm text-white/80 transition-colors hover:bg-white/10 hover:text-white" role="menuitem">
                 <HandCoins className="h-4 w-4 text-white/60" /> My Donations
               </Link>
-              <Link href="/account/donations" className="flex items-center gap-3 rounded-lg px-3 py-2 text-sm text-white/80 transition-colors hover:bg-white/10 hover:text-white" role="menuitem">
-                <Receipt className="h-4 w-4 text-white/60" /> Donation History
+              <Link href="/account/contributions" className="flex items-center gap-3 rounded-lg px-3 py-2 text-sm text-white/80 transition-colors hover:bg-white/10 hover:text-white" role="menuitem">
+                <HandCoins className="h-4 w-4 text-white/60" /> My Contributions
               </Link>
               <Link href="/account/events" className="flex items-center gap-3 rounded-lg px-3 py-2 text-sm text-white/80 transition-colors hover:bg-white/10 hover:text-white" role="menuitem">
                 <CalendarDays className="h-4 w-4 text-white/60" /> My Events

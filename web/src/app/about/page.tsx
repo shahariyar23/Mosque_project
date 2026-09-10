@@ -1,18 +1,6 @@
 import type { Metadata } from "next";
 import { SiteHeader } from "@/components/site-header";
-import { AboutHero } from "@/components/about/about-hero";
-import { AboutStory } from "@/components/about/about-story";
-import { AboutMilestones } from "@/components/about/about-milestones";
-import { AboutMissionVision } from "@/components/about/about-mission-vision";
-import { AboutValues } from "@/components/about/about-values";
-import { AboutArchitecture } from "@/components/about/about-architecture";
-import { AboutFacilities } from "@/components/about/about-facilities";
-import { AboutImpact } from "@/components/about/about-impact";
-import { AboutEducation } from "@/components/about/about-education";
-import { AboutServices } from "@/components/about/about-services";
-import { AboutGallery } from "@/components/about/about-gallery";
-import { AboutCta } from "@/components/about/about-cta";
-import { AboutContact } from "@/components/about/about-contact";
+import { AboutContent } from "@/components/about/about-content";
 import { SiteFooter } from "@/components/site-footer";
 
 export const metadata: Metadata = {
@@ -44,46 +32,10 @@ export default function AboutPage() {
       {/* Site Navigation Header */}
       <SiteHeader />
 
-      {/* 01. Cinematic Hero */}
-      <AboutHero />
+      {/* Backend-driven About Sections */}
+      <AboutContent />
 
-      {/* 02. Our Story & Humble Beginnings */}
-      <AboutStory />
-
-      {/* 03. History & Milestones Timeline */}
-      <AboutMilestones />
-
-      {/* 04. Mission & Vision */}
-      <AboutMissionVision />
-
-      {/* 05. What We Believe (3 Pillars) */}
-      <AboutValues />
-
-      {/* 06. Our Mosque & Architecture Showcase (Replacing 3D placeholder) */}
-      <AboutArchitecture />
-
-      {/* 07. Facilities & Amenities */}
-      <AboutFacilities />
-
-      {/* 08. Community Impact */}
-      <AboutImpact />
-
-      {/* 09. Islamic Education & Maktab */}
-      <AboutEducation />
-
-      {/* 10. Community Services & Relief */}
-      <AboutServices />
-
-      {/* 11. Life at Noor / Gallery */}
-      <AboutGallery />
-
-      {/* 12. Final Get Involved Call-to-Action */}
-      <AboutCta />
-
-      {/* 13. Verified Physical Address & Contact Information */}
-      <AboutContact />
-
-      {/* 14. Newsletter & Global Footer */}
+      {/* Newsletter & Global Footer */}
       <SiteFooter />
     </main>
   );

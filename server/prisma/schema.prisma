@@ -86,12 +86,19 @@ model Mosque {
   description  String? @db.Text
   logoUrl      String? @db.VarChar(500)
 
+  story        String? @db.Text
+  mission      String? @db.Text
+  vision       String? @db.Text
+
   isActive  Boolean  @default(true)
   createdAt DateTime @default(now()) @db.Timestamptz
   updatedAt DateTime @updatedAt @db.Timestamptz
 
   settings  MosqueSettings?
   facilities Facility[]
+  milestones MosqueMilestone[]
+  values     MosqueValue[]
+  galleryItems MosqueGalleryItem[]
   /// At most one row of prayer-calculation overrides. Absent means "calculate from the mosque's own
   /// coordinates and settings, unadjusted".
   prayerSettings   PrayerSettings?
@@ -182,6 +189,66 @@ model Facility {
 
   @@index([mosqueId, createdAt])
   @@map("facilities")
+}
+
+model MosqueMilestone {
+  id          String   @id @default(uuid()) @db.Uuid
+  mosqueId    String   @db.Uuid
+  mosque      Mosque   @relation(fields: [mosqueId], references: [id], onDelete: Cascade)
+
+  year        String   @db.VarChar(16)
+  title       String   @db.VarChar(160)
+  description String   @db.Text
+  sortOrder   Int      @default(0)
+  isPublished Boolean  @default(true)
+
+  createdAt   DateTime @default(now()) @db.Timestamptz
+  updatedAt   DateTime @updatedAt @db.Timestamptz
+
+  @@index([mosqueId, sortOrder])
+  @@index([mosqueId, isPublished])
+  @@map("mosque_milestones")
+}
+
+model MosqueValue {
+  id          String   @id @default(uuid()) @db.Uuid
+  mosqueId    String   @db.Uuid
+  mosque      Mosque   @relation(fields: [mosqueId], references: [id], onDelete: Cascade)
+
+  num         String   @db.VarChar(8)
+  icon        String?  @db.VarChar(64)
+  title       String   @db.VarChar(160)
+  subtitle    String?  @db.VarChar(200)
+  description String   @db.Text
+  sortOrder   Int      @default(0)
+  isPublished Boolean  @default(true)
+
+  createdAt   DateTime @default(now()) @db.Timestamptz
+  updatedAt   DateTime @updatedAt @db.Timestamptz
+
+  @@index([mosqueId, sortOrder])
+  @@index([mosqueId, isPublished])
+  @@map("mosque_values")
+}
+
+model MosqueGalleryItem {
+  id                 String   @id @default(uuid()) @db.Uuid
+  mosqueId           String   @db.Uuid
+  mosque             Mosque   @relation(fields: [mosqueId], references: [id], onDelete: Cascade)
+
+  imageUrl           String   @db.VarChar(500)
+  cloudinaryPublicId String?  @db.VarChar(255)
+  title              String?  @db.VarChar(160)
+  altText            String?  @db.VarChar(200)
+  category           String   @default("general") @db.VarChar(64)
+  sortOrder          Int      @default(0)
+  isPublished        Boolean  @default(true)
+
+  createdAt          DateTime @default(now()) @db.Timestamptz
+  updatedAt          DateTime @updatedAt @db.Timestamptz
+
+  @@index([mosqueId, isPublished, sortOrder])
+  @@map("mosque_gallery_items")
 }
 
 // ---------------------------------------------------------------------------
