@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Injectable,
   Logger,
   NotFoundException,
@@ -12,6 +13,7 @@ import { buildPage, toSkipTake } from '../common/pagination/page';
 import type { AuthenticatedUser } from '../common/types/authenticated-user';
 import { fromDateOnly, toDateOnly } from '../common/utils/date-only';
 import { PrismaService } from '../prisma/prisma.service';
+import { effectivePermissions, scopeFor } from '../common/constants/roles';
 import {
   BookingDto,
   BookingStatsDto,
@@ -40,6 +42,7 @@ export class BookingsService {
   async findAll(
     mosqueId: string,
     query: ListBookingsQueryDto = {},
+    user?: AuthenticatedUser,
   ): Promise<PaginatedBookingsDto | BookingDto[]> {
     const where: Prisma.BookingWhereInput = {
       mosqueId,
@@ -63,6 +66,18 @@ export class BookingsService {
         ],
       }),
     };
+
+    if (user) {
+      const perms = effectivePermissions(user);
+      const scope = scopeFor(perms, 'booking.view', 'booking.viewOwn');
+      if (scope === 'own') {
+        const userFilters: Prisma.BookingWhereInput[] = [{ userId: user.id }];
+        if (user.email) {
+          userFilters.push({ requesterEmail: { equals: user.email, mode: 'insensitive' } });
+        }
+        where.AND = [{ OR: userFilters }];
+      }
+    }
 
     // Date range filtering on scheduledDate
     if (query.from && query.to) {
@@ -154,7 +169,7 @@ export class BookingsService {
   /**
    * Find a single booking by UUID ID.
    */
-  async findOne(mosqueId: string, id: string): Promise<BookingDto> {
+  async findOne(mosqueId: string, id: string, user?: AuthenticatedUser): Promise<BookingDto> {
     if (!UUID_REGEX.test(id)) {
       throw new NotFoundException(`Booking '${id}' not found.`);
     }
@@ -174,6 +189,19 @@ export class BookingsService {
 
     if (!row) {
       throw new NotFoundException(`Booking '${id}' not found.`);
+    }
+
+    if (user) {
+      const perms = effectivePermissions(user);
+      const scope = scopeFor(perms, 'booking.view', 'booking.viewOwn');
+      if (scope === 'own') {
+        const isOwn =
+          row.userId === user.id ||
+          (row.requesterEmail && user.email && row.requesterEmail.toLowerCase() === user.email.toLowerCase());
+        if (!isOwn) {
+          throw new NotFoundException(`Booking '${id}' not found.`);
+        }
+      }
     }
 
     return BookingDto.from(row);
@@ -200,8 +228,16 @@ export class BookingsService {
       throw new BadRequestException(`Service "${service.name}" is currently ${service.status} and cannot accept new bookings.`);
     }
 
-    // 2. Validate user if given
-    if (dto.userId) {
+    // 2. Auto-assign current user ID and email if not provided
+    if (!dto.userId && user.id) {
+      dto.userId = user.id;
+    }
+    if (!dto.requesterEmail && user.email) {
+      dto.requesterEmail = user.email;
+    }
+
+    // 3. Validate user if given for another account
+    if (dto.userId && dto.userId !== user.id) {
       const existingUser = await this.prisma.user.findFirst({
         where: { id: dto.userId, mosqueId: user.mosqueId, deletedAt: null },
       });
@@ -210,7 +246,7 @@ export class BookingsService {
       }
     }
 
-    // 3. Validate assigned staff if given
+    // 4. Validate assigned staff if given
     if (dto.assignedToId) {
       const assignedUser = await this.prisma.user.findFirst({
         where: { id: dto.assignedToId, mosqueId: user.mosqueId, deletedAt: null },
@@ -222,7 +258,7 @@ export class BookingsService {
 
     const scheduledDateObj = toDateOnly(dto.scheduledDate);
 
-    // 4. Duplicate / conflict check
+    // 5. Duplicate / conflict check
     const existingConflict = await this.prisma.booking.findFirst({
       where: {
         mosqueId: user.mosqueId,
@@ -308,6 +344,16 @@ export class BookingsService {
 
     if (!existing) {
       throw new NotFoundException(`Booking '${id}' not found.`);
+    }
+
+    const perms = effectivePermissions(user);
+    if (!perms.includes('booking.manage')) {
+      const isOwn =
+        existing.userId === user.id ||
+        (existing.requesterEmail && user.email && existing.requesterEmail.toLowerCase() === user.email.toLowerCase());
+      if (!isOwn) {
+        throw new ForbiddenException('You are not authorized to update this booking.');
+      }
     }
 
     if (dto.serviceId && dto.serviceId !== existing.serviceId) {
@@ -397,6 +443,16 @@ export class BookingsService {
       throw new NotFoundException(`Booking '${id}' not found.`);
     }
 
+    const perms = effectivePermissions(user);
+    if (!perms.includes('booking.manage')) {
+      const isOwn =
+        existing.userId === user.id ||
+        (existing.requesterEmail && user.email && existing.requesterEmail.toLowerCase() === user.email.toLowerCase());
+      if (!isOwn) {
+        throw new ForbiddenException('You are not authorized to modify this booking.');
+      }
+    }
+
     const updated = await this.prisma.booking.update({
       where: { id: existing.id },
       data: {
@@ -442,6 +498,16 @@ export class BookingsService {
 
     if (!existing) {
       throw new NotFoundException(`Booking '${id}' not found.`);
+    }
+
+    const perms = effectivePermissions(user);
+    if (!perms.includes('booking.manage')) {
+      const isOwn =
+        existing.userId === user.id ||
+        (existing.requesterEmail && user.email && existing.requesterEmail.toLowerCase() === user.email.toLowerCase());
+      if (!isOwn) {
+        throw new ForbiddenException('You are not authorized to cancel this booking.');
+      }
     }
 
     const updated = await this.prisma.booking.update({

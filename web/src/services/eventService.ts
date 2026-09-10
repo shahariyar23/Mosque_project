@@ -213,3 +213,124 @@ export async function deleteEvent(id: string): Promise<MosqueEvent> {
   return toFrontendEvent(result);
 }
 
+/* ------------------------------------------------------------------ *
+ * Authenticated user's event registrations
+ * ------------------------------------------------------------------ */
+
+export type BackendMyRegistration = {
+  registrationId: string;
+  registrationStatus: string;
+  guests: number;
+  registeredAt: string;
+  isPast: boolean;
+  isCheckedIn?: boolean;
+  checkedInAt?: string | null;
+  checkedInByName?: string | null;
+  event: BackendEvent;
+};
+
+export type TicketVerificationResult = {
+  valid: boolean;
+  message: string;
+  registrationId: string;
+  participantName: string;
+  participantEmail?: string | null;
+  guests: number;
+  status: string;
+  registeredAt: string;
+  isCheckedIn: boolean;
+  checkedInAt?: string | null;
+  checkedInByName?: string | null;
+  event: BackendEvent;
+};
+
+export type CheckInResult = {
+  success: boolean;
+  alreadyCheckedIn: boolean;
+  message: string;
+  checkedInAt: string;
+  checkedInByName: string;
+  registrationId: string;
+  participantName: string;
+  eventTitle: string;
+};
+
+export type MyRegistrationsQuery = {
+  status?: string;
+  timeframe?: "upcoming" | "past" | "all";
+  page?: number;
+  pageSize?: number;
+  limit?: number;
+  all?: boolean;
+};
+
+/**
+ * Fetch the authenticated user's own event registrations from the backend.
+ * Ownership and mosque tenancy are enforced server-side from the JWT.
+ */
+export async function fetchMyRegisteredEvents(
+  query: MyRegistrationsQuery = {},
+): Promise<{ rows: MosqueEvent[]; total: number; page: number; pageSize: number; pageCount: number; registrations: Record<string, BackendMyRegistration> }> {
+  const params: Record<string, string | number | boolean | undefined> = {
+    status: query.status,
+    timeframe: query.timeframe,
+    page: query.page,
+    pageSize: query.pageSize,
+    limit: query.limit,
+    all: query.all,
+  };
+
+  const result = await apiGetRaw<BackendMyRegistration[] | { rows: BackendMyRegistration[]; total: number; page: number; pageSize: number; pageCount: number }>(
+    "/events/my-registrations",
+    params,
+  );
+
+  const rawRows = Array.isArray(result) ? result : result.rows || [];
+  const total = Array.isArray(result) ? rawRows.length : result.total ?? rawRows.length;
+  const page = Array.isArray(result) ? 1 : result.page ?? 1;
+  const pageSize = Array.isArray(result) ? rawRows.length : result.pageSize ?? 10;
+  const pageCount = Array.isArray(result) ? 1 : result.pageCount ?? 1;
+
+  const rows = rawRows.map((r) => toFrontendEvent(r.event));
+  const registrations: Record<string, BackendMyRegistration> = {};
+  for (const r of rawRows) {
+    registrations[r.event.id] = r;
+  }
+
+  return { rows, total, page, pageSize, pageCount, registrations };
+}
+
+/**
+ * Fetch a single registration for the current user by registration UUID or event ID/slug.
+ */
+export async function fetchMyRegistration(idOrEventId: string): Promise<BackendMyRegistration> {
+  const result = await apiGetRaw<BackendMyRegistration>(`/events/my-registrations/${encodeURIComponent(idOrEventId)}`);
+  return result;
+}
+
+/**
+ * Verify a ticket by registration id.
+ */
+export async function verifyTicket(registrationId: string): Promise<TicketVerificationResult> {
+  const result = await apiGetRaw<TicketVerificationResult>(`/events/verify-ticket/${encodeURIComponent(registrationId)}`);
+  return result;
+}
+
+/**
+ * Perform check-in of a registration by id (admin / staff only).
+ */
+export async function checkInTicket(registrationId: string): Promise<CheckInResult> {
+  const result = await apiPostRaw<CheckInResult>(`/events/check-in`, { registrationId });
+  return result;
+}
+
+/**
+ * Register the current user for an event.
+ * Returns the created registration together with the event details.
+ */
+export async function registerForEvent(eventId: string): Promise<BackendMyRegistration> {
+  const result = await apiPostRaw<BackendMyRegistration>(`/events/${encodeURIComponent(eventId)}/register`);
+  return result;
+}
+
+

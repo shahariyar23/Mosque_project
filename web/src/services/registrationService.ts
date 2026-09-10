@@ -35,6 +35,13 @@ export type RegistrationsQuery = {
   all?: boolean;
 };
 
+/** Capitalize the first letter so the backend's lowercase enum matches the frontend RegistrationStatus union. */
+function normalizeStatus(status: string): RegistrationStatus {
+  if (!status) return status as RegistrationStatus;
+  const capitalized = status.charAt(0).toUpperCase() + status.slice(1);
+  return capitalized as RegistrationStatus;
+}
+
 /** Convert backend DTO to frontend Registration type */
 export function toFrontendRegistration(backend: BackendRegistration): Registration {
   return {
@@ -47,7 +54,7 @@ export function toFrontendRegistration(backend: BackendRegistration): Registrati
     eventDate: backend.eventDate,
     registeredAt: backend.registeredAt,
     guests: backend.guests,
-    status: backend.status as RegistrationStatus,
+    status: normalizeStatus(backend.status),
     memberId: backend.memberId ?? undefined,
     specialRequirements: backend.specialRequirements ?? undefined,
   };
@@ -64,13 +71,38 @@ export async function fetchRegistrations(query: RegistrationsQuery = {}): Promis
   return { rows, total: result.total };
 }
 
+/**
+ * Fetch registrations for a single event from the admin endpoint.
+ * Cancelled registrations are excluded by default; pass { all: true } to get every row.
+ */
+export async function fetchRegistrationsForEvent(
+  eventId: string,
+  query: { all?: boolean; status?: string; page?: number; pageSize?: number } = {},
+): Promise<{ rows: Registration[]; total: number }> {
+  const params: Record<string, string | number | boolean | undefined> = { ...query };
+  const result = await apiGetRaw<RegistrationsResponse | BackendRegistration[]>(
+    `/events/${encodeURIComponent(eventId)}/registrations`,
+    params,
+  );
+  if (Array.isArray(result)) {
+    const rows = result.map(toFrontendRegistration);
+    return { rows, total: rows.length };
+  }
+  const rows = (result.rows || []).map(toFrontendRegistration);
+  return { rows, total: result.total };
+}
+
 export async function createRegistration(input: Partial<Registration>): Promise<Registration> {
   const result = await apiPostRaw<BackendRegistration>(`/registrations`, input);
   return toFrontendRegistration(result);
 }
 
 export async function updateRegistration(id: string, input: Partial<Registration>): Promise<Registration> {
-  const result = await apiPatchRaw<BackendRegistration>(`/registrations/${encodeURIComponent(id)}`, input);
+  const payload = {
+    ...input,
+    status: input.status ? (input.status.toLowerCase() as any) : undefined,
+  };
+  const result = await apiPatchRaw<BackendRegistration>(`/registrations/${encodeURIComponent(id)}`, payload);
   return toFrontendRegistration(result);
 }
 

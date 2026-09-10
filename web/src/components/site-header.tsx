@@ -193,8 +193,19 @@ export function SiteHeader() {
           )}
         </div>
 
-        <div className="flex items-center gap-4 lg:hidden">
-          {loading ? <SessionPlaceholder compact /> : session ? <UserMenu /> : null}
+        <div className="flex items-center gap-3 lg:hidden">
+          {loading ? (
+            <SessionPlaceholder compact />
+          ) : session ? (
+            <UserMenu />
+          ) : (
+            <Link
+              href="/signin"
+              className="nav-user-menu inline-flex min-h-10 items-center rounded-full border border-white/20 bg-white/5 px-3 text-sm font-medium text-white transition-colors hover:bg-white/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#e0be79]"
+            >
+              {t("Sign In")}
+            </Link>
+          )}
           <button
             onClick={() => setOpen((value) => !value)}
             className="grid h-10 w-10 place-items-center border border-white/40 text-xl"
