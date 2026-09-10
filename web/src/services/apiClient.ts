@@ -186,17 +186,25 @@ async function send(input: RequestInput): Promise<unknown> {
   const token = getAccessToken();
   const headers: Record<string, string> = {};
 
-  // Only set when there is something to describe. A `Content-Type` on a bodyless GET invites a preflight
-  // for no reason.
-  if (input.body !== undefined) headers["Content-Type"] = "application/json";
+  const isFormData = typeof FormData !== "undefined" && input.body instanceof FormData;
+
+  // Only set when there is something to describe. For FormData, let the browser set multipart/form-data with boundary.
+  if (input.body !== undefined && !isFormData) headers["Content-Type"] = "application/json";
   if (token) headers.Authorization = `Bearer ${token}`;
 
   let response: Response;
   try {
+    const body: BodyInit | undefined =
+      input.body === undefined
+        ? undefined
+        : isFormData
+          ? (input.body as FormData)
+          : JSON.stringify(input.body);
+
     response = await fetch(buildUrl(input.path, input.query), {
       method: input.method,
       headers,
-      body: input.body === undefined ? undefined : JSON.stringify(input.body),
+      body,
       // Required on every call: the login and refresh responses set the refresh cookie, and the refresh
       // request is the one that has to present it.
       credentials: "include",
@@ -294,6 +302,10 @@ export async function apiPost<T>(path: string, body?: unknown, query?: QueryPara
   return unwrap<T>(await sendWithRecovery({ method: "POST", path, body, query }));
 }
 
+export async function apiUpload<T>(path: string, formData: FormData, query?: QueryParams): Promise<T> {
+  return unwrap<T>(await sendWithRecovery({ method: "POST", path, body: formData, query }));
+}
+
 export async function apiPatch<T>(path: string, body?: unknown, query?: QueryParams): Promise<T> {
   return unwrap<T>(await sendWithRecovery({ method: "PATCH", path, body, query }));
 }
@@ -366,6 +378,10 @@ export async function apiGetRaw<T>(path: string, query?: QueryParams): Promise<T
 
 export async function apiPostRaw<T>(path: string, body?: unknown): Promise<T> {
   return (await sendWithRecovery({ method: "POST", path, body })) as T;
+}
+
+export async function apiUploadRaw<T>(path: string, formData: FormData): Promise<T> {
+  return (await sendWithRecovery({ method: "POST", path, body: formData })) as T;
 }
 
 export async function apiPatchRaw<T>(path: string, body?: unknown): Promise<T> {

@@ -18,6 +18,7 @@ import type { MosqueProfile } from "@/lib/mosque/types";
 import { 
   fetchMosque, 
   updateMosque, 
+  uploadMosqueLogo,
   fetchFacilities, 
   createFacility, 
   updateFacility, 
@@ -40,6 +41,8 @@ export function MosqueProfileView() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [committeeUsers, setCommitteeUsers] = useState<User[]>([]);
+  const [logoUrl, setLogoUrl] = useState<string | null>(null);
+  const [uploadingLogo, setUploadingLogo] = useState(false);
 
   // Facilities State
   const [facilities, setFacilities] = useState<Facility[]>([]);
@@ -62,6 +65,7 @@ export function MosqueProfileView() {
       ]);
 
       if (m) {
+        setLogoUrl(m.logoUrl || null);
         const synced: MosqueProfile = {
           ...mosqueProfile,
           name: m.name || mosqueProfile.name,
@@ -145,6 +149,28 @@ export function MosqueProfileView() {
   const setSocial = (key: keyof MosqueProfile["social"], value: string) =>
     setDraft((current) => ({ ...current, social: { ...current.social, [key]: value } }));
 
+  const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      setUploadingLogo(true);
+      const updated = await uploadMosqueLogo(file);
+      setLogoUrl(updated.logoUrl);
+      notify({
+        tone: "success",
+        message: "Mosque logo updated on Cloudinary!",
+      });
+    } catch (err: any) {
+      notify({
+        tone: "danger",
+        message: "Failed to upload logo to Cloudinary.",
+        description: err.message,
+      });
+    } finally {
+      setUploadingLogo(false);
+    }
+  };
+
   const openFacilityModal = (fac?: Facility) => {
     if (fac) {
       setFacilityTarget(fac);
@@ -227,12 +253,29 @@ export function MosqueProfileView() {
       <Panel>
         <PanelBody className="sm:py-6">
           <div className="flex flex-col gap-5 sm:flex-row sm:items-start">
-            <span
-              aria-hidden="true"
-              className="relative grid h-20 w-20 shrink-0 place-items-center overflow-hidden rounded-xl border border-[#e3ce9d] bg-[#073a2d] text-[#e0be79]"
-            >
-              <Icon name="mosque" size={38} />
-            </span>
+            <div className="group relative h-20 w-20 shrink-0 overflow-hidden rounded-xl border border-[#e3ce9d] bg-[#073a2d]">
+              {logoUrl ? (
+                /* eslint-disable-next-line @next/next/no-img-element */
+                <img src={logoUrl} alt={shown.name} className="h-full w-full object-cover" />
+              ) : (
+                <div className="grid h-full w-full place-items-center text-[#e0be79]">
+                  <Icon name="mosque" size={38} />
+                </div>
+              )}
+              <Can permission="mosque.manage">
+                <label className="absolute inset-0 flex flex-col items-center justify-center bg-black/65 opacity-0 transition-opacity cursor-pointer group-hover:opacity-100 text-white text-[10.5px] font-semibold">
+                  <Icon name="upload" size={15} className="mb-0.5" />
+                  {uploadingLogo ? "Uploading…" : "Logo"}
+                  <input
+                    type="file"
+                    accept="image/*"
+                    className="sr-only"
+                    disabled={uploadingLogo}
+                    onChange={handleLogoUpload}
+                  />
+                </label>
+              </Can>
+            </div>
 
             <div className="min-w-0 flex-1">
               <h2 className="text-[20px] font-semibold uppercase leading-tight tracking-[.04em] text-[#17211d] sm:text-[23px]">

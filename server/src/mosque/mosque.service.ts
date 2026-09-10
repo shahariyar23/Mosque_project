@@ -293,4 +293,29 @@ export class MosqueService {
       where: { id: itemId },
     });
   }
+
+  async uploadLogo(mosqueId: string, file: Express.Multer.File) {
+    if (!file) {
+      throw new BadRequestException('Image file is required.');
+    }
+
+    const allowedMimes = ['image/jpeg', 'image/png', 'image/webp', 'image/svg+xml'];
+    if (!allowedMimes.includes(file.mimetype)) {
+      throw new BadRequestException(
+        `Unsupported file type: ${file.mimetype}. Allowed: JPG, PNG, WebP, SVG.`,
+      );
+    }
+
+    if (file.size > 5 * 1024 * 1024) {
+      throw new BadRequestException('File exceeds 5MB size limit.');
+    }
+
+    const folder = `mosques/${mosqueId}/branding`;
+    const uploaded = await this.cloudinary.uploadImage(file.buffer, folder);
+
+    return this.prisma.mosque.update({
+      where: { id: mosqueId },
+      data: { logoUrl: uploaded.secureUrl },
+    });
+  }
 }

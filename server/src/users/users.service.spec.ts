@@ -13,6 +13,7 @@ import { MAX_PAGE_SIZE } from '../common/pagination/page';
 import type { AuthenticatedUser } from '../common/types/authenticated-user';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditLogService } from '../audit/audit-log.service';
+import { CloudinaryService } from '../common/cloudinary/cloudinary.service';
 import type { AuditEntry } from '../audit/types/audit-log.types';
 import { CreateUserDto } from './dto/create-user.dto';
 import type { UserQueryDto } from './dto/user-query.dto';
@@ -179,6 +180,7 @@ describe('UsersService', () => {
         UsersService,
         { provide: PrismaService, useValue: prisma },
         { provide: AuditLogService, useValue: audit },
+        { provide: CloudinaryService, useValue: { uploadImage: jest.fn(), deleteAsset: jest.fn() } },
       ],
     }).compile();
 
@@ -1685,6 +1687,39 @@ describe('UsersService', () => {
       prisma.user.create.mockResolvedValue(userRow());
       await service.create(createDto());
       expect(argsOf(prisma.user.create).select).toBe(USER_SELECT);
+    });
+  });
+
+  describe('uploadAvatar', () => {
+    it('uploads avatar to cloudinary and updates user avatarUrl', async () => {
+      const mockFile = {
+        buffer: Buffer.from('test-avatar'),
+        mimetype: 'image/jpeg',
+        size: 2048,
+      } as Express.Multer.File;
+
+      const act = actor();
+      prisma.user.findFirst.mockResolvedValue(userRow({ id: USER_ID }));
+      const cloudinary = (service as any).cloudinary;
+      (cloudinary.uploadImage as jest.Mock).mockResolvedValue({
+        secureUrl: 'https://cloudinary.com/avatar.jpg',
+        publicId: 'avatars/123',
+      });
+      prisma.user.update.mockResolvedValue(
+        userRow({ id: USER_ID, avatarUrl: 'https://cloudinary.com/avatar.jpg' }),
+      );
+
+      const result = await service.uploadAvatar(USER_ID, mockFile, act);
+      expect(cloudinary.uploadImage).toHaveBeenCalledWith(
+        mockFile.buffer,
+        `mosques/${MOSQUE_ID}/avatars`,
+      );
+      expect(prisma.user.update).toHaveBeenCalledWith({
+        where: { id: USER_ID },
+        data: { avatarUrl: 'https://cloudinary.com/avatar.jpg' },
+        select: USER_SELECT,
+      });
+      expect(result.avatarUrl).toBe('https://cloudinary.com/avatar.jpg');
     });
   });
 });

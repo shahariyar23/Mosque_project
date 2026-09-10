@@ -47,6 +47,27 @@ export class MosqueController {
     return this.mosqueService.updateMosque(user.mosqueId, dto);
   }
 
+  @Post('logo')
+  @Permissions('mosque.manage')
+  @UseInterceptors(FileInterceptor('file'))
+  @ApiConsumes('multipart/form-data')
+  @ApiOperation({ summary: 'Upload a mosque logo to Cloudinary and update profile' })
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        file: { type: 'string', format: 'binary' },
+      },
+      required: ['file'],
+    },
+  })
+  async uploadLogo(
+    @CurrentUser() user: AuthenticatedUser,
+    @UploadedFile() file: Express.Multer.File,
+  ) {
+    return this.mosqueService.uploadLogo(user.mosqueId, file);
+  }
+
   @Get('settings')
   @Permissions('settings.view')
   @ApiOperation({ summary: 'Get current mosque settings' })

@@ -122,4 +122,35 @@ describe('MosqueService', () => {
       expect(prisma.facility.delete).toHaveBeenCalledWith({ where: { id: mockFacilityId } });
     });
   });
+
+  describe('uploadLogo', () => {
+    it('should upload logo to cloudinary and update mosque.logoUrl', async () => {
+      const mockFile = {
+        buffer: Buffer.from('test'),
+        mimetype: 'image/png',
+        size: 1024,
+      } as Express.Multer.File;
+
+      const cloudinary = (service as any).cloudinary;
+      (cloudinary.uploadImage as jest.Mock).mockResolvedValue({
+        secureUrl: 'https://cloudinary.com/logo.png',
+        publicId: 'branding/logo',
+      });
+      (prisma.mosque.update as jest.Mock).mockResolvedValue({
+        id: mockMosqueId,
+        logoUrl: 'https://cloudinary.com/logo.png',
+      });
+
+      const result = await service.uploadLogo(mockMosqueId, mockFile);
+      expect(cloudinary.uploadImage).toHaveBeenCalledWith(
+        mockFile.buffer,
+        `mosques/${mockMosqueId}/branding`,
+      );
+      expect(prisma.mosque.update).toHaveBeenCalledWith({
+        where: { id: mockMosqueId },
+        data: { logoUrl: 'https://cloudinary.com/logo.png' },
+      });
+      expect(result.logoUrl).toEqual('https://cloudinary.com/logo.png');
+    });
+  });
 });

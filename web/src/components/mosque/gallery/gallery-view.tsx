@@ -1,19 +1,19 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/finance/ui/button";
 import { FinanceFilters, type SelectFilter } from "@/components/finance/ui/filters";
-import { AttachmentField, SelectField, TextAreaField, TextField } from "@/components/finance/ui/form-field";
+import { SelectField, TextAreaField, TextField } from "@/components/finance/ui/form-field";
 import { Icon } from "@/components/finance/ui/icon";
 import { Modal } from "@/components/finance/ui/modal";
 import { Panel, PanelHeader } from "@/components/finance/ui/panel";
 import { Can } from "@/components/finance/ui/permission-gate";
 import { FinanceEmptyState, InlineNotice } from "@/components/finance/ui/states";
+import { ConfirmDialog } from "@/components/finance/ui/dialogs";
 import { DetailDrawer, DetailField, DetailGrid, DetailSection } from "@/components/ui/detail-drawer";
 import { StatGrid } from "@/components/ui/stat-card";
 import { MediaAlbumChip, MediaTypeBadge, MediaVisibilityBadge } from "@/components/ui/status-badge";
 import { useToast } from "@/components/ui/toast";
-import { galleryStats, media as seedMedia } from "@/data/gallery";
 import { downloadCsv } from "@/lib/mosque/export";
 import { formatCount, formatLongDate, REFERENCE_DATE } from "@/lib/mosque/format";
 import {
@@ -25,59 +25,12 @@ import {
   type MediaItem,
   type StatMetric,
 } from "@/lib/mosque/types";
-
-/**
- * The media gallery — the mosque's photos and videos as a wall of tiles, not a table.
- *
- * A gallery is looked at, so it is shown as a responsive grid of cards rather than rows. There are no
- * real files: each tile is a generated placeholder, tinted per album from the existing palette and
- * marked with a camera or a play glyph, so the module carries its own visual weight without pulling a
- * single external image. Everything else is the shared kit — the same filters, drawer and composer as
- * every other module — so a future upload endpoint drops straight in behind it.
- */
-const metrics: StatMetric[] = [
-  {
-    id: "total",
-    label: "Media items",
-    value: formatCount(galleryStats.total),
-    hint: "In the library",
-    icon: "image",
-    tone: "neutral",
-  },
-  {
-    id: "photos",
-    label: "Photos",
-    value: formatCount(galleryStats.images),
-    hint: "Still images",
-    icon: "camera",
-    tone: "positive",
-  },
-  {
-    id: "videos",
-    label: "Videos",
-    value: formatCount(galleryStats.videos),
-    hint: "Clips and recordings",
-    icon: "play",
-    tone: "gold",
-  },
-  {
-    id: "albums",
-    label: "Albums",
-    value: formatCount(galleryStats.albums),
-    hint: "Collections",
-    icon: "grid",
-    tone: "neutral",
-  },
-];
-
-const emptyDraft: MediaDraft = {
-  title: "",
-  album: "Eid al-Fitr",
-  type: "Image",
-  visibility: "Public",
-  caption: "",
-  fileName: "",
-};
+import {
+  fetchGalleryItems,
+  uploadGalleryPhoto,
+  deleteGalleryItem,
+  type GalleryItem,
+} from "@/services/galleryService";
 
 /** Per-album tile tints, all drawn from the project's greens, teal and gold — no new colours. */
 const albumTile: Record<MediaAlbum, { from: string; to: string }> = {
@@ -96,9 +49,50 @@ const albumTile: Record<MediaAlbum, { from: string; to: string }> = {
 const formatSize = (kb: number) => (kb >= 1024 ? `${(kb / 1024).toFixed(1)} MB` : `${kb} KB`);
 const formatDuration = (seconds: number) => `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
 
-/** The placeholder tile — a tinted panel with a camera/play glyph. Stands in for a real thumbnail. */
+function mapBackendGalleryToMediaItem(item: GalleryItem): MediaItem {
+  // Map category to known MediaAlbum if matching, or default
+  const albumMatch = mediaAlbums.find(
+    (a) => a.toLowerCase() === (item.category || "").toLowerCase(),
+  );
+
+  return {
+    id: item.id,
+    title: item.title || "Untitled Photo",
+    album: albumMatch || "Building & Grounds",
+    type: "Image",
+    visibility: item.isPublished ? "Public" : "Hidden",
+    caption: item.altText || "",
+    tags: [item.category || "General"],
+    uploadedBy: "Admin",
+    uploadedAt: item.createdAt ? item.createdAt.slice(0, 10) : REFERENCE_DATE,
+    fileName: item.cloudinaryPublicId || "photo.jpg",
+    imageUrl: item.imageUrl,
+    sizeKb: 1200,
+  };
+}
+
+/** The photo tile — renders actual Cloudinary photo, or falls back to stylized gradient placeholder. */
 function MediaThumb({ item, className = "" }: { item: MediaItem; className?: string }) {
-  const tint = albumTile[item.album];
+  const tint = albumTile[item.album] || { from: "#0d4d3b", to: "#0b4634" };
+
+  if (item.imageUrl) {
+    return (
+      <div className={`relative overflow-hidden bg-[#17211d] ${className}`}>
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src={item.imageUrl}
+          alt={item.title}
+          className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
+        />
+        {item.visibility !== "Public" ? (
+          <span className="absolute left-1.5 top-1.5">
+            <MediaVisibilityBadge visibility={item.visibility} />
+          </span>
+        ) : null}
+      </div>
+    );
+  }
+
   return (
     <div
       className={`relative flex items-center justify-center overflow-hidden ${className}`}
@@ -122,13 +116,77 @@ function MediaThumb({ item, className = "" }: { item: MediaItem; className?: str
 
 export function GalleryView({ openUploadOnMount = false }: { openUploadOnMount?: boolean }) {
   const { notify } = useToast();
-  const [mediaList, setMediaList] = useState<MediaItem[]>(seedMedia);
+  const [mediaList, setMediaList] = useState<MediaItem[]>([]);
+  const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [album, setAlbum] = useState("all");
   const [type, setType] = useState("all");
   const [visibility, setVisibility] = useState("all");
   const [selected, setSelected] = useState<MediaItem | null>(null);
   const [uploading, setUploading] = useState(openUploadOnMount);
+  const [deletingItem, setDeletingItem] = useState<MediaItem | null>(null);
+  const [deleting, setDeleting] = useState(false);
+
+  const loadGallery = async () => {
+    try {
+      setLoading(true);
+      const items = await fetchGalleryItems();
+      setMediaList(items.map(mapBackendGalleryToMediaItem));
+    } catch {
+      notify({
+        tone: "warning",
+        message: "Could not load gallery from server.",
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadGallery();
+  }, []);
+
+  const metrics: StatMetric[] = useMemo(() => {
+    const total = mediaList.length;
+    const photos = mediaList.filter((m) => m.type === "Image").length;
+    const videos = mediaList.filter((m) => m.type === "Video").length;
+    const distinctAlbums = new Set(mediaList.map((m) => m.album)).size;
+
+    return [
+      {
+        id: "total",
+        label: "Media items",
+        value: formatCount(total),
+        hint: "In Cloudinary library",
+        icon: "image",
+        tone: "neutral",
+      },
+      {
+        id: "photos",
+        label: "Photos",
+        value: formatCount(photos),
+        hint: "Still images",
+        icon: "camera",
+        tone: "positive",
+      },
+      {
+        id: "videos",
+        label: "Videos",
+        value: formatCount(videos),
+        hint: "Clips and recordings",
+        icon: "play",
+        tone: "gold",
+      },
+      {
+        id: "albums",
+        label: "Albums",
+        value: formatCount(distinctAlbums),
+        hint: "Categories",
+        icon: "grid",
+        tone: "neutral",
+      },
+    ];
+  }, [mediaList]);
 
   const filtered = useMemo(() => {
     const needle = search.trim().toLowerCase();
@@ -181,28 +239,39 @@ export function GalleryView({ openUploadOnMount = false }: { openUploadOnMount?:
     setSearch("");
   };
 
-  const addMedia = (draft: MediaDraft) => {
-    const item: MediaItem = {
-      id: `GAL-${String(mediaList.length + 1).padStart(3, "0")}`,
-      title: draft.title.trim(),
-      album: draft.album,
-      type: draft.type,
-      visibility: draft.visibility,
-      caption: draft.caption.trim(),
-      tags: [draft.album],
-      uploadedBy: "Media Team",
-      uploadedAt: REFERENCE_DATE,
-      fileName: draft.fileName,
-      sizeKb: draft.type === "Video" ? 24000 : 2000,
-      ...(draft.type === "Video" ? { durationSeconds: 120 } : {}),
-    };
-
-    setMediaList((current) => [item, ...current]);
+  const handleMediaUploaded = (newItem: GalleryItem) => {
+    const mapped = mapBackendGalleryToMediaItem(newItem);
+    setMediaList((current) => [mapped, ...current]);
     setUploading(false);
     notify({
-      message: "Media added.",
-      description: `${item.title} · ${item.id} — held in this browser only, nothing was really uploaded.`,
+      tone: "success",
+      message: "Photo uploaded to Cloudinary successfully!",
+      description: mapped.title,
     });
+  };
+
+  const confirmDelete = async () => {
+    if (!deletingItem) return;
+    try {
+      setDeleting(true);
+      await deleteGalleryItem(deletingItem.id);
+      setMediaList((current) => current.filter((item) => item.id !== deletingItem.id));
+      if (selected?.id === deletingItem.id) {
+        setSelected(null);
+      }
+      setDeletingItem(null);
+      notify({
+        tone: "success",
+        message: "Photo deleted from Cloudinary.",
+      });
+    } catch {
+      notify({
+        tone: "danger",
+        message: "Failed to delete photo from Cloudinary.",
+      });
+    } finally {
+      setDeleting(false);
+    }
   };
 
   const exportCsv = () => {
@@ -215,6 +284,7 @@ export function GalleryView({ openUploadOnMount = false }: { openUploadOnMount?:
       { header: "Tags", value: (item) => item.tags.join(" / ") },
       { header: "Uploaded by", value: (item) => item.uploadedBy },
       { header: "Date", value: (item) => item.uploadedAt },
+      { header: "Image URL", value: (item) => item.imageUrl || "" },
       { header: "File", value: (item) => item.fileName },
       { header: "Size KB", value: (item) => String(item.sizeKb) },
     ]);
@@ -232,7 +302,7 @@ export function GalleryView({ openUploadOnMount = false }: { openUploadOnMount?:
       <Panel>
         <PanelHeader
           title="Gallery"
-          description="The mosque's photos and videos, grouped into albums across the year."
+          description="The mosque's photos and media library powered by Cloudinary."
           icon="image"
           actions={
             <>
@@ -241,7 +311,7 @@ export function GalleryView({ openUploadOnMount = false }: { openUploadOnMount?:
               </Button>
               <Can permission="gallery.manage">
                 <Button size="sm" icon="upload" onClick={() => setUploading(true)}>
-                  Upload
+                  Upload photo
                 </Button>
               </Can>
             </>
@@ -252,8 +322,8 @@ export function GalleryView({ openUploadOnMount = false }: { openUploadOnMount?:
           search={{
             value: search,
             onChange: setSearch,
-            placeholder: "Search photos and videos…",
-            label: "Search media by title, caption, tag, uploader or ID",
+            placeholder: "Search photos…",
+            label: "Search media by title, caption, tag or ID",
           }}
           filters={filters}
           activeCount={activeFilterCount}
@@ -262,19 +332,21 @@ export function GalleryView({ openUploadOnMount = false }: { openUploadOnMount?:
 
         <div className="px-4 pb-5 pt-1 sm:px-5">
           <p className="mb-3 text-[12.5px] text-[#69726d]" role="status" aria-live="polite">
-            {filtered.length === mediaList.length
-              ? `${formatCount(mediaList.length)} items`
-              : `${formatCount(filtered.length)} of ${formatCount(mediaList.length)} items`}
+            {loading
+              ? "Loading photos from Cloudinary…"
+              : filtered.length === mediaList.length
+                ? `${formatCount(mediaList.length)} items`
+                : `${formatCount(filtered.length)} of ${formatCount(mediaList.length)} items`}
           </p>
 
-          {filtered.length === 0 ? (
+          {!loading && filtered.length === 0 ? (
             <FinanceEmptyState
               icon="image"
               title="No media found."
               description={
                 activeFilterCount > 0 || search
                   ? "Nothing matches the current search and filters. Try clearing them."
-                  : "The gallery is empty. Upload the first photos and videos to build the library."
+                  : "The gallery is empty. Upload the first photos to build the mosque's library."
               }
               action={
                 activeFilterCount > 0 || search ? (
@@ -284,7 +356,7 @@ export function GalleryView({ openUploadOnMount = false }: { openUploadOnMount?:
                 ) : (
                   <Can permission="gallery.manage">
                     <Button icon="upload" onClick={() => setUploading(true)}>
-                      Upload media
+                      Upload photo
                     </Button>
                   </Can>
                 )
@@ -316,8 +388,29 @@ export function GalleryView({ openUploadOnMount = false }: { openUploadOnMount?:
         </div>
       </Panel>
 
-      {selected ? <MediaDetailDrawer item={selected} onClose={() => setSelected(null)} /> : null}
-      <UploadMediaModal open={uploading} onClose={() => setUploading(false)} onSave={addMedia} />
+      {selected ? (
+        <MediaDetailDrawer
+          item={selected}
+          onClose={() => setSelected(null)}
+          onDelete={() => setDeletingItem(selected)}
+        />
+      ) : null}
+
+      <UploadMediaModal
+        open={uploading}
+        onClose={() => setUploading(false)}
+        onUploaded={handleMediaUploaded}
+      />
+
+      <ConfirmDialog
+        open={Boolean(deletingItem)}
+        onClose={() => setDeletingItem(null)}
+        onConfirm={confirmDelete}
+        title="Delete Photo from Cloudinary?"
+        description={`Are you sure you want to permanently delete "${deletingItem?.title}"? This cannot be undone and will remove it from the gallery and About page.`}
+        confirmLabel={deleting ? "Deleting…" : "Delete Photo"}
+        tone="danger"
+      />
     </div>
   );
 }
@@ -326,7 +419,15 @@ export function GalleryView({ openUploadOnMount = false }: { openUploadOnMount?:
  * Detail drawer
  * -------------------------------------------------------------------------- */
 
-function MediaDetailDrawer({ item, onClose }: { item: MediaItem; onClose: () => void }) {
+function MediaDetailDrawer({
+  item,
+  onClose,
+  onDelete,
+}: {
+  item: MediaItem;
+  onClose: () => void;
+  onDelete: () => void;
+}) {
   return (
     <DetailDrawer
       open
@@ -342,16 +443,22 @@ function MediaDetailDrawer({ item, onClose }: { item: MediaItem; onClose: () => 
         </>
       }
       footer={
-        <>
+        <div className="flex w-full items-center justify-between">
           <Can permission="gallery.manage">
-            <Button size="sm" variant="secondary" icon="pencil">
-              Edit
+            <Button
+              size="sm"
+              variant="secondary"
+              icon="trash"
+              onClick={onDelete}
+              className="text-[#94291f] hover:bg-[#faeae7]"
+            >
+              Delete
             </Button>
           </Can>
           <Button size="sm" variant="ghost" onClick={onClose} className="ml-auto">
             Close
           </Button>
-        </>
+        </div>
       }
     >
       <div className="space-y-5">
@@ -360,17 +467,14 @@ function MediaDetailDrawer({ item, onClose }: { item: MediaItem; onClose: () => 
             Hidden — not shown on the community site while it is being sorted and captioned.
           </InlineNotice>
         ) : null}
-        {item.visibility === "Members" ? (
-          <InlineNotice tone="info" icon="lock">
-            Members only — visible on the members&rsquo; area of the site, not to the public.
-          </InlineNotice>
-        ) : null}
 
         <MediaThumb item={item} className="aspect-video w-full rounded-xl" />
 
-        <DetailSection title="Caption">
-          <p className="text-[13px] leading-6 text-[#4d564f]">{item.caption}</p>
-        </DetailSection>
+        {item.caption ? (
+          <DetailSection title="Caption">
+            <p className="text-[13px] leading-6 text-[#4d564f]">{item.caption}</p>
+          </DetailSection>
+        ) : null}
 
         {item.tags.length > 0 ? (
           <DetailSection title="Tags">
@@ -389,16 +493,26 @@ function MediaDetailDrawer({ item, onClose }: { item: MediaItem; onClose: () => 
 
         <DetailSection title="Details">
           <DetailGrid>
-            <DetailField label="Album" value={<MediaAlbumChip album={item.album} />} />
-            <DetailField label="Type" value={<MediaTypeBadge type={item.type} />} />
+            <DetailField label="Album / Category" value={<MediaAlbumChip album={item.album} />} />
             <DetailField label="Visibility" value={<MediaVisibilityBadge visibility={item.visibility} />} />
             <DetailField label="Uploaded by" value={item.uploadedBy} />
             <DetailField label="Date" value={formatLongDate(item.uploadedAt)} />
-            <DetailField
-              label={item.type === "Video" ? "Duration" : "Size"}
-              value={item.type === "Video" && item.durationSeconds ? formatDuration(item.durationSeconds) : formatSize(item.sizeKb)}
-            />
-            <DetailField label="File" value={<span className="break-all">{item.fileName}</span>} full />
+            {item.imageUrl ? (
+              <DetailField
+                label="Direct Image Link"
+                value={
+                  <a
+                    href={item.imageUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="truncate text-[#0d4d3b] underline"
+                  >
+                    Open in Cloudinary
+                  </a>
+                }
+                full
+              />
+            ) : null}
           </DetailGrid>
         </DetailSection>
       </div>
@@ -407,128 +521,183 @@ function MediaDetailDrawer({ item, onClose }: { item: MediaItem; onClose: () => 
 }
 
 /* -------------------------------------------------------------------------- *
- * Upload
+ * Upload Modal with Real File Input
  * -------------------------------------------------------------------------- */
 
 function UploadMediaModal({
   open,
   onClose,
-  onSave,
+  onUploaded,
 }: {
   open: boolean;
   onClose: () => void;
-  onSave: (draft: MediaDraft) => void;
+  onUploaded: (item: GalleryItem) => void;
 }) {
-  const [draft, setDraft] = useState<MediaDraft>(emptyDraft);
+  const { notify } = useToast();
+  const [title, setTitle] = useState("");
+  const [album, setAlbum] = useState<MediaAlbum>("Building & Grounds");
+  const [visibility, setVisibility] = useState<"Public" | "Hidden">("Public");
+  const [caption, setCaption] = useState("");
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
 
-  const set = <Key extends keyof MediaDraft>(key: Key, value: MediaDraft[Key]) =>
-    setDraft((current) => ({ ...current, [key]: value }));
-
-  const errors = {
-    title: draft.title.trim().length === 0 ? "Give the item a title." : undefined,
-    fileName: draft.fileName.trim().length === 0 ? "Choose a file to upload." : undefined,
+  const reset = () => {
+    setTitle("");
+    setAlbum("Building & Grounds");
+    setVisibility("Public");
+    setCaption("");
+    setSelectedFile(null);
+    setPreviewUrl(null);
+    setSubmitted(false);
+    setSubmitting(false);
   };
-  const valid = Object.values(errors).every((error) => error === undefined);
-  const show = (key: keyof typeof errors) => (submitted ? errors[key] : undefined);
 
   const close = () => {
-    setDraft(emptyDraft);
-    setSubmitted(false);
+    reset();
     onClose();
   };
 
-  const submit = () => {
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      if (!file.type.startsWith("image/")) {
+        notify({ tone: "danger", message: "Please select a valid image file (JPG, PNG, WebP)." });
+        return;
+      }
+      setSelectedFile(file);
+      setPreviewUrl(URL.createObjectURL(file));
+      if (!title) {
+        // Auto-fill title from filename if title is empty
+        const cleanName = file.name.replace(/\.[^/.]+$/, "").replace(/[-_]/g, " ");
+        setTitle(cleanName.charAt(0).toUpperCase() + cleanName.slice(1));
+      }
+    }
+  };
+
+  const errors = {
+    file: !selectedFile ? "Choose an image file to upload." : undefined,
+    title: title.trim().length === 0 ? "Give the photo a title." : undefined,
+  };
+  const valid = Object.values(errors).every((error) => error === undefined);
+
+  const submit = async () => {
     setSubmitted(true);
-    if (!valid) return;
-    onSave(draft);
-    setDraft(emptyDraft);
-    setSubmitted(false);
+    if (!valid || !selectedFile || submitting) return;
+
+    try {
+      setSubmitting(true);
+      const created = await uploadGalleryPhoto({
+        file: selectedFile,
+        title: title.trim(),
+        altText: caption.trim() || title.trim(),
+        category: album,
+        isPublished: visibility === "Public",
+      });
+      reset();
+      onUploaded(created);
+    } catch (err: unknown) {
+      notify({
+        tone: "danger",
+        message: err instanceof Error ? err.message : "Failed to upload photo to Cloudinary.",
+      });
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
     <Modal
       open={open}
       onClose={close}
-      title="Upload media"
-      description="Add a photo or video to an album. Uploading is not connected — the file name is recorded so the endpoint can wire in later."
+      title="Upload Photo to Cloudinary"
+      description="Select an image file from your device. It will be uploaded directly to Cloudinary and added to the mosque gallery."
       footer={
         <>
-          <Button variant="secondary" onClick={close}>
+          <Button variant="secondary" onClick={close} disabled={submitting}>
             Cancel
           </Button>
-          <Button icon="check" onClick={submit}>
-            Add to Gallery
+          <Button icon="upload" onClick={submit} disabled={submitting}>
+            {submitting ? "Uploading to Cloudinary…" : "Upload Photo"}
           </Button>
         </>
       }
     >
       <div className="grid gap-4 sm:grid-cols-2">
+        {/* File selection */}
+        <div className="sm:col-span-2">
+          <label className="block text-[13px] font-semibold text-[#3d453f] mb-1">
+            Choose Photo File <span className="text-[#94291f]">*</span>
+          </label>
+          <div className="mt-1 flex items-center gap-4">
+            <input
+              type="file"
+              accept="image/jpeg,image/png,image/webp,image/gif"
+              onChange={handleFileChange}
+              disabled={submitting}
+              className="block w-full text-sm text-[#4d564f] file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-[#e8f2ee] file:text-[#0d4d3b] hover:file:bg-[#d0e5dd] cursor-pointer"
+            />
+          </div>
+          {submitted && errors.file ? (
+            <p role="alert" className="mt-1.5 text-[12px] font-medium text-[#94291f]">
+              {errors.file}
+            </p>
+          ) : (
+            <p className="mt-1 text-[11.5px] text-[#69726d]">
+              Supports JPG, PNG, WebP, GIF up to 5MB.
+            </p>
+          )}
+
+          {previewUrl ? (
+            <div className="mt-3 relative h-40 w-full overflow-hidden rounded-xl border border-[#dcdacd] bg-[#f6f5ee]">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={previewUrl} alt="Preview" className="h-full w-full object-contain" />
+            </div>
+          ) : null}
+        </div>
+
         <TextField
           label="Title"
           required
-          value={draft.title}
-          onChange={(event) => set("title", event.target.value)}
-          error={show("title")}
+          value={title}
+          onChange={(event) => setTitle(event.target.value)}
+          error={submitted ? errors.title : undefined}
           placeholder="Eid al-Fitr prayer in the main hall"
           containerClassName="sm:col-span-2"
         />
+
         <SelectField
-          label="Album"
+          label="Album / Category"
           required
-          value={draft.album}
+          value={album}
           options={[...mediaAlbums]}
-          onChange={(event) => set("album", event.target.value as MediaDraft["album"])}
+          onChange={(event) => setAlbum(event.target.value as MediaAlbum)}
         />
-        <SelectField
-          label="Type"
-          required
-          value={draft.type}
-          options={[...mediaTypes]}
-          onChange={(event) => set("type", event.target.value as MediaDraft["type"])}
-        />
+
         <SelectField
           label="Visibility"
           required
-          value={draft.visibility}
-          options={[...mediaVisibilities]}
-          onChange={(event) => set("visibility", event.target.value as MediaDraft["visibility"])}
-          containerClassName="sm:col-span-2"
+          value={visibility}
+          options={["Public", "Hidden"]}
+          onChange={(event) => setVisibility(event.target.value as "Public" | "Hidden")}
         />
+
         <TextAreaField
-          label="Caption"
+          label="Caption / Alt Text"
           rows={3}
-          value={draft.caption}
-          onChange={(event) => set("caption", event.target.value)}
-          hint="A short line describing the photo or video."
+          value={caption}
+          onChange={(event) => setCaption(event.target.value)}
+          hint="A short line describing the photo for accessibility."
           containerClassName="sm:col-span-2"
         />
-        <div className="sm:col-span-2">
-          <AttachmentField
-            label="File"
-            hint="Photo or video. Uploading is not connected yet — the file name is recorded for now."
-            fileName={draft.fileName || undefined}
-            onSelect={(name) => set("fileName", name)}
-            onClear={() => set("fileName", "")}
-          />
-          {show("fileName") ? (
-            <p role="alert" className="mt-1.5 flex items-center gap-1.5 text-[12px] font-medium text-[#94291f]">
-              <Icon name="alert" size={13} />
-              {errors.fileName}
-            </p>
-          ) : null}
-        </div>
       </div>
 
-      {submitted && !valid ? (
-        <InlineNotice className="mt-4" tone="neutral" icon="alert">
-          Some details still need attention — see the messages above.
+      {submitting ? (
+        <InlineNotice className="mt-4" tone="info" icon="clock">
+          Uploading and optimizing image with Cloudinary…
         </InlineNotice>
-      ) : (
-        <InlineNotice className="mt-4" tone="gold">
-          Front-end preview — the item is added to this browser session only. Nothing is really uploaded.
-        </InlineNotice>
-      )}
+      ) : null}
     </Modal>
   );
 }

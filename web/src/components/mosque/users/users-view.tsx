@@ -44,6 +44,7 @@ import {
   updateUserPositions,
   updateUserRole,
   updateUserStatus,
+  uploadUserAvatar,
   type UpdateUserInput,
   type User,
 } from "@/services/userService";
@@ -1039,9 +1040,23 @@ function EditUserModal({
   const [permissions, setPermissions] = useState<Permission[]>(user.permissions);
   const [denied, setDenied] = useState<Permission[]>(user.deniedPermissions);
   const [isActive, setIsActive] = useState(user.isActive);
+  const [avatarUrl, setAvatarUrl] = useState<string | null>(user.avatarUrl ?? null);
+  const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const [exceptionPermission, setExceptionPermission] = useState<Permission>(allPermissions[0]);
   const [exceptionEffect, setExceptionEffect] = useState<"grant" | "deny">("grant");
   const [submitted, setSubmitted] = useState(false);
+
+  const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      setUploadingAvatar(true);
+      const updated = await uploadUserAvatar(user.id, file);
+      setAvatarUrl(updated.avatarUrl);
+    } finally {
+      setUploadingAvatar(false);
+    }
+  };
 
   const addException = () => {
     if (exceptionEffect === "grant") {
@@ -1132,6 +1147,35 @@ function EditUserModal({
       }
     >
       <div className="space-y-5">
+        {/* Profile picture */}
+        <div className="flex items-center gap-4 p-3.5 rounded-xl border border-[#e7e6dc] bg-[#faf9f4]">
+          <div className="relative h-14 w-14 shrink-0 overflow-hidden rounded-full border border-[#dcdacd] bg-[#e8f2ee]">
+            {avatarUrl ? (
+              /* eslint-disable-next-line @next/next/no-img-element */
+              <img src={avatarUrl} alt={fullName} className="h-full w-full object-cover" />
+            ) : (
+              <div className="grid h-full w-full place-items-center text-[18px] font-bold text-[#0d4d3b]">
+                {fullName?.charAt(0).toUpperCase()}
+              </div>
+            )}
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-[13px] font-semibold text-[#17211d]">Profile Photo (Cloudinary)</p>
+            <p className="text-[11.5px] text-[#69726d] mb-1.5">Upload a user photo to Cloudinary</p>
+            <label className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold rounded-lg bg-white border border-[#cfd4cd] hover:bg-[#f6f5ee] cursor-pointer text-[#17211d]">
+              <Icon name="upload" size={13} />
+              {uploadingAvatar ? "Uploading to Cloudinary…" : "Change Photo"}
+              <input
+                type="file"
+                accept="image/*"
+                className="sr-only"
+                disabled={uploadingAvatar}
+                onChange={handleAvatarUpload}
+              />
+            </label>
+          </div>
+        </div>
+
         {canManage ? (
           <div className="grid gap-4 sm:grid-cols-2">
             <TextField

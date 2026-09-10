@@ -21,6 +21,7 @@ import {
   fetchUsers,
   updateUserPositions,
   updateUserRole,
+  uploadUserAvatar,
   type User,
 } from "@/services/userService";
 import {
@@ -49,6 +50,7 @@ export function CommitteeView() {
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
   const [editPositions, setEditPositions] = useState<Position[]>([]);
   const [savingPositions, setSavingPositions] = useState(false);
+  const [uploadingAvatar, setUploadingAvatar] = useState(false);
 
   // Assign existing user state
   const [assignUserId, setAssignUserId] = useState("");
@@ -225,6 +227,29 @@ export function CommitteeView() {
     setSelectedUser(user);
     setEditPositions([...user.positions]);
     setEditModalOpen(true);
+  };
+
+  const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !selectedUser) return;
+    try {
+      setUploadingAvatar(true);
+      const updated = await uploadUserAvatar(selectedUser.id, file);
+      setSelectedUser(updated);
+      setCommitteeUsers((prev) => prev.map((u) => (u.id === updated.id ? updated : u)));
+      notify({
+        tone: "success",
+        message: "Avatar uploaded to Cloudinary successfully!",
+      });
+    } catch (err: any) {
+      notify({
+        tone: "danger",
+        message: "Failed to upload avatar to Cloudinary.",
+        description: err.message,
+      });
+    } finally {
+      setUploadingAvatar(false);
+    }
   };
 
   const handleSaveEditPositions = async () => {
@@ -665,6 +690,35 @@ export function CommitteeView() {
         }
       >
         <div className="space-y-4">
+          {/* Avatar Upload */}
+          <div className="flex items-center gap-4 p-3.5 rounded-xl border border-[#e7e6dc] bg-[#faf9f4]">
+            <div className="relative h-14 w-14 shrink-0 overflow-hidden rounded-full border border-[#dcdacd] bg-[#e8f2ee]">
+              {selectedUser?.avatarUrl ? (
+                /* eslint-disable-next-line @next/next/no-img-element */
+                <img src={selectedUser.avatarUrl} alt={selectedUser.fullName} className="h-full w-full object-cover" />
+              ) : (
+                <div className="grid h-full w-full place-items-center text-[18px] font-bold text-[#0d4d3b]">
+                  {selectedUser?.fullName?.charAt(0).toUpperCase()}
+                </div>
+              )}
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-[13px] font-semibold text-[#17211d]">Leader Photo (Cloudinary)</p>
+              <p className="text-[11.5px] text-[#69726d] mb-1.5">Displayed on the public About page committee section.</p>
+              <label className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold rounded-lg bg-white border border-[#cfd4cd] hover:bg-[#f6f5ee] cursor-pointer text-[#17211d]">
+                <Icon name="upload" size={13} />
+                {uploadingAvatar ? "Uploading to Cloudinary…" : "Upload Photo"}
+                <input
+                  type="file"
+                  accept="image/*"
+                  className="sr-only"
+                  disabled={uploadingAvatar}
+                  onChange={handleAvatarUpload}
+                />
+              </label>
+            </div>
+          </div>
+
           <p className="text-xs text-[#4a5852]">
             Assigning or removing committee posts updates the public About page leadership directory.
           </p>

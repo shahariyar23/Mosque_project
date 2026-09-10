@@ -1022,6 +1022,7 @@ export type MediaItem = {
   uploadedAt: string;
   /** Stand-in for a real asset — used for the size readout and the CSV, never fetched. */
   fileName: string;
+  imageUrl?: string;
   sizeKb: number;
   /** Videos only — length in seconds, rendered as m:ss. */
   durationSeconds?: number;

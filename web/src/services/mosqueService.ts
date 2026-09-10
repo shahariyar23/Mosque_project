@@ -17,7 +17,7 @@
  * asymmetry is the backend's, not a mistake here — see `UpdateMosqueInput`.
  */
 
-import { apiDeleteRaw, apiGetRaw, apiPatchRaw, apiPostRaw } from "./apiClient";
+import { apiDeleteRaw, apiGetRaw, apiPatchRaw, apiPostRaw, apiUploadRaw } from "./apiClient";
 
 /* ------------------------------------------------------------------ *
  * The mosque profile
@@ -280,4 +280,11 @@ export function updateFacility(id: string, input: UpdateFacilityInput): Promise<
  */
 export function deleteFacility(id: string): Promise<void> {
   return apiDeleteRaw(`/mosque/facilities/${id}`);
+}
+
+/** `mosque.manage`. Uploads a mosque logo image to Cloudinary and updates the profile. */
+export function uploadMosqueLogo(file: File): Promise<Mosque> {
+  const formData = new FormData();
+  formData.append("file", file);
+  return apiUploadRaw<Mosque>("/mosque/logo", formData);
 }
