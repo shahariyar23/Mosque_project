@@ -4,12 +4,18 @@ import Image from "next/image";
 import Link from "next/link";
 import { useLanguage } from "@/components/language-provider";
 import { Images, ArrowRight } from "lucide-react";
+import { type PublicGalleryItem } from "@/services/publicHomeService";
 
-export function AboutGallery() {
+interface AboutGalleryProps {
+  gallery?: PublicGalleryItem[];
+  loading?: boolean;
+}
+
+export function AboutGallery({ gallery = [], loading = false }: AboutGalleryProps) {
   const { language } = useLanguage();
   const bn = language === "bn";
 
-  const galleryItems = [
+  const defaultItems = [
     {
       src: "/arshan-latheef-fnq9X0fjGqc-unsplash.jpg",
       altEn: "Mosque minaret rising gracefully into the serene sky",
@@ -60,6 +66,26 @@ export function AboutGallery() {
     },
   ];
 
+  const gridClasses = [
+    "sm:col-span-2 sm:row-span-2 aspect-[4/3] sm:aspect-auto",
+    "aspect-square",
+    "aspect-square",
+    "aspect-square",
+    "aspect-square",
+    "sm:col-span-2 aspect-[16/9] sm:aspect-[2/1]",
+  ];
+
+  const displayItems = gallery.length > 0
+    ? gallery.slice(0, 6).map((g, i) => ({
+        src: g.imageUrl,
+        altEn: g.altText || g.title || "Life at Noor Mosque",
+        altBn: g.altText || g.title || "নূর মসজিদ জীবন ও পরিবেশ",
+        tagEn: g.category || "Sanctuary",
+        tagBn: g.category || "প্রশান্তি",
+        className: gridClasses[i % gridClasses.length],
+      }))
+    : defaultItems;
+
   return (
     <section className="py-20 sm:py-28 bg-[#faf8f5] text-[#17211d] border-b border-[#eae6db] overflow-hidden">
       <div className="mx-auto max-w-7xl px-4 xs:px-6 lg:px-8">
@@ -87,7 +113,7 @@ export function AboutGallery() {
 
         {/* Editorial Asymmetric Photo Grid */}
         <div className="grid grid-cols-1 sm:grid-cols-3 lg:grid-cols-4 gap-4 sm:gap-5">
-          {galleryItems.map((item, index) => (
+          {displayItems.map((item, index) => (
             <div
               key={index}
               className={`relative overflow-hidden rounded-2xl bg-[#092c21] group border border-[#e5e1d3] ${item.className}`}
@@ -119,4 +145,3 @@ export function AboutGallery() {
     </section>
   );
 }
-

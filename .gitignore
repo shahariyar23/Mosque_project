@@ -3,6 +3,8 @@
 .github
 .jetro
 .mcp.json
+mcp_config.json
+.agents/mcp_config.json
 .windsurfrules
 AGENT.md
 CLAUDE.md

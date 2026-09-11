@@ -1,3 +1,5 @@
+"use client";
+
 /**
  * `/users` — the people in the mosque.
  *
@@ -24,7 +26,7 @@
  * neither `passwordHash` nor any token field is among them.
  */
 
-import { apiDelete, apiGet, apiList, apiPatch, apiPost } from "./apiClient";
+import { apiDelete, apiGet, apiList, apiPatch, apiPost, apiUpload } from "./apiClient";
 import type { ListResult } from "./apiClient";
 import type { UserGender, UserStatus } from "./enums";
 import type { AdminUser } from "@/lib/mosque/types";
@@ -91,6 +93,7 @@ export type UserQuery = {
   status?: UserStatus;
   role?: Role;
   position?: Position;
+  hasPositions?: boolean;
   /** Soft-deleted rows only. Silently ignored without `user.viewDeleted`. */
   deleted?: boolean;
 };
@@ -148,6 +151,7 @@ export function fetchUsers(query: UserQuery = {}): Promise<ListResult<User>> {
     status: query.status,
     role: query.role,
     position: query.position,
+    hasPositions: query.hasPositions,
     deleted: query.deleted,
   });
 }
@@ -172,6 +176,13 @@ export function createUser(input: CreateUserInput): Promise<User> {
 /** Profile fields only. `user.manage`, or `profile.manageOwn` for one's own record. */
 export function updateUser(id: string, input: UpdateUserInput): Promise<User> {
   return apiPatch<User>(`/users/${id}`, input);
+}
+
+/** Uploads an avatar image to Cloudinary and updates the user's profile picture. */
+export function uploadUserAvatar(id: string, file: File): Promise<User> {
+  const formData = new FormData();
+  formData.append("file", file);
+  return apiUpload<User>(`/users/${id}/avatar`, formData);
 }
 
 /** `user.manage`. Deactivating blocks sign-in and resolves every permission false, base ones included. */

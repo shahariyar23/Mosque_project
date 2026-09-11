@@ -48,11 +48,12 @@ export function FeaturedEventCard({
 
   const isFull = Boolean(event.capacity && event.registered && event.registered >= event.capacity);
   const [imgSrc, setImgSrc] = useState(event.imageUrl || FALLBACK_IMAGE);
+  const eventSlugOrId = encodeURIComponent(event.slug || event.id);
 
   const handleRegister = async () => {
     if (registering) return;
     if (!session?.user) {
-      router.push(`/sign-in?redirect=/events`);
+      router.push(`/signin?redirect=/events`);
       return;
     }
     if (!event.id) return;
@@ -219,7 +220,7 @@ export function FeaturedEventCard({
                   </Link>
 
                   <Link
-                    href={`/events/${event.slug}`}
+                    href={`/events/${eventSlugOrId}`}
                     className="inline-flex items-center justify-center gap-2 px-5 py-3.5 rounded-xl border border-[#cfc9b8] bg-white hover:bg-[#faf7f0] text-[#0d4d3b] font-medium text-sm transition-all duration-200 hover:border-[#c79a45] min-h-[48px]"
                   >
                     <span>{bn ? "বিস্তারিত" : "Details"}</span>
@@ -250,7 +251,7 @@ export function FeaturedEventCard({
                   </button>
 
                   <Link
-                    href={`/events/${event.slug}`}
+                    href={`/events/${eventSlugOrId}`}
                     className="inline-flex items-center justify-center gap-2 px-5 py-3.5 rounded-xl border border-[#cfc9b8] bg-white hover:bg-[#faf7f0] text-[#0d4d3b] font-medium text-sm transition-all duration-200 hover:border-[#c79a45] min-h-[48px]"
                   >
                     <span>{bn ? "বিস্তারিত" : "Details"}</span>
@@ -259,7 +260,7 @@ export function FeaturedEventCard({
                 </>
               ) : (
                 <Link
-                  href={`/events/${event.slug}`}
+                  href={`/events/${eventSlugOrId}`}
                   className="flex-1 inline-flex items-center justify-center gap-2 px-6 py-3.5 rounded-xl bg-[#0d4d3b] text-white font-semibold text-sm transition-all duration-200 hover:bg-[#072a20] active:scale-[0.98] shadow-md min-h-[48px] hover:text-white"
                 >
                   <span className="text-white">{bn ? "বিস্তারিত দেখুন" : "View Event Details"}</span>

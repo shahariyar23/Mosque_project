@@ -16,10 +16,17 @@ export type PublicMosqueInfo = {
   slug: string;
   name: string;
   description: string | null;
+  story: string | null;
+  mission: string | null;
+  vision: string | null;
   addressLine: string | null;
   city: string | null;
   district: string | null;
   country: string | null;
+  postalCode: string | null;
+  phone: string | null;
+  email: string | null;
+  website: string | null;
   establishedYear: number | null;
   logoUrl: string | null;
 };
@@ -32,7 +39,13 @@ export type PublicPrayerTiming = {
 
 export type PublicPrayerTimes = {
   date: string;
-  hijri: { date: string | null } | null;
+  hijri: {
+    date: string | null;
+    day: number | null;
+    month: number | null;
+    monthName: string | null;
+    year: number | null;
+  } | null;
   timezone: string;
   coordinates: { latitude: number; longitude: number };
   timings: Partial<Record<string, PublicPrayerTiming>>;
@@ -91,6 +104,49 @@ export type PublicCommunityStats = {
   upcomingEvents: number;
   publicFunds: number;
   members: number;
+  activeVolunteers?: number;
+};
+
+export type PublicFacility = {
+  id: string;
+  name: string;
+  description: string | null;
+  capacity: number | null;
+};
+
+export type PublicLeadership = {
+  id: string;
+  fullName: string;
+  avatarUrl: string | null;
+  positions: string[];
+  role: string;
+};
+
+export type PublicMilestone = {
+  id: string;
+  year: string;
+  title: string;
+  description: string;
+  sortOrder: number;
+};
+
+export type PublicValue = {
+  id: string;
+  num: string;
+  icon: string | null;
+  title: string;
+  subtitle: string | null;
+  description: string;
+  sortOrder: number;
+};
+
+export type PublicGalleryItem = {
+  id: string;
+  imageUrl: string;
+  title: string | null;
+  altText: string | null;
+  category: string;
+  sortOrder: number;
 };
 
 /**
@@ -145,5 +201,47 @@ export async function fetchPublicCommunityStats(
 ): Promise<PublicCommunityStats | null> {
   return apiGet<PublicCommunityStats | null>(
     `/public/mosques/${encodeURIComponent(mosqueSlug)}/stats`,
+  );
+}
+
+export async function fetchPublicFacilities(
+  mosqueSlug: string = DEFAULT_PUBLIC_MOSQUE_SLUG,
+): Promise<PublicFacility[]> {
+  return apiGet<PublicFacility[]>(
+    `/public/mosques/${encodeURIComponent(mosqueSlug)}/facilities`,
+  );
+}
+
+export async function fetchPublicLeadership(
+  mosqueSlug: string = DEFAULT_PUBLIC_MOSQUE_SLUG,
+): Promise<PublicLeadership[]> {
+  return apiGet<PublicLeadership[]>(
+    `/public/mosques/${encodeURIComponent(mosqueSlug)}/leadership`,
+  );
+}
+
+export async function fetchPublicMilestones(
+  mosqueSlug: string = DEFAULT_PUBLIC_MOSQUE_SLUG,
+): Promise<PublicMilestone[]> {
+  return apiGet<PublicMilestone[]>(
+    `/public/mosques/${encodeURIComponent(mosqueSlug)}/milestones`,
+  );
+}
+
+export async function fetchPublicValues(
+  mosqueSlug: string = DEFAULT_PUBLIC_MOSQUE_SLUG,
+): Promise<PublicValue[]> {
+  return apiGet<PublicValue[]>(
+    `/public/mosques/${encodeURIComponent(mosqueSlug)}/values`,
+  );
+}
+
+export async function fetchPublicGallery(
+  mosqueSlug: string = DEFAULT_PUBLIC_MOSQUE_SLUG,
+  category?: string,
+): Promise<PublicGalleryItem[]> {
+  return apiGet<PublicGalleryItem[]>(
+    `/public/mosques/${encodeURIComponent(mosqueSlug)}/gallery`,
+    category ? { category } : undefined,
   );
 }

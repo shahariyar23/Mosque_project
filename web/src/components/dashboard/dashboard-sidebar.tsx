@@ -8,6 +8,7 @@ import { useLanguage } from "@/components/language-provider";
 import { Icon } from "@/components/finance/ui/icon";
 import { useDialogFocus } from "@/components/finance/ui/use-dialog-focus";
 import { filterNavigation } from "@/lib/navigation";
+import { useMosqueBranding } from "@/components/mosque-branding-provider";
 
 /**
  * The panel contents, shared by the desktop rail and the mobile drawer. `onNavigate` is only
@@ -21,6 +22,7 @@ function SidebarBody({ onNavigate }: { onNavigate?: () => void }) {
   const pathname = usePathname();
   const { permissions, user } = useDashboardSession();
   const { language } = useLanguage();
+  const { branding } = useMosqueBranding();
 
   const groups = useMemo(() => filterNavigation(permissions), [permissions]);
 
@@ -28,12 +30,24 @@ function SidebarBody({ onNavigate }: { onNavigate?: () => void }) {
     <>
       <div className="flex items-center justify-between gap-3 border-b border-white/10 px-5 py-4">
         <Link href="/dashboard" className="flex min-w-0 items-center gap-3" onClick={onNavigate}>
-          <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full border border-[#e0be79] text-[#e0be79]">
-            <Icon name="mosque" size={18} />
-          </span>
+          {branding.logoUrl ? (
+            <img
+              src={branding.logoUrl}
+              alt={branding.name || "Mosque Logo"}
+              className="h-9 w-9 shrink-0 rounded-full object-cover border border-[#e0be79] shadow-sm"
+            />
+          ) : (
+            <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full border border-[#e0be79] text-[#e0be79]">
+              <Icon name="mosque" size={18} />
+            </span>
+          )}
           <span className="min-w-0">
-            <b className="block truncate text-[13px] tracking-[.16em]">NOOR</b>
-            <span className="block truncate text-[10px] tracking-[.2em] text-white/60">MOSQUE ADMIN</span>
+            <b className="block truncate text-[13px] tracking-[.16em]">
+              {branding.shortName || "NOOR"}
+            </b>
+            <span className="block truncate text-[10px] tracking-[.2em] text-white/60">
+              MOSQUE ADMIN
+            </span>
           </span>
         </Link>
         {onNavigate ? (

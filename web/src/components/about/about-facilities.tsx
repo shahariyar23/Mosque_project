@@ -9,55 +9,85 @@ import {
   UtensilsCrossed, 
   HeartHandshake 
 } from "lucide-react";
+import { type PublicFacility } from "@/services/publicHomeService";
 
-export function AboutFacilities() {
+interface AboutFacilitiesProps {
+  facilities?: PublicFacility[];
+  loading?: boolean;
+}
+
+function getFacilityIcon(name: string) {
+  const lower = name.toLowerCase();
+  if (lower.includes("women") || lower.includes("sister")) return Users;
+  if (lower.includes("wudu") || lower.includes("ablution") || lower.includes("water")) return Droplets;
+  if (lower.includes("class") || lower.includes("maktab") || lower.includes("school") || lower.includes("study")) return GraduationCap;
+  if (lower.includes("kitchen") || lower.includes("hall") || lower.includes("dining")) return UtensilsCrossed;
+  if (lower.includes("counseling") || lower.includes("nikah") || lower.includes("marriage")) return HeartHandshake;
+  return Building2;
+}
+
+export function AboutFacilities({ facilities = [], loading = false }: AboutFacilitiesProps) {
   const { language } = useLanguage();
   const bn = language === "bn";
 
-  const facilities = [
+  if (!loading && facilities.length === 0) {
+    return null;
+  }
+
+  const defaultFacilities = [
     {
-      icon: Building2,
       nameEn: "Main Prayer Sanctuary",
       nameBn: "মূল জামাত কক্ষ (প্রধান হল)",
       descEn: "Expansive carpeted hall with central Qiblah mihrab, climate control, and clear audio system for daily and Jumu'ah congregations.",
       descBn: "শীতাতপ নিয়ন্ত্রিত ও পরিষ্কার গালিচাবিশিষ্ট সুবিশাল নামাজ হল—দৈনিক পাঁচ ওয়াক্ত ও জুমার বৃহৎ জামাতের জন্য সুসজ্জিত।",
+      capacity: 1200,
     },
     {
-      icon: Users,
       nameEn: "Dedicated Women's Gallery",
       nameBn: "মহিলাদের পৃথক ইবাদতকক্ষ",
       descEn: "Private, dedicated space with separate entrance, audio relay, wudu facilities, and comfortable accommodations for sisters and families.",
       descBn: "মা-বোনদের জন্য সম্পূর্ণ পর্দানশীন স্বতন্ত্র প্রবেশপথ, অডিও সম্প্রচার এবং সংলগ্ন আলাদা ওজুখানার সুবিধা।",
+      capacity: 300,
     },
     {
-      icon: Droplets,
       nameEn: "Modern Wudu & Ablution Center",
       nameBn: "আধুনিক ওজুখানা ও পবিত্রতার স্থান",
       descEn: "Hygienic, continuous-flow seated wudu stations, hot water supply in winter, and accessible restrooms.",
       descBn: "পর্যাপ্ত ট্যাপবিশিষ্ট পরিষ্কার ও আরামদায়ক বসার ওজুখানা, শীতকালে উষ্ণ পানি এবং পরিচ্ছন্ন শৌচাগার সুবিধা।",
+      capacity: 80,
     },
     {
-      icon: GraduationCap,
       nameEn: "Islamic Classrooms & Maktab",
       nameBn: "ইসলামিক শ্রেণিকক্ষ ও মক্তব",
       descEn: "Dedicated study rooms equipped for Quran memorization, Arabic language learning, and weekend children's classes.",
       descBn: "শিশুদের সহিহ কুরআন শিক্ষা, তাজবিদ অনুশীলন এবং সাপ্তাহিক দ্বীনি পাঠদানের জন্য আধুনিক ক্লাসরুম।",
+      capacity: 150,
     },
     {
-      icon: UtensilsCrossed,
       nameEn: "Community Hall & Welfare Kitchen",
       nameBn: "কমিউনিটি হল ও রমজান কিচেন",
       descEn: "Multi-purpose community hall hosting Ramadan community iftars, Islamic lectures, educational workshops, and charity sorting.",
       descBn: "মাহে রমজানের গণ-ইফতার, দ্বীনি সেমিনার ও সমাজের দুঃস্থ মানুষের জন্য খাদ্য সামগ্রী প্রস্তুত ও বিতরণ কেন্দ্র।",
+      capacity: 250,
     },
     {
-      icon: HeartHandshake,
       nameEn: "Family Counseling & Nikah Room",
       nameBn: "পরামর্শ কেন্দ্র ও নিকাহ কক্ষ",
       descEn: "Confidential room for spiritual guidance, marital counseling, bereavement support, and solemnization of marriage ceremonies.",
       descBn: "পারিবারিক সমস্যার ইসলামিক সমাধান, আত্মিক কাউন্সেলিং এবং সম্মানজনক বিবাহ (নিকাহ) নিবন্ধনের পবিত্র পরিবেশ।",
+      capacity: 30,
     },
   ];
+
+  const displayItems = facilities.length > 0
+    ? facilities.map((f) => ({
+        nameEn: f.name,
+        nameBn: f.name,
+        descEn: f.description || "Fully equipped modern mosque facility.",
+        descBn: f.description || "সুসজ্জিত আধুনিক মসজিদ সুবিধা।",
+        capacity: f.capacity,
+      }))
+    : defaultFacilities;
 
   return (
     <section className="py-20 sm:py-28 bg-[#fdfbf7] text-[#17211d] border-b border-[#eae6db] overflow-hidden">
@@ -81,8 +111,8 @@ export function AboutFacilities() {
 
         {/* Facilities Grid */}
         <div className="mt-12 sm:mt-16 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
-          {facilities.map((fac, idx) => {
-            const Icon = fac.icon;
+          {displayItems.map((fac, idx) => {
+            const Icon = getFacilityIcon(fac.nameEn);
 
             return (
               <div
@@ -102,7 +132,9 @@ export function AboutFacilities() {
                 </div>
 
                 <div className="mt-6 pt-3 border-t border-[#f0ede4] flex items-center justify-between text-[11px] text-[#0d4d3b] font-semibold uppercase tracking-wider">
-                  <span>{bn ? "উন্মুক্ত ও প্রস্তুত" : "Accessible"}</span>
+                  <span>
+                    {fac.capacity ? (bn ? `ধারণক্ষমতা: ${fac.capacity}` : `Capacity: ${fac.capacity}`) : (bn ? "উন্মুক্ত ও প্রস্তুত" : "Accessible")}
+                  </span>
                   <span className="text-[#c79a45]">✦</span>
                 </div>
               </div>
@@ -114,4 +146,3 @@ export function AboutFacilities() {
     </section>
   );
 }
-

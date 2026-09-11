@@ -21,6 +21,15 @@ export class PublicMosqueDto {
   description!: string | null;
 
   @ApiPropertyOptional({ nullable: true })
+  story!: string | null;
+
+  @ApiPropertyOptional({ nullable: true })
+  mission!: string | null;
+
+  @ApiPropertyOptional({ nullable: true })
+  vision!: string | null;
+
+  @ApiPropertyOptional({ nullable: true })
   addressLine!: string | null;
 
   @ApiPropertyOptional({ nullable: true })
@@ -31,6 +40,18 @@ export class PublicMosqueDto {
 
   @ApiPropertyOptional({ nullable: true })
   country!: string | null;
+
+  @ApiPropertyOptional({ nullable: true })
+  postalCode!: string | null;
+
+  @ApiPropertyOptional({ nullable: true })
+  phone!: string | null;
+
+  @ApiPropertyOptional({ nullable: true })
+  email!: string | null;
+
+  @ApiPropertyOptional({ nullable: true })
+  website!: string | null;
 
   @ApiPropertyOptional({ nullable: true })
   establishedYear!: number | null;
@@ -216,4 +237,183 @@ export class PublicCommunityStatsDto {
 
   @ApiProperty({ example: 500 })
   members!: number;
+
+  @ApiPropertyOptional({ example: 25 })
+  activeVolunteers?: number;
 }
+
+export class PublicFacilityDto {
+  @ApiProperty()
+  id!: string;
+
+  @ApiProperty()
+  name!: string;
+
+  @ApiPropertyOptional({ nullable: true })
+  description!: string | null;
+
+  @ApiPropertyOptional({ nullable: true })
+  capacity!: number | null;
+
+  static from(row: {
+    id: string;
+    name: string;
+    description: string | null;
+    capacity: number | null;
+  }): PublicFacilityDto {
+    return {
+      id: row.id,
+      name: row.name,
+      description: row.description,
+      capacity: row.capacity,
+    };
+  }
+}
+
+export class PublicLeadershipDto {
+  @ApiProperty()
+  id!: string;
+
+  @ApiProperty()
+  fullName!: string;
+
+  @ApiPropertyOptional({ nullable: true })
+  avatarUrl!: string | null;
+
+  @ApiProperty({ type: [String] })
+  positions!: string[];
+
+  @ApiProperty()
+  role!: string;
+
+  static from(row: {
+    id: string;
+    fullName: string;
+    avatarUrl: string | null;
+    positions: string[];
+    role: string;
+  }): PublicLeadershipDto {
+    return {
+      id: row.id,
+      fullName: row.fullName,
+      avatarUrl: row.avatarUrl,
+      positions: row.positions,
+      role: row.role,
+    };
+  }
+}
+
+export class PublicMilestoneDto {
+  @ApiProperty()
+  id!: string;
+
+  @ApiProperty()
+  year!: string;
+
+  @ApiProperty()
+  title!: string;
+
+  @ApiProperty()
+  description!: string;
+
+  @ApiProperty()
+  sortOrder!: number;
+
+  static from(row: {
+    id: string;
+    year: string;
+    title: string;
+    description: string;
+    sortOrder: number;
+  }): PublicMilestoneDto {
+    return {
+      id: row.id,
+      year: row.year,
+      title: row.title,
+      description: row.description,
+      sortOrder: row.sortOrder,
+    };
+  }
+}
+
+export class PublicValueDto {
+  @ApiProperty()
+  id!: string;
+
+  @ApiProperty()
+  num!: string;
+
+  @ApiPropertyOptional({ nullable: true })
+  icon!: string | null;
+
+  @ApiProperty()
+  title!: string;
+
+  @ApiPropertyOptional({ nullable: true })
+  subtitle!: string | null;
+
+  @ApiProperty()
+  description!: string;
+
+  @ApiProperty()
+  sortOrder!: number;
+
+  static from(row: {
+    id: string;
+    num: string;
+    icon: string | null;
+    title: string;
+    subtitle: string | null;
+    description: string;
+    sortOrder: number;
+  }): PublicValueDto {
+    return {
+      id: row.id,
+      num: row.num,
+      icon: row.icon,
+      title: row.title,
+      subtitle: row.subtitle,
+      description: row.description,
+      sortOrder: row.sortOrder,
+    };
+  }
+}
+
+export class PublicGalleryDto {
+  @ApiProperty()
+  id!: string;
+
+  @ApiProperty()
+  imageUrl!: string;
+
+  @ApiPropertyOptional({ nullable: true })
+  title!: string | null;
+
+  @ApiPropertyOptional({ nullable: true })
+  altText!: string | null;
+
+  @ApiProperty()
+  category!: string;
+
+  @ApiProperty()
+  sortOrder!: number;
+
+  static from(row: {
+    id: string;
+    imageUrl: string;
+    title: string | null;
+    altText: string | null;
+    category: string;
+    sortOrder: number;
+  }): PublicGalleryDto {
+    return {
+      id: row.id,
+      imageUrl: row.imageUrl,
+      title: row.title,
+      altText: row.altText,
+      category: row.category,
+      sortOrder: row.sortOrder,
+    };
+  }
+}
+

@@ -41,6 +41,24 @@ export class UpdateMosqueDto {
   @Transform(trimmed)
   description?: string;
 
+  @ApiPropertyOptional({ description: 'Detailed story and history narrative for the About page' })
+  @IsOptional()
+  @IsString()
+  @Transform(trimmed)
+  story?: string;
+
+  @ApiPropertyOptional({ description: 'Mosque mission statement' })
+  @IsOptional()
+  @IsString()
+  @Transform(trimmed)
+  mission?: string;
+
+  @ApiPropertyOptional({ description: 'Mosque long-term vision' })
+  @IsOptional()
+  @IsString()
+  @Transform(trimmed)
+  vision?: string;
+
   @ApiPropertyOptional()
   @IsOptional()
   @IsEmail({}, { message: 'email must be a valid email address' })

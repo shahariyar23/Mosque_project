@@ -1,12 +1,13 @@
+"use client";
+
+import { useState } from "react";
 import { initialsOf } from "@/lib/mosque/format";
 
 /**
- * Initials avatar. There are no member photographs in the system, so an avatar is a coloured
- * monogram — and the colour is derived from the name rather than stored, so the same person is the
- * same colour on every screen without a field to keep in sync.
+ * Monogram and photograph avatar. Renders a photograph from Cloudinary when
+ * available, falling back to a deterministic coloured monogram.
  *
- * Always `aria-hidden`: the name it stands for is invariably rendered next to it, and announcing
- * "AR" before "Ahmed Rahman" adds nothing.
+ * Always `aria-hidden`: the name it stands for is invariably rendered next to it.
  */
 
 const palettes = [
@@ -35,13 +36,37 @@ function paletteFor(name: string): string {
 
 export function Avatar({
   name,
+  imageUrl,
+  avatarUrl,
   size = "md",
   className = "",
 }: {
   name: string;
+  imageUrl?: string | null;
+  avatarUrl?: string | null;
   size?: AvatarSize;
   className?: string;
 }) {
+  const photo = imageUrl || avatarUrl;
+  const [imageFailed, setImageFailed] = useState(false);
+
+  if (photo && !imageFailed) {
+    return (
+      <span
+        aria-hidden="true"
+        className={`relative inline-block shrink-0 overflow-hidden rounded-full border border-[#dcdacd] bg-[#f2f1ea] ${sizes[size]} ${className}`}
+      >
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src={photo}
+          alt={name}
+          className="h-full w-full object-cover"
+          onError={() => setImageFailed(true)}
+        />
+      </span>
+    );
+  }
+
   return (
     <span
       aria-hidden="true"
@@ -53,21 +78,25 @@ export function Avatar({
 }
 
 /**
- * Avatar plus name and a line of supporting text — the first cell of the members, volunteers and
- * registrations tables. One component so those three tables cannot drift apart.
+ * Avatar plus name and a line of supporting text — the first cell of the members, volunteers,
+ * committee and registrations tables.
  */
 export function PersonCell({
   name,
   meta,
+  imageUrl,
+  avatarUrl,
   size = "md",
 }: {
   name: string;
   meta?: string;
+  imageUrl?: string | null;
+  avatarUrl?: string | null;
   size?: AvatarSize;
 }) {
   return (
     <span className="flex min-w-0 items-center gap-2.5">
-      <Avatar name={name} size={size} />
+      <Avatar name={name} imageUrl={imageUrl} avatarUrl={avatarUrl} size={size} />
       <span className="min-w-0">
         <span className="block truncate font-medium text-[#17211d]">{name}</span>
         {meta ? <span className="block truncate text-[12px] font-normal text-[#69726d]">{meta}</span> : null}
@@ -75,3 +104,4 @@ export function PersonCell({
     </span>
   );
 }
+

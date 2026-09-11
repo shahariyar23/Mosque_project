@@ -4,12 +4,22 @@ import Image from "next/image";
 import Link from "next/link";
 import { useLanguage } from "@/components/language-provider";
 import { BookOpen, Check, ArrowRight } from "lucide-react";
+import { type PublicService } from "@/services/publicHomeService";
 
-export function AboutEducation() {
+interface AboutEducationProps {
+  services?: PublicService[];
+  loading?: boolean;
+}
+
+export function AboutEducation({ services = [], loading = false }: AboutEducationProps) {
   const { language } = useLanguage();
   const bn = language === "bn";
 
-  const programs = [
+  const educationServices = services.filter(
+    (s) => s.category?.toLowerCase() === "education"
+  );
+
+  const defaultPrograms = [
     {
       titleEn: "Quran Reading & Tajweed for Children",
       titleBn: "শিশুদের সহিহ কুরআন ও তাজবিদ শিক্ষা",
@@ -35,6 +45,15 @@ export function AboutEducation() {
       descBn: "জুমার নামাজের পর ও ছুটির দিনে আয়োজিত উন্মুক্ত তাফসির মাহফিল ও রাসুলুল্লাহ ﷺ-এর জীবনচরিত আলোচনা।",
     },
   ];
+
+  const displayPrograms = educationServices.length > 0
+    ? educationServices.map((s) => ({
+        titleEn: s.name,
+        titleBn: s.name,
+        descEn: s.description || s.summary || "Authentic Islamic education and learning program.",
+        descBn: s.description || s.summary || "বিশুদ্ধ ইসলামি শিক্ষা ও চরিত্র গঠনের নির্ভরযোগ্য আয়োজন।",
+      }))
+    : defaultPrograms;
 
   return (
     <section className="py-20 sm:py-28 bg-[#fbf9f4] text-[#17211d] border-b border-[#eae6db] overflow-hidden">
@@ -70,7 +89,7 @@ export function AboutEducation() {
 
             {/* Program Items List */}
             <div className="mt-8 space-y-4">
-              {programs.map((prog, i) => (
+              {displayPrograms.map((prog, i) => (
                 <div
                   key={i}
                   className="p-4 sm:p-5 rounded-2xl bg-white border border-[#e8e4d9] hover:border-[#c79a45] transition duration-200 shadow-sm flex items-start gap-3.5"
@@ -142,4 +161,3 @@ export function AboutEducation() {
     </section>
   );
 }
-

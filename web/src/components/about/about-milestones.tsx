@@ -1,46 +1,62 @@
 "use client";
 
 import { useLanguage } from "@/components/language-provider";
-import { CheckCircle2, Milestone } from "lucide-react";
+import { Milestone } from "lucide-react";
+import { type PublicMilestone } from "@/services/publicHomeService";
 
-export function AboutMilestones() {
+interface AboutMilestonesProps {
+  milestones?: PublicMilestone[];
+  loading?: boolean;
+}
+
+export function AboutMilestones({ milestones = [], loading = false }: AboutMilestonesProps) {
   const { language } = useLanguage();
   const bn = language === "bn";
 
-  const milestones = [
-    {
-      year: "1987",
-      yearBn: "১৯৮৭",
-      titleEn: "Foundation & Sacred Beginning",
-      titleBn: "মসজিদের প্রতিষ্ঠা ও শুভ সূচনা",
-      descEn: "Founded as a local neighborhood sanctuary by devoted community elders to establish regular daily prayers.",
-      descBn: "এলাকার নিবেদিতপ্রাণ মুসল্লি ও প্রবীণদের আন্তরিক উদ্যোগে পাঁচ ওয়াক্ত জামাত কায়েমের লক্ষ্যে নূর মসজিদের শুভ ভিত্তিপ্রস্তর স্থাপিত হয়।",
-    },
-    {
-      year: "2004",
-      yearBn: "২০০৪",
-      titleEn: "Islamic Maktab & Quran Academy",
-      titleBn: "মক্তব ও কুরআন শিক্ষা কার্যক্রম",
-      descEn: "Inaugurated dedicated morning and evening Quran memorization and Islamic foundational classes for neighborhood youth.",
-      descBn: "শিশুকিশোরদের শুদ্ধ কুরআন তিলাওয়াত, তাজবিদ ও বুনিয়াদি দ্বীনি শিক্ষা দিতে নিয়মিত সকাল-সন্ধ্যার মক্তব ক্লাসের যাত্রা শুরু।",
-    },
-    {
-      year: "2016",
-      yearBn: "২০১৬",
-      titleEn: "Sanctuary & Community Expansion",
-      titleBn: "মসজিদ প্রাঙ্গণ ও আধুনিকায়ন",
-      descEn: "Expanded the main prayer hall, added dedicated women's prayer facilities, and modernized ablution areas.",
-      descBn: "মুসল্লিদের স্থান সংকুলান দূর করতে প্রধান হলরুম সম্প্রসারণ, আধুনিক ওজুখানা এবং মা-বোনদের জন্য সুপ্রশস্ত আলাদা নামাজের ব্যবস্থা সংযোজন।",
-    },
-    {
-      year: "2024",
-      yearBn: "২০২৪",
-      titleEn: "Digital Prayer & Community Portal",
-      titleBn: "ডিজিটাল সেবা ও স্বচ্ছতা পোর্টাল",
-      descEn: "Introduced digital prayer timing displays, online event bookings, community welfare tracking, and financial transparency.",
-      descBn: "লাইভ নামাজের সময়সূচি, অনলাইন দান অনুদান, জরুরি সাহায্য ফান্ড এবং সম্পূর্ণ স্বচ্ছ হিসাব ব্যবস্থাপনায় ডিজিটাল নূর পোর্টালের আত্মপ্রকাশ।",
-    },
-  ];
+  // Fallback items if loading or empty in development
+  const displayItems = milestones.length > 0
+    ? milestones.map((m) => ({
+        year: m.year,
+        yearBn: m.year,
+        titleEn: m.title,
+        titleBn: m.title,
+        descEn: m.description,
+        descBn: m.description,
+      }))
+    : [
+        {
+          year: "1987",
+          yearBn: "১৯৮৭",
+          titleEn: "Foundation & Sacred Beginning",
+          titleBn: "মসজিদের প্রতিষ্ঠা ও শুভ সূচনা",
+          descEn: "Founded as a local neighborhood sanctuary by devoted community elders to establish regular daily prayers.",
+          descBn: "এলাকার নিবেদিতপ্রাণ মুসল্লি ও প্রবীণদের আন্তরিক উদ্যোগে পাঁচ ওয়াক্ত জামাত কায়েমের লক্ষ্যে নূর মসজিদের শুভ ভিত্তিপ্রস্তর স্থাপিত হয়।",
+        },
+        {
+          year: "2004",
+          yearBn: "২০০৪",
+          titleEn: "Islamic Maktab & Quran Academy",
+          titleBn: "মক্তব ও কুরআন শিক্ষা কার্যক্রম",
+          descEn: "Inaugurated dedicated morning and evening Quran memorization and Islamic foundational classes for neighborhood youth.",
+          descBn: "শিশুকিশোরদের শুদ্ধ কুরআন তিলাওয়াত, তাজবিদ ও বুনিয়াদি দ্বীনি শিক্ষা দিতে নিয়মিত সকাল-সন্ধ্যার মক্তব ক্লাসের যাত্রা শুরু।",
+        },
+        {
+          year: "2016",
+          yearBn: "২০১৬",
+          titleEn: "Sanctuary & Community Expansion",
+          titleBn: "মসজিদ প্রাঙ্গণ ও আধুনিকায়ন",
+          descEn: "Expanded the main prayer hall, added dedicated women's prayer facilities, and modernized ablution areas.",
+          descBn: "মুসল্লিদের স্থান সংকুলান দূর করতে প্রধান হলরুম সম্প্রসারণ, আধুনিক ওজুখানা এবং মা-বোনদের জন্য সুপ্রশস্ত আলাদা নামাজের ব্যবস্থা সংযোজন।",
+        },
+        {
+          year: "2024",
+          yearBn: "২০২৪",
+          titleEn: "Digital Prayer & Community Portal",
+          titleBn: "ডিজিটাল সেবা ও স্বচ্ছতা পোর্টাল",
+          descEn: "Introduced digital prayer timing displays, online event bookings, community welfare tracking, and financial transparency.",
+          descBn: "লাইভ নামাজের সময়সূচি, অনলাইন দান অনুদান, জরুরি সাহায্য ফান্ড এবং সম্পূর্ণ স্বচ্ছ হিসাব ব্যবস্থাপনায় ডিজিটাল নূর পোর্টালের আত্মপ্রকাশ।",
+        },
+      ];
 
   return (
     <section className="relative py-16 xs:py-20 sm:py-24 bg-white text-[#17211d] border-y border-[#eae6db] overflow-hidden">
@@ -69,12 +85,12 @@ export function AboutMilestones() {
 
           {/* Timeline Milestones */}
           <div className="space-y-10 sm:space-y-14">
-            {milestones.map((item, index) => {
+            {displayItems.map((item, index) => {
               const isEven = index % 2 === 0;
 
               return (
                 <div
-                  key={item.year}
+                  key={`${item.year}-${index}`}
                   className={`relative flex flex-col sm:flex-row items-start ${
                     isEven ? "sm:flex-row-reverse" : ""
                   } group`}
@@ -116,4 +132,3 @@ export function AboutMilestones() {
     </section>
   );
 }
-

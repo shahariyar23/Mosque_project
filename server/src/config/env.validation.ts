@@ -175,6 +175,22 @@ export class EnvironmentVariables {
   @IsInt()
   @Min(0)
   PRAYER_CACHE_TTL_SECONDS = 86400;
+
+  @IsOptional()
+  @IsString()
+  CLOUDINARY_CLOUD_NAME?: string;
+
+  @IsOptional()
+  @IsString()
+  CLOUDINARY_API_KEY?: string;
+
+  @IsOptional()
+  @IsString()
+  CLOUDINARY_API_SECRET?: string;
+
+  @IsOptional()
+  @IsString()
+  CLOUDINARY_URL?: string;
 }
 
 /** `"1" | "true" | "yes" | "on"` → true. Anything else present → false. */
@@ -227,6 +243,14 @@ export function validateEnvironment(raw: Record<string, unknown>): EnvironmentVa
       // An empty value has to become absent rather than fail the URL check, so that a commented-out
       // or blank line in .env means "use the fallback" instead of stopping boot.
       APP_WEB_URL: raw.APP_WEB_URL === '' ? undefined : raw.APP_WEB_URL,
+      CLOUDINARY_CLOUD_NAME:
+        raw.CLOUDINARY_CLOUD_NAME === '' ? undefined : (raw.CLOUDINARY_CLOUD_NAME as string | undefined),
+      CLOUDINARY_API_KEY:
+        raw.CLOUDINARY_API_KEY === '' ? undefined : (raw.CLOUDINARY_API_KEY as string | undefined),
+      CLOUDINARY_API_SECRET:
+        raw.CLOUDINARY_API_SECRET === '' ? undefined : (raw.CLOUDINARY_API_SECRET as string | undefined),
+      CLOUDINARY_URL:
+        raw.CLOUDINARY_URL === '' ? undefined : (raw.CLOUDINARY_URL as string | undefined),
     },
     { enableImplicitConversion: false, exposeDefaultValues: true },
   );

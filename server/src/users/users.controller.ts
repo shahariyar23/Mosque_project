@@ -1,3 +1,4 @@
+import 'multer';
 import {
   Body,
   Controller,
@@ -10,11 +11,16 @@ import {
   Patch,
   Post,
   Query,
+  UploadedFile,
+  UseInterceptors,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import {
   ApiBadRequestResponse,
   ApiBearerAuth,
+  ApiBody,
   ApiConflictResponse,
+  ApiConsumes,
   ApiCreatedResponse,
   ApiForbiddenResponse,
   ApiNotFoundResponse,
@@ -191,6 +197,38 @@ export class UsersController {
       success: true,
       message: 'User updated successfully',
       data: await this.users.update(id, dto, actor),
+    };
+  }
+
+  @Post(':id/avatar')
+  @AnyPermission('user.manage', 'profile.manageOwn')
+  @UseInterceptors(FileInterceptor('file'))
+  @ApiConsumes('multipart/form-data')
+  @ApiOperation({
+    summary: 'Upload a profile avatar to Cloudinary.',
+    description:
+      'Requires `user.manage`, or `profile.manageOwn` when uploading for one’s own account.',
+  })
+  @ApiParam({ name: 'id', format: 'uuid', description: 'The user id.' })
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        file: { type: 'string', format: 'binary' },
+      },
+      required: ['file'],
+    },
+  })
+  @ApiOkResponse({ description: 'The updated user with new avatarUrl.', type: UserEnvelopeDto })
+  async uploadAvatar(
+    @Param('id', ParseUUIDPipe) id: string,
+    @UploadedFile() file: Express.Multer.File,
+    @CurrentUser() actor: AuthenticatedUser,
+  ): Promise<UserEnvelopeDto> {
+    return {
+      success: true,
+      message: 'Avatar uploaded successfully',
+      data: await this.users.uploadAvatar(id, file, actor),
     };
   }
 

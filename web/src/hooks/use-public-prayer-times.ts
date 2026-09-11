@@ -6,10 +6,41 @@ import {
   fetchPublicJumuah,
   DEFAULT_PUBLIC_MOSQUE_SLUG,
   type PublicJumuahEntry,
+  type PublicPrayerTimes,
 } from "@/services/publicHomeService";
 
 const PRAYER_ORDER = ["fajr", "sunrise", "dhuhr", "asr", "maghrib", "isha"] as const;
 type PrayerKey = (typeof PRAYER_ORDER)[number];
+
+type PublicPrayerData = {
+  prayerTimes: PublicPrayerTimes | null;
+  jumuahEntries: PublicJumuahEntry[];
+};
+
+const publicPrayerDataRequests = new Map<string, Promise<PublicPrayerData>>();
+
+/**
+ * The header and prayer pages can mount together. Share their in flight request so one visitor
+ * only asks the public API for a day's schedule once, while the countdown continues entirely
+ * in each browser from that returned schedule.
+ */
+function fetchPublicPrayerData(mosqueSlug: string) {
+  const existingRequest = publicPrayerDataRequests.get(mosqueSlug);
+  if (existingRequest) return existingRequest;
+
+  const request = Promise.all([
+    fetchPublicTodayPrayerTimes(mosqueSlug),
+    fetchPublicJumuah(mosqueSlug),
+  ])
+    .then(([prayerTimes, jumuahEntries]) => ({ prayerTimes, jumuahEntries }))
+    .catch((error: unknown) => {
+      publicPrayerDataRequests.delete(mosqueSlug);
+      throw error;
+    });
+
+  publicPrayerDataRequests.set(mosqueSlug, request);
+  return request;
+}
 
 export type PrayerDisplay = {
   id: PrayerKey;
@@ -25,6 +56,7 @@ export type PrayerTimesState = {
   jumuah: PublicJumuahEntry[];
   timezone: string;
   hijriDate: string | null;
+  hijri: PublicPrayerTimes["hijri"];
   nextPrayerIndex: number;
   countdownSeconds: number;
   loading: boolean;
@@ -92,6 +124,7 @@ export function usePublicPrayerTimes(mosqueSlug: string = DEFAULT_PUBLIC_MOSQUE_
     jumuah: [],
     timezone: "Asia/Dhaka",
     hijriDate: null,
+    hijri: null,
     nextPrayerIndex: 0,
     countdownSeconds: 0,
     loading: true,
@@ -138,10 +171,7 @@ export function usePublicPrayerTimes(mosqueSlug: string = DEFAULT_PUBLIC_MOSQUE_
 
     async function load() {
       try {
-        const [prayerTimes, jumuahEntries] = await Promise.all([
-          fetchPublicTodayPrayerTimes(mosqueSlug),
-          fetchPublicJumuah(mosqueSlug),
-        ]);
+        const { prayerTimes, jumuahEntries } = await fetchPublicPrayerData(mosqueSlug);
 
         if (!mounted) return;
 
@@ -182,6 +212,7 @@ export function usePublicPrayerTimes(mosqueSlug: string = DEFAULT_PUBLIC_MOSQUE_
           jumuah: jumuahEntries || [],
           timezone: tz,
           hijriDate,
+          hijri: prayerTimes.hijri,
           loading: false,
           error: null,
         }));

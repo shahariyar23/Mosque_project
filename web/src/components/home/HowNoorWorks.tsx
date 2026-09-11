@@ -1,7 +1,9 @@
 "use client";
 
+import { useRef } from "react";
 import { useLanguage } from "@/components/language-provider";
 import { UserPlus, Building2, Compass, Bell } from "lucide-react";
+import { gsap, useIsomorphicLayoutEffect } from "@/lib/gsap";
 
 const steps = [
   {
@@ -37,11 +39,45 @@ const steps = [
 export function HowNoorWorks() {
   const { language } = useLanguage();
   const bn = language === "bn";
+  const sectionRef = useRef<HTMLElement>(null);
+
+  useIsomorphicLayoutEffect(() => {
+    const section = sectionRef.current;
+    if (!section || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+
+    const context = gsap.context(() => {
+      gsap.fromTo(
+        ".how-noor-heading",
+        { autoAlpha: 0, y: 18 },
+        {
+          autoAlpha: 1,
+          y: 0,
+          duration: 0.55,
+          ease: "power3.out",
+          scrollTrigger: { trigger: section, start: "top 78%", once: true },
+        },
+      );
+      gsap.fromTo(
+        ".how-noor-step",
+        { autoAlpha: 0, y: 24 },
+        {
+          autoAlpha: 1,
+          y: 0,
+          duration: 0.5,
+          stagger: 0.1,
+          ease: "power3.out",
+          scrollTrigger: { trigger: section, start: "top 72%", once: true },
+        },
+      );
+    }, section);
+
+    return () => context.revert();
+  }, []);
 
   return (
-    <section className="bg-[#0d4d3b] px-4 py-12 sm:py-16 lg:px-8 text-white">
+    <section ref={sectionRef} className="bg-[#0d4d3b] px-4 py-12 sm:py-16 lg:px-8 text-white">
       <div className="mx-auto max-w-7xl">
-        <div className="text-center mb-8 sm:mb-12">
+        <div className="how-noor-heading text-center mb-8 sm:mb-12">
           <span className="text-xs font-bold tracking-[0.2em] text-[#c79a45] uppercase">
             {bn ? "কিভাবে কাজ করে" : "HOW IT WORKS"}
           </span>
@@ -57,7 +93,7 @@ export function HowNoorWorks() {
           {steps.map(({ icon: Icon, titleEn, titleBn, descEn, descBn }, idx) => (
             <div
               key={titleEn}
-              className="relative rounded-lg border border-white/10 bg-white/5 p-5 text-center transition-colors hover:bg-white/10"
+              className="how-noor-step relative rounded-lg border border-white/10 bg-white/5 p-5 text-center transition-colors hover:bg-white/10"
             >
               <span className="absolute -top-3 left-1/2 -translate-x-1/2 flex h-6 w-6 items-center justify-center rounded-full bg-[#c79a45] text-xs font-bold text-[#0d4d3b]">
                 {idx + 1}

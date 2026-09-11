@@ -2,6 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { NotFoundException } from '@nestjs/common';
 import { MosqueService } from './mosque.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { CloudinaryService } from '../common/cloudinary/cloudinary.service';
 
 describe('MosqueService', () => {
   let service: MosqueService;
@@ -33,6 +34,14 @@ describe('MosqueService', () => {
               update: jest.fn(),
               delete: jest.fn(),
             },
+          },
+        },
+        {
+          provide: CloudinaryService,
+          useValue: {
+            uploadImage: jest.fn(),
+            deleteAsset: jest.fn(),
+            isConfigured: jest.fn().mockReturnValue(true),
           },
         },
       ],
@@ -111,6 +120,37 @@ describe('MosqueService', () => {
       const result = await service.deleteFacility(mockMosqueId, mockFacilityId);
       expect(result).toEqual(facility);
       expect(prisma.facility.delete).toHaveBeenCalledWith({ where: { id: mockFacilityId } });
+    });
+  });
+
+  describe('uploadLogo', () => {
+    it('should upload logo to cloudinary and update mosque.logoUrl', async () => {
+      const mockFile = {
+        buffer: Buffer.from('test'),
+        mimetype: 'image/png',
+        size: 1024,
+      } as Express.Multer.File;
+
+      const cloudinary = (service as any).cloudinary;
+      (cloudinary.uploadImage as jest.Mock).mockResolvedValue({
+        secureUrl: 'https://cloudinary.com/logo.png',
+        publicId: 'branding/logo',
+      });
+      (prisma.mosque.update as jest.Mock).mockResolvedValue({
+        id: mockMosqueId,
+        logoUrl: 'https://cloudinary.com/logo.png',
+      });
+
+      const result = await service.uploadLogo(mockMosqueId, mockFile);
+      expect(cloudinary.uploadImage).toHaveBeenCalledWith(
+        mockFile.buffer,
+        `mosques/${mockMosqueId}/branding`,
+      );
+      expect(prisma.mosque.update).toHaveBeenCalledWith({
+        where: { id: mockMosqueId },
+        data: { logoUrl: 'https://cloudinary.com/logo.png' },
+      });
+      expect(result.logoUrl).toEqual('https://cloudinary.com/logo.png');
     });
   });
 });

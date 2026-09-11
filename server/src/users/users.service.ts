@@ -1,3 +1,4 @@
+import 'multer';
 import {
   BadRequestException,
   ConflictException,
@@ -9,6 +10,7 @@ import {
 import { Prisma, type Role } from '@prisma/client';
 import * as argon2 from 'argon2';
 
+import { CloudinaryService } from '../common/cloudinary/cloudinary.service';
 import { AuditLogService } from '../audit/audit-log.service';
 import { definedChanges, type AuditEntry } from '../audit/types/audit-log.types';
 import type { Permission } from '../common/constants/permissions';
@@ -77,6 +79,7 @@ export class UsersService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditLogService,
+    private readonly cloudinary: CloudinaryService,
   ) {}
 
   /**
@@ -264,6 +267,54 @@ export class UsersService {
         ...(emailChanged ? { emailVerifiedAt: null } : {}),
       }),
       ...(id === actor.id ? { note: 'Self-service profile edit.' } : {}),
+    });
+
+    return UserResponseDto.from(updated);
+  }
+
+  /**
+   * Uploads an avatar image to Cloudinary and updates the user's profile.
+   */
+  async uploadAvatar(
+    id: string,
+    file: Express.Multer.File,
+    actor: AuthenticatedUser,
+  ): Promise<UserResponseDto> {
+    this.assertMayEditProfile(id, actor);
+
+    if (!file) {
+      throw new BadRequestException('Image file is required.');
+    }
+
+    const allowedMimes = ['image/jpeg', 'image/png', 'image/webp'];
+    if (!allowedMimes.includes(file.mimetype)) {
+      throw new BadRequestException(
+        `Unsupported file type: ${file.mimetype}. Allowed: JPG, PNG, WebP.`,
+      );
+    }
+
+    if (file.size > 5 * 1024 * 1024) {
+      throw new BadRequestException('File exceeds 5MB size limit.');
+    }
+
+    const target = await this.load(id, actor);
+    const folder = `mosques/${target.mosqueId}/avatars`;
+    const uploaded = await this.cloudinary.uploadImage(file.buffer, folder);
+
+    const updated = await this.prisma.user.update({
+      where: { id },
+      data: { avatarUrl: uploaded.secureUrl },
+      select: USER_SELECT,
+    });
+
+    await this.audit.record({
+      ...this.actorOf(actor),
+      mosqueId: target.mosqueId,
+      action: 'USER_UPDATED',
+      resource: 'user',
+      resourceId: id,
+      changes: { avatarUrl: { from: null, to: uploaded.secureUrl } },
+      ...(id === actor.id ? { note: 'Self-service avatar upload.' } : {}),
     });
 
     return UserResponseDto.from(updated);
@@ -668,6 +719,7 @@ export class UsersService {
       // `positions` is a scalar list, so the filter asks whether it contains the post rather than
       // whether it equals it: someone who is both treasurer and cashier must appear under each.
       ...(query.position ? { positions: { has: query.position } } : {}),
+      ...(query.hasPositions === true ? { positions: { isEmpty: false } } : {}),
       ...(search
         ? {
             OR: [

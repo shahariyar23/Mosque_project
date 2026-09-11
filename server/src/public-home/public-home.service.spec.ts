@@ -48,6 +48,7 @@ describe('PublicHomeService', () => {
             donationFund: { count: jest.fn() },
             jumuahSchedule: { count: jest.fn() },
             user: { count: jest.fn() },
+            volunteer: { count: jest.fn() },
           },
         },
         {
@@ -262,6 +263,7 @@ describe('PublicHomeService', () => {
       (prisma.event.count as jest.Mock).mockResolvedValue(2);
       (prisma.donationFund.count as jest.Mock).mockResolvedValue(1);
       (prisma.user.count as jest.Mock).mockResolvedValue(9);
+      (prisma.volunteer.count as jest.Mock).mockResolvedValue(5);
 
       const stats = await service.getCommunityStats(SLUG);
 
@@ -270,6 +272,7 @@ describe('PublicHomeService', () => {
         upcomingEvents: 2,
         publicFunds: 1,
         members: 9,
+        activeVolunteers: 5,
       });
 
       expect(prisma.service.count).toHaveBeenCalledWith(

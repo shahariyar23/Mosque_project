@@ -4,13 +4,25 @@ import { useLanguage } from "@/components/language-provider";
 import { gsap, ScrollTrigger, useIsomorphicLayoutEffect } from "@/lib/gsap";
 import dynamic from "next/dynamic";
 
+import { useMosqueBranding } from "@/components/mosque-branding-provider";
+import { usePublicHomeData } from "@/hooks/use-public-home-data";
+
 const About3D = dynamic(() => import("@/components/home/About3D"), { ssr: false });
 
 export function AboutSection() {
   const { language } = useLanguage();
   const bn = language === "bn";
+  const { branding } = useMosqueBranding();
+  const { data: homeData } = usePublicHomeData();
   const containerRef = useRef<HTMLElement | null>(null);
   const imageRef = useRef<HTMLDivElement | null>(null);
+
+  const currentYear = new Date().getFullYear();
+  const establishedYear = branding.establishedYear ?? homeData.mosque?.establishedYear ?? 1987;
+  const yearsServing = Math.max(1, currentYear - establishedYear);
+  const activeServices = homeData.stats?.activeServices ?? 25;
+  const membersCount = homeData.stats?.members ?? 1000;
+  const volunteersCount = homeData.stats?.activeVolunteers ?? 50;
 
   useIsomorphicLayoutEffect(() => {
     if (!containerRef.current || !imageRef.current) return;
@@ -47,24 +59,24 @@ export function AboutSection() {
     ? {
         eyebrow: "আমাদের মসজিদ সম্পর্কে",
         title: "ইবাদত, শিক্ষা ও সম্প্রদায়ের একটি স্থান।",
-        text: "দুই দশকেরও বেশি সময় ধরে নূর কমিউনিটি মসজিদ সব শ্রেণির মানুষের আধ্যাত্মিক ঠিকানা—সেবা, সহমর্মিতা ও যৌথ শিক্ষায় প্রতিষ্ঠিত।",
+        text: `${establishedYear} সাল থেকে নূর কমিউনিটি মসজিদ সব শ্রেণির মানুষের আধ্যাত্মিক ঠিকানা—সেবা, সহমর্মিতা ও যৌথ শিক্ষায় প্রতিষ্ঠিত।`,
         stats: [
-          ["২০+", "বছরের সেবা"],
-          ["৫০০০+", "সদস্য"],
-          ["২৫+", "কার্যক্রম"],
-          ["৫০+", "স্বেচ্ছাসেবক"],
+          [`${yearsServing}+`, "বছরের সেবা"],
+          [`${membersCount}+`, "পরিবার ও মুসল্লি"],
+          [`${activeServices}+`, "কার্যক্রম"],
+          [`${volunteersCount}+`, "স্বেচ্ছাসেবক"],
         ],
         action: "আমাদের সম্পর্কে আরও জানুন",
       }
     : {
         eyebrow: "ABOUT OUR MOSQUE",
         title: "A place of worship, learning and community.",
-        text: "For over two decades, Noor Community Mosque has been a spiritual home for people from every walk of life—rooted in service, compassion and shared learning.",
+        text: `Serving since ${establishedYear}, Noor Community Mosque has been a spiritual home for people from every walk of life—rooted in service, compassion and shared learning.`,
         stats: [
-          ["20+", "Years Serving"],
-          ["5000+", "Members"],
-          ["25+", "Programs"],
-          ["50+", "Volunteers"],
+          [`${yearsServing}+`, "Years Serving"],
+          [`${membersCount}+`, "Worshippers"],
+          [`${activeServices}+`, "Programs"],
+          [`${volunteersCount}+`, "Volunteers"],
         ],
         action: "Learn More About Us",
       };

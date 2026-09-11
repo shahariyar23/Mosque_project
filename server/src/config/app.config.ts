@@ -100,4 +100,16 @@ export const env = {
 
   prayerCacheTtlSeconds: (config: AppConfig): number =>
     config.get('PRAYER_CACHE_TTL_SECONDS', { infer: true }),
+
+  cloudinaryCloudName: (config: AppConfig): string | undefined =>
+    config.get('CLOUDINARY_CLOUD_NAME', { infer: true }),
+
+  cloudinaryApiKey: (config: AppConfig): string | undefined =>
+    config.get('CLOUDINARY_API_KEY', { infer: true }),
+
+  cloudinaryApiSecret: (config: AppConfig): string | undefined =>
+    config.get('CLOUDINARY_API_SECRET', { infer: true }),
+
+  cloudinaryUrl: (config: AppConfig): string | undefined =>
+    config.get('CLOUDINARY_URL', { infer: true }),
 };

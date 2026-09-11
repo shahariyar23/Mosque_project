@@ -1,10 +1,12 @@
+"use client";
+
 /**
  * `/events` — Mosque Community Events and Programmes.
  *
  * Connects frontend views to the NestJS Events API at `/api/v1/events`.
  */
 
-import { apiDeleteRaw, apiGetRaw, apiPatchRaw, apiPostRaw } from "./apiClient";
+import { apiDeleteRaw, apiGetRaw, apiPatchRaw, apiPostRaw, apiUploadRaw } from "./apiClient";
 import type {
   EventCategory,
   EventStatus,
@@ -210,6 +212,25 @@ export async function updateEvent(id: string, input: UpdateEventInput): Promise<
  */
 export async function deleteEvent(id: string): Promise<MosqueEvent> {
   const result = await apiDeleteRaw<BackendEvent>(`/events/${encodeURIComponent(id)}`);
+  return toFrontendEvent(result);
+}
+
+/**
+ * Upload an event banner / poster image to Cloudinary CDN.
+ */
+export async function uploadEventImage(file: File): Promise<{ url: string; publicId: string }> {
+  const formData = new FormData();
+  formData.append("file", file);
+  return apiUploadRaw<{ url: string; publicId: string }>("/events/upload-image", formData);
+}
+
+/**
+ * Upload an image and immediately update an existing event.
+ */
+export async function uploadEventImageForEvent(id: string, file: File): Promise<MosqueEvent> {
+  const formData = new FormData();
+  formData.append("file", file);
+  const result = await apiUploadRaw<BackendEvent>(`/events/${encodeURIComponent(id)}/image`, formData);
   return toFrontendEvent(result);
 }
 

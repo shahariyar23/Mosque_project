@@ -3,10 +3,21 @@
 import Image from "next/image";
 import { useLanguage } from "@/components/language-provider";
 import { Heart, Users, Sparkles } from "lucide-react";
+import { type PublicMosqueInfo } from "@/services/publicHomeService";
 
-export function AboutStory() {
+interface AboutStoryProps {
+  mosque?: PublicMosqueInfo | null;
+  loading?: boolean;
+}
+
+export function AboutStory({ mosque, loading = false }: AboutStoryProps) {
   const { language } = useLanguage();
   const bn = language === "bn";
+
+  // Split story into paragraphs if it exists
+  const backendStoryParagraphs = mosque?.story
+    ? mosque.story.split("\n\n").filter(Boolean)
+    : [];
 
   return (
     <section id="our-story" className="relative py-16 xs:py-20 sm:py-24 bg-[#f8f6ef] text-[#17211d] overflow-hidden">
@@ -71,16 +82,24 @@ export function AboutStory() {
 
             {/* Narrative Paragraphs */}
             <div className="mt-5 sm:mt-6 space-y-4 text-sm xs:text-base text-[#4a5852] leading-relaxed">
-              <p>
-                {bn
-                  ? "নূর কমিউনিটি মসজিদ প্রতিষ্ঠিত হয়েছে একটি সহজ ও মহৎ লক্ষ্য নিয়ে: মহান আল্লাহর সন্তুষ্টির উদ্দেশ্যে একটি পবিত্র ইবাদতগাহ গড়ে তোলা, যেখানে প্রতিটি মানুষ সমান সমাদরে সমবেত হতে পারে। প্রজন্মের পর প্রজন্ম ধরে এটি হয়ে উঠেছে আমাদের এলাকার এক নির্ভরযোগ্য আধ্যাত্মিক বাতিঘর।"
-                  : "Noor Community Mosque was established with a clear and humble mission: to maintain a pure sanctuary for the worship of Allah, where every individual—young and old, resident and traveler—finds welcoming tranquility, compassionate counsel, and sacred learning."}
-              </p>
-              <p>
-                {bn
-                  ? "পাঞ্জাগানা নামাজ থেকে শুরু করে জুমুআর পবিত্র জমায়েত, কুরআন পাঠচক্র, শিশুদের নৈতিক শিক্ষা এবং দুস্থদের সহযোগিতায় আমাদের কার্যক্রম সর্বদা সম্প্রসারিত। এখানে প্রতিটি বিশ্বাসী এক গভীর আত্মিক ও সামাজিক সম্প্রীতি অনুভব করেন।"
-                  : "Beyond daily congregational prayers and Friday gatherings, Noor serves as a vibrant center for Islamic education, family counseling, charitable relief, and cultural dialogue. We believe a true mosque extends its warmth far beyond its walls into the everyday lives of the people it serves."}
-              </p>
+              {backendStoryParagraphs.length > 0 && !bn ? (
+                backendStoryParagraphs.map((para, i) => (
+                  <p key={i}>{para}</p>
+                ))
+              ) : (
+                <>
+                  <p>
+                    {bn
+                      ? "নূর কমিউনিটি মসজিদ প্রতিষ্ঠিত হয়েছে একটি সহজ ও মহৎ লক্ষ্য নিয়ে: মহান আল্লাহর সন্তুষ্টির উদ্দেশ্যে একটি পবিত্র ইবাদতগাহ গড়ে তোলা, যেখানে প্রতিটি মানুষ সমান সমাদরে সমবেত হতে পারে। প্রজন্মের পর প্রজন্ম ধরে এটি হয়ে উঠেছে আমাদের এলাকার এক নির্ভরযোগ্য আধ্যাত্মিক বাতিঘর।"
+                      : "Noor Community Mosque was established with a clear and humble mission: to maintain a pure sanctuary for the worship of Allah, where every individual—young and old, resident and traveler—finds welcoming tranquility, compassionate counsel, and sacred learning."}
+                  </p>
+                  <p>
+                    {bn
+                      ? "পাঞ্জাগানা নামাজ থেকে শুরু করে জুমুআর পবিত্র জমায়েত, কুরআন পাঠচক্র, শিশুদের নৈতিক শিক্ষা এবং দুস্থদের সহযোগিতায় আমাদের কার্যক্রম সর্বদা সম্প্রসারিত। এখানে প্রতিটি বিশ্বাসী এক গভীর আত্মিক ও সামাজিক সম্প্রীতি অনুভব করেন।"
+                      : "Beyond daily congregational prayers and Friday gatherings, Noor serves as a vibrant center for Islamic education, family counseling, charitable relief, and cultural dialogue. We believe a true mosque extends its warmth far beyond its walls into the everyday lives of the people it serves."}
+                  </p>
+                </>
+              )}
             </div>
 
             {/* Pull Quote Box with Quranic / Hadith Inspiration */}
@@ -140,4 +159,3 @@ export function AboutStory() {
     </section>
   );
 }
-

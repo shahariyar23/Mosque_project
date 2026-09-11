@@ -3,42 +3,76 @@
 import Image from "next/image";
 import Link from "next/link";
 import { useLanguage } from "@/components/language-provider";
-import { Heart, HandHeart, Users2, ShieldAlert } from "lucide-react";
+import { Heart, HandHeart, Users2, ShieldAlert, Sparkles } from "lucide-react";
+import { type PublicService } from "@/services/publicHomeService";
 
-export function AboutServices() {
+interface AboutServicesProps {
+  services?: PublicService[];
+  loading?: boolean;
+}
+
+function getServiceIcon(name: string, category: string) {
+  const lower = `${name} ${category}`.toLowerCase();
+  if (lower.includes("food") || lower.includes("ration") || lower.includes("relief") || lower.includes("aid")) return HandHeart;
+  if (lower.includes("zakat") || lower.includes("sadaqah") || lower.includes("fund") || lower.includes("charity")) return Heart;
+  if (lower.includes("nikah") || lower.includes("marriage") || lower.includes("counseling")) return Users2;
+  if (lower.includes("janazah") || lower.includes("funeral") || lower.includes("bereavement")) return ShieldAlert;
+  return Sparkles;
+}
+
+export function AboutServices({ services = [], loading = false }: AboutServicesProps) {
   const { language } = useLanguage();
   const bn = language === "bn";
 
-  const services = [
+  const communityServices = services.filter(
+    (s) => s.category?.toLowerCase() !== "education"
+  );
+
+  const defaultServices = [
     {
-      icon: HandHeart,
       titleEn: "Food Rations & Welfare Aid",
       titleBn: "খাদ্য সহায়তা ও ত্রাণ বিতরণ",
       descEn: "Regular emergency food packets, dry provisions, and monthly essentials distributed discretely to vulnerable neighborhood families.",
       descBn: "অভাবী ও কর্মহীন পরিবারগুলোর সম্মান বজায় রেখে নিয়মিত খাদ্যসামগ্রী ও প্রয়োজনীয় নিত্যপণ্য সরবরাহ।",
+      category: "welfare",
+      slug: "food-rations",
     },
     {
-      icon: Heart,
       titleEn: "Transparent Zakat & Sadaqah Fund",
       titleBn: "স্বচ্ছ জাকাত ও সদকা ফান্ড",
       descEn: "100% policy-compliant Shariah fund directing your contributions straight into local medical emergencies, debt relief, and orphan support.",
       descBn: "শতভাগ শরিয়াহসম্মত ও স্বচ্ছ বণ্টন নীতিতে আপনার জাকাত সরাসরি দুস্থদের চিকিৎসা, ঋণমুক্তি ও এতিমদের কল্যাণে ব্যয়।",
+      category: "welfare",
+      slug: "zakat-fund",
     },
     {
-      icon: Users2,
       titleEn: "Nikah Facilitation & Counseling",
       titleBn: "পারিবারিক কাউন্সেলিং ও নিকাহ",
       descEn: "Assisting couples with Islamic marriage solemnization, official certificate documentation, and pre-marital guidance.",
       descBn: "সুন্নতি তরিকায় বিবাহ সম্পাদন, নিকাহ সনদপত্র প্রদান এবং সুখী পারিবারিক জীবনের ইসলামি দিকনির্দেশনা।",
+      category: "marriage",
+      slug: "nikah-service",
     },
     {
-      icon: ShieldAlert,
       titleEn: "Janazah & Bereavement Support",
       titleBn: "জানাযা ও কাফন-দাফন সেবা",
       descEn: "Compassionate, round-the-clock guidance during loss—including ghusl assistance, shroud preparation, and janazah prayer organization.",
       descBn: "পরিবারে শোকের মুহূর্তে সার্বক্ষণিক পাশে থেকে গোসল, কাফন এবং যথাযোগ্য মর্যাদায় জানাজার নামাজ পরিচালনা।",
+      category: "funeral",
+      slug: "janazah-support",
     },
   ];
+
+  const displayServices = communityServices.length > 0
+    ? communityServices.slice(0, 4).map((s) => ({
+        titleEn: s.name,
+        titleBn: s.name,
+        descEn: s.description || s.summary || "Community care and support service.",
+        descBn: s.description || s.summary || "সমাজের মানুষের প্রয়োজনে নিবেদিত সেবা।",
+        category: s.category,
+        slug: s.slug,
+      }))
+    : defaultServices;
 
   return (
     <section className="py-20 sm:py-28 bg-[#f5f2eb] text-[#17211d] border-b border-[#eae6db] overflow-hidden">
@@ -90,12 +124,12 @@ export function AboutServices() {
 
           {/* Right Column: Service Highlights */}
           <div className="lg:col-span-7 grid gap-5 sm:grid-cols-2">
-            {services.map((item, index) => {
-              const Icon = item.icon;
+            {displayServices.map((item, index) => {
+              const Icon = getServiceIcon(item.titleEn, item.category);
 
               return (
                 <div
-                  key={index}
+                  key={`${item.slug}-${index}`}
                   className="p-5 sm:p-6 rounded-2xl bg-white border border-[#e5e1d3] shadow-sm hover:border-[#c79a45] transition duration-200 flex flex-col justify-between"
                 >
                   <div>
@@ -129,4 +163,3 @@ export function AboutServices() {
     </section>
   );
 }
-

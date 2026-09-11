@@ -1,16 +1,33 @@
 "use client";
 
 import { useLanguage } from "@/components/language-provider";
-import { Moon, BookOpen, HeartHandshake } from "lucide-react";
+import { Moon, BookOpen, HeartHandshake, Heart, Users, Compass, Sparkles, ShieldCheck } from "lucide-react";
+import { type PublicValue } from "@/services/publicHomeService";
 
-export function AboutValues() {
+interface AboutValuesProps {
+  values?: PublicValue[];
+  loading?: boolean;
+}
+
+const ICON_MAP: Record<string, any> = {
+  Moon,
+  BookOpen,
+  HeartHandshake,
+  Heart,
+  Users,
+  Compass,
+  Sparkles,
+  ShieldCheck,
+};
+
+export function AboutValues({ values = [], loading = false }: AboutValuesProps) {
   const { language } = useLanguage();
   const bn = language === "bn";
 
-  const values = [
+  const defaultValues = [
     {
       num: "01",
-      icon: Moon,
+      iconName: "Moon",
       titleEn: "Faith & Devotion",
       titleBn: "ঈমান ও ইবাদত",
       subtitleEn: "Tawheed, prayer & spiritual purification",
@@ -20,7 +37,7 @@ export function AboutValues() {
     },
     {
       num: "02",
-      icon: BookOpen,
+      iconName: "BookOpen",
       titleEn: "Knowledge & Wisdom",
       titleBn: "ইলম ও প্রজ্ঞা",
       subtitleEn: "Quran, Sunnah & lifelong learning",
@@ -30,7 +47,7 @@ export function AboutValues() {
     },
     {
       num: "03",
-      icon: HeartHandshake,
+      iconName: "HeartHandshake",
       titleEn: "Service & Compassion",
       titleBn: "খিদমত ও মানবসেবা",
       subtitleEn: "Charity, welfare & community solidarity",
@@ -39,6 +56,19 @@ export function AboutValues() {
       descBn: "প্রকৃত ঈমানের প্রকাশ ঘটে সৃষ্টির সেবায়। অভাবগ্রস্তদের খাদ্য সহায়তা, স্বচ্ছ জাকাত বণ্টন, জানাজা ও বিপদের মুহূর্তে সকলের পাশে দাঁড়িয়ে সামাজিক ভ্রাতৃত্বের উজ্জ্বল দৃষ্টান্ত গড়ে তোলা।",
     },
   ];
+
+  const displayItems = values.length > 0
+    ? values.map((v) => ({
+        num: v.num,
+        iconName: v.icon || "Moon",
+        titleEn: v.title,
+        titleBn: v.title,
+        subtitleEn: v.subtitle || "Core Value",
+        subtitleBn: v.subtitle || "মূল স্তম্ভ",
+        descEn: v.description,
+        descBn: v.description,
+      }))
+    : defaultValues;
 
   return (
     <section className="py-20 sm:py-28 bg-[#faf8f5] text-[#17211d] border-b border-[#eae6db] overflow-hidden">
@@ -57,15 +87,15 @@ export function AboutValues() {
           </div>
           <p className="max-w-md text-xs xs:text-sm sm:text-base text-[#69726d] leading-relaxed">
             {bn
-              ? "এই তিনটি অপরিবর্তনীয় মূলনীতির ওপর প্রতিষ্ঠিত আমাদের প্রতিটি উদ্যোগ, প্রাতিষ্ঠানিক সেবা এবং প্রাত্যহিক পথচলা।"
-              : "These three enduring pillars shape every prayer, program, class, and charitable initiative we steward in the service of Allah."}
+              ? "এই অপরিবর্তনীয় মূলনীতির ওপর প্রতিষ্ঠিত আমাদের প্রতিটি উদ্যোগ, প্রাতিষ্ঠানিক সেবা এবং প্রাত্যহিক পথচলা।"
+              : "These enduring pillars shape every prayer, program, class, and charitable initiative we steward in the service of Allah."}
           </p>
         </div>
 
         {/* 3-Column Editorial Layout */}
         <div className="mt-12 sm:mt-16 grid gap-10 md:grid-cols-3">
-          {values.map((item) => {
-            const Icon = item.icon;
+          {displayItems.map((item) => {
+            const Icon = ICON_MAP[item.iconName] || Moon;
 
             return (
               <div
@@ -113,4 +143,3 @@ export function AboutValues() {
     </section>
   );
 }
-

@@ -67,7 +67,7 @@ export function EventDetail({ event }: { event: any }) {
   const handleRegister = async () => {
     if (registering) return;
     if (!session?.user) {
-      router.push(`/sign-in?redirect=/events/${event.slug || event.id}`);
+      router.push(`/signin?redirect=/events/${encodeURIComponent(event.slug || event.id)}`);
       return;
     }
     if (!event.id) {

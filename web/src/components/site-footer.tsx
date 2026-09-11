@@ -5,15 +5,16 @@ import Link from "next/link";
 import Image from "next/image";
 import { useLanguage } from "@/components/language-provider";
 import { siteConfig } from "@/config/site";
+import { useMosqueBranding } from "@/components/mosque-branding-provider";
 
 export function SiteFooter() {
   const { language, setLanguage } = useLanguage();
+  const { branding } = useMosqueBranding();
   const bengali = language === "bn";
 
   const [subscribed, setSubscribed] = useState(false);
   const [email, setEmail] = useState("");
   const [openAccordion, setOpenAccordion] = useState<string | null>(null);
-  const [langDropdownOpen, setLangDropdownOpen] = useState(false);
 
   const toggleAccordion = (key: string) => {
     setOpenAccordion((prev) => (prev === key ? null : key));
@@ -239,20 +240,28 @@ export function SiteFooter() {
               <Link
                 href="/"
                 className="inline-flex items-center gap-3 group"
-                aria-label={`${siteConfig.name} Community Mosque`}
+                aria-label={`${branding.name || siteConfig.name} Community Mosque`}
+                suppressHydrationWarning
               >
-                {/* 4-point gold star sparkle emblem */}
-                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#08362a] border border-[#c79a45]/40 text-[#f0ca7d] shadow-md group-hover:border-[#e5c278] transition-colors">
-                  <svg className="h-6 w-6" viewBox="0 0 24 24" fill="currentColor">
-                    <path d="M12 1L14.8 9.2L23 12L14.8 14.8L12 23L9.2 14.8L1 12L9.2 9.2L12 1Z" />
-                  </svg>
-                </div>
+                {branding.logoUrl ? (
+                  <img
+                    src={branding.logoUrl}
+                    alt={branding.name || siteConfig.name}
+                    className="h-10 w-10 rounded-xl object-cover border border-[#c79a45]/40 shadow-md group-hover:border-[#e5c278] transition-colors"
+                  />
+                ) : (
+                  <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#08362a] border border-[#c79a45]/40 text-[#f0ca7d] shadow-md group-hover:border-[#e5c278] transition-colors">
+                    <svg className="h-6 w-6" viewBox="0 0 24 24" fill="currentColor">
+                      <path d="M12 1L14.8 9.2L23 12L14.8 14.8L12 23L9.2 14.8L1 12L9.2 9.2L12 1Z" />
+                    </svg>
+                  </div>
+                )}
                 <div>
-                  <span className="block text-2xl font-bold tracking-[.16em] text-white">
-                    NOOR
+                  <span className="block text-2xl font-bold tracking-[.16em] text-white" suppressHydrationWarning>
+                    {branding.shortName || "NOOR"}
                   </span>
                   <span className="block text-[10px] font-semibold tracking-[.22em] text-[#e5c278] uppercase">
-                    COMMUNITY MOSQUE
+                    {bengali ? "কমিউনিটি মসজিদ" : "COMMUNITY MOSQUE"}
                   </span>
                 </div>
               </Link>
@@ -585,17 +594,17 @@ export function SiteFooter() {
             ========================================================================= */}
         <div className="relative mt-12 sm:mt-16 overflow-hidden rounded-2xl sm:rounded-3xl border border-[#c79a45]/20 bg-[#02130e]">
           {/* Mosque Skyline Background Art */}
-          <div className="absolute inset-0 pointer-events-none opacity-45 sm:opacity-55">
+          <div className="absolute inset-0 pointer-events-none opacity-75 sm:opacity-85">
             <Image
               src="/footer-mosque-skyline.jpg"
               alt="Mosque Silhouette"
               fill
-              className="object-cover object-bottom"
+              className="object-cover object-center"
               priority={false}
             />
             {/* Smooth gradient blend overlays */}
-            <div className="absolute inset-0 bg-gradient-to-t from-[#02130e] via-[#02130e]/60 to-[#02130e]/90" />
-            <div className="absolute inset-0 bg-gradient-to-r from-[#02130e] via-transparent to-[#02130e]" />
+            <div className="absolute inset-0 bg-gradient-to-t from-[#02130e]/60 via-[#02130e]/20 to-[#02130e]/45" />
+            <div className="absolute inset-0 bg-gradient-to-r from-[#02130e]/55 via-transparent to-[#02130e]/55" />
           </div>
 
           {/* Quick Action Cards Content */}
@@ -721,61 +730,6 @@ export function SiteFooter() {
             <Link href="#support" className="hover:text-white transition-colors">
               {bengali ? "সহায়তা" : "Support"}
             </Link>
-            <span className="text-white/20">|</span>
-
-            {/* Language Switcher Dropdown */}
-            <div className="relative inline-block text-left">
-              <button
-                type="button"
-                onClick={() => setLangDropdownOpen((prev) => !prev)}
-                className="inline-flex items-center gap-1.5 font-semibold text-[#f0ca7d] hover:text-white transition-colors"
-                aria-haspopup="true"
-                aria-expanded={langDropdownOpen}
-              >
-                <span>{bengali ? "বাংলা" : "English"}</span>
-                <svg
-                  className={`h-3.5 w-3.5 transition-transform ${
-                    langDropdownOpen ? "rotate-180" : ""
-                  }`}
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" />
-                </svg>
-              </button>
-
-              {langDropdownOpen && (
-                <div className="absolute right-0 bottom-full mb-2 w-28 rounded-lg border border-[#c79a45]/40 bg-[#06241b] py-1 shadow-xl z-50">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setLanguage("bn");
-                      setLangDropdownOpen(false);
-                    }}
-                    className={`flex w-full items-center justify-between px-3 py-1.5 text-xs ${
-                      bengali ? "text-[#f0ca7d] font-bold bg-white/5" : "text-white/70 hover:text-white"
-                    }`}
-                  >
-                    <span>বাংলা</span>
-                    {bengali && <span>✓</span>}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setLanguage("en");
-                      setLangDropdownOpen(false);
-                    }}
-                    className={`flex w-full items-center justify-between px-3 py-1.5 text-xs ${
-                      !bengali ? "text-[#f0ca7d] font-bold bg-white/5" : "text-white/70 hover:text-white"
-                    }`}
-                  >
-                    <span>English</span>
-                    {!bengali && <span>✓</span>}
-                  </button>
-                </div>
-              )}
-            </div>
 
             {/* Scroll-to-Top Circular Gold Button */}
             <button

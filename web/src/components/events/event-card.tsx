@@ -31,6 +31,7 @@ export function EventCard({
 
   const isFull = event.capacity && event.registered && event.registered >= event.capacity;
   const [imgSrc, setImgSrc] = useState(event.imageUrl || FALLBACK_IMAGE);
+  const eventSlugOrId = encodeURIComponent(event.slug || event.id);
 
   return (
     <article className="group flex flex-col justify-between overflow-hidden rounded-2xl border border-[#e5e1d3] bg-white shadow-sm transition-all duration-300 hover:border-[#c79a45]/60 hover:shadow-xl hover:-translate-y-1">
@@ -102,12 +103,12 @@ export function EventCard({
         <div className="p-5 sm:p-6">
           {/* Title */}
           <h3 className="font-serif text-lg sm:text-xl font-bold text-[#0e2a22] leading-snug group-hover:text-[#0d4d3b] transition-colors line-clamp-2">
-            <Link href={`/events/${event.slug}`} className="focus:outline-none">
+            <Link href={`/events/${eventSlugOrId}`} className="focus:outline-none">
               {title}
             </Link>
           </h3>
 
-          {/* Time & Location */}
+          {/* Time, Location & Speaker */}
           <div className="mt-3 space-y-1.5 text-xs text-[#52605a]">
             <div className="flex items-center gap-2">
               <Clock className="w-3.5 h-3.5 text-[#c79a45] shrink-0" />
@@ -117,6 +118,12 @@ export function EventCard({
               <MapPin className="w-3.5 h-3.5 text-[#c79a45] shrink-0" />
               <span className="line-clamp-1">{location}</span>
             </div>
+            {event.speaker && (
+              <div className="flex items-center gap-2 text-[#0d4d3b] font-medium">
+                <Users className="w-3.5 h-3.5 text-[#c79a45] shrink-0" />
+                <span className="line-clamp-1">{event.speaker}</span>
+              </div>
+            )}
           </div>
 
           {/* Description Snippet */}
@@ -129,7 +136,7 @@ export function EventCard({
       {/* Footer / CTA Row */}
       <div className="px-5 sm:px-6 pb-5 pt-3 border-t border-[#f0ede4]">
         <Link
-          href={`/events/${event.slug}`}
+          href={`/events/${eventSlugOrId}`}
           className="w-full inline-flex items-center justify-between py-2.5 px-4 rounded-xl bg-[#faf8f4] hover:bg-[#0d4d3b] text-[#0d4d3b] hover:text-white font-semibold text-xs sm:text-sm transition-all duration-200 border border-[#e5e1d3] hover:border-[#0d4d3b] min-h-[44px]"
         >
           <span>{bn ? "বিস্তারিত বিবরণ" : "View Details"}</span>

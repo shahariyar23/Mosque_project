@@ -53,6 +53,12 @@ describe('EventsController', () => {
             remove: jest
               .fn()
               .mockResolvedValue({ id: 'evt-1', slug: 'youth-seminar', title: 'Youth Seminar' }),
+            uploadEventImage: jest
+              .fn()
+              .mockResolvedValue({ url: 'https://res.cloudinary.com/demo/image/upload/event.jpg', publicId: 'event-1' }),
+            uploadEventImageForEvent: jest
+              .fn()
+              .mockResolvedValue({ id: 'evt-1', slug: 'youth-seminar', title: 'Youth Seminar', imageUrl: 'https://res.cloudinary.com/demo/image/upload/event.jpg' }),
           },
         },
       ],
@@ -96,6 +102,16 @@ describe('EventsController', () => {
     it('declares public access on GET /events/verify-ticket/:id', () => {
       const isPublic = reflector.get(IS_PUBLIC_KEY, controller.verifyTicket);
       expect(isPublic).toBe(true);
+    });
+
+    it('declares event.create on POST /events/upload-image', () => {
+      const perms = reflector.get(PERMISSIONS_KEY, controller.uploadImage);
+      expect(perms).toEqual(['event.create']);
+    });
+
+    it('declares event.update on POST /events/:id/image', () => {
+      const perms = reflector.get(PERMISSIONS_KEY, controller.uploadImageForEvent);
+      expect(perms).toEqual(['event.update']);
     });
   });
 
@@ -159,6 +175,18 @@ describe('EventsController', () => {
     it('delegates remove with actor and id', async () => {
       await controller.remove(user, 'evt-1');
       expect(service.remove).toHaveBeenCalledWith(user, 'evt-1');
+    });
+
+    it('delegates uploadImage with mosqueId and file', async () => {
+      const mockFile = { buffer: Buffer.from('test') } as Express.Multer.File;
+      await controller.uploadImage(user, mockFile);
+      expect(service.uploadEventImage).toHaveBeenCalledWith(MOSQUE_ID, mockFile);
+    });
+
+    it('delegates uploadImageForEvent with user, id and file', async () => {
+      const mockFile = { buffer: Buffer.from('test') } as Express.Multer.File;
+      await controller.uploadImageForEvent(user, 'evt-1', mockFile);
+      expect(service.uploadEventImageForEvent).toHaveBeenCalledWith(user, 'evt-1', mockFile);
     });
   });
 
