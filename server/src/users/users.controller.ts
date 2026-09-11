@@ -147,6 +147,23 @@ export class UsersController {
     };
   }
 
+  @Get('access-summary')
+  @AnyPermission('user.view', 'permission.assign', 'role.assign')
+  @ApiOperation({
+    summary: 'Access summary and role counts.',
+    description:
+      'Returns real user counts grouped by role and committee positions for the current mosque.',
+  })
+  @ApiOkResponse({ description: 'The access summary.' })
+  @ApiForbiddenResponse({ description: 'Authenticated, but without permission.' })
+  async getAccessSummary(@CurrentUser() actor: AuthenticatedUser) {
+    return {
+      success: true,
+      message: 'Access summary retrieved successfully',
+      data: await this.users.getAccessSummary(actor),
+    };
+  }
+
   @Get(':id')
   @Permissions('user.view')
   @ApiOperation({

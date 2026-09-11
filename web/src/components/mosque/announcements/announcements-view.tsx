@@ -11,6 +11,7 @@ import { Panel, PanelHeader } from "@/components/finance/ui/panel";
 import { Can } from "@/components/finance/ui/permission-gate";
 import { TableSkeleton } from "@/components/finance/ui/skeleton";
 import { FinanceEmptyState, FinanceErrorState, InlineNotice } from "@/components/finance/ui/states";
+import { ConfirmDialog } from "@/components/finance/ui/dialogs";
 import { DetailDrawer, DetailField, DetailGrid, DetailSection } from "@/components/ui/detail-drawer";
 import { StatGrid } from "@/components/ui/stat-card";
 import { AnnouncementCategoryChip, AnnouncementStatusBadge } from "@/components/ui/status-badge";
@@ -39,6 +40,7 @@ import {
   togglePinAnnouncement,
   updateAnnouncement,
   type AnnouncementQuery,
+  type UpdateAnnouncementInput,
 } from "@/services/announcementsService";
 
 const emptyDraft: AnnouncementDraft = {
@@ -64,6 +66,7 @@ export function AnnouncementsView({ openAddOnMount = false }: { openAddOnMount?:
   const [selected, setSelected] = useState<Announcement | null>(null);
   const [adding, setAdding] = useState(openAddOnMount);
   const [editing, setEditing] = useState<Announcement | null>(null);
+  const [deleting, setDeleting] = useState<Announcement | null>(null);
 
   // Live stats from backend
   const { data: statsData, refetch: refetchStats } = useApiResource(
@@ -185,11 +188,15 @@ export function AnnouncementsView({ openAddOnMount = false }: { openAddOnMount?:
       const created = await createAnnouncement({
         title: draft.title.trim(),
         message: draft.message.trim(),
+        summary: draft.summary?.trim() || undefined,
         category: draft.category,
         audience: draft.audience,
         status: draft.status,
         channels: draft.channels,
         pinned: draft.pinned,
+        isPinned: draft.pinned,
+        scheduledAt: draft.scheduledAt || undefined,
+        expiresAt: draft.expiresAt || undefined,
         author: "Mosque Office",
       });
 
@@ -203,6 +210,28 @@ export function AnnouncementsView({ openAddOnMount = false }: { openAddOnMount?:
     } catch (err: any) {
       notify({
         message: "Failed to save announcement",
+        description: err?.message || "An unexpected error occurred",
+        tone: "danger",
+      });
+    }
+  };
+
+  const handleUpdateAnnouncement = async (id: string, input: UpdateAnnouncementInput) => {
+    try {
+      const updated = await updateAnnouncement(id, input);
+      setEditing(null);
+      if (selected?.id === id) {
+        setSelected(updated);
+      }
+      refreshAll();
+      notify({
+        message: "Announcement updated.",
+        description: `${updated.title} has been updated.`,
+        tone: "success",
+      });
+    } catch (err: any) {
+      notify({
+        message: "Failed to update announcement",
         description: err?.message || "An unexpected error occurred",
         tone: "danger",
       });
@@ -367,9 +396,37 @@ export function AnnouncementsView({ openAddOnMount = false }: { openAddOnMount?:
           />
           <Can permission="announcement.manage">
             <IconButton
+              icon="pencil"
+              label={`Edit ${announcement.title}`}
+              onClick={() => setEditing(announcement)}
+            />
+          </Can>
+          <Can permission="announcement.publish">
+            {announcement.status === "Draft" || announcement.status === "Scheduled" ? (
+              <IconButton
+                icon="megaphone"
+                label={`Publish ${announcement.title}`}
+                onClick={() => handlePublishAnnouncement(announcement)}
+              />
+            ) : null}
+          </Can>
+          <Can permission="announcement.manage">
+            {announcement.status === "Published" ? (
+              <IconButton
+                icon="file-text"
+                label={`Archive ${announcement.title}`}
+                onClick={() => handleArchiveAnnouncement(announcement)}
+              />
+            ) : null}
+            <IconButton
               icon="star"
               label={announcement.pinned ? "Unpin" : "Pin"}
               onClick={() => handleTogglePin(announcement)}
+            />
+            <IconButton
+              icon="trash"
+              label={`Delete ${announcement.title}`}
+              onClick={() => setDeleting(announcement)}
             />
           </Can>
         </span>
@@ -483,9 +540,16 @@ export function AnnouncementsView({ openAddOnMount = false }: { openAddOnMount?:
         <AnnouncementDetailDrawer
           announcement={selected}
           onClose={() => setSelected(null)}
+          onEdit={(announcement) => {
+            setSelected(null);
+            setEditing(announcement);
+          }}
           onPublish={handlePublishAnnouncement}
           onArchive={handleArchiveAnnouncement}
-          onDelete={handleDeleteAnnouncement}
+          onDelete={(announcement) => {
+            setSelected(null);
+            setDeleting(announcement);
+          }}
           onTogglePin={handleTogglePin}
         />
       ) : null}
@@ -495,6 +559,31 @@ export function AnnouncementsView({ openAddOnMount = false }: { openAddOnMount?:
         onClose={() => setAdding(false)}
         onSave={handleAddAnnouncement}
       />
+
+      {editing ? (
+        <EditAnnouncementModal
+          announcement={editing}
+          open={!!editing}
+          onClose={() => setEditing(null)}
+          onSave={(input) => handleUpdateAnnouncement(editing.id, input)}
+        />
+      ) : null}
+
+      {deleting ? (
+        <ConfirmDialog
+          open={!!deleting}
+          onClose={() => setDeleting(null)}
+          onConfirm={async () => {
+            const target = deleting;
+            setDeleting(null);
+            await handleDeleteAnnouncement(target);
+          }}
+          title="Delete announcement?"
+          description={`Are you sure you want to permanently delete "${deleting.title}"? This action cannot be undone.`}
+          confirmLabel="Delete Announcement"
+          tone="danger"
+        />
+      ) : null}
     </div>
   );
 }
@@ -521,6 +610,7 @@ function ChannelPills({ channels = [] }: { channels?: AnnouncementChannel[] }) {
 function AnnouncementDetailDrawer({
   announcement,
   onClose,
+  onEdit,
   onPublish,
   onArchive,
   onDelete,
@@ -528,6 +618,7 @@ function AnnouncementDetailDrawer({
 }: {
   announcement: Announcement;
   onClose: () => void;
+  onEdit: (announcement: Announcement) => void;
   onPublish: (announcement: Announcement) => void;
   onArchive: (announcement: Announcement) => void;
   onDelete: (announcement: Announcement) => void;
@@ -565,6 +656,9 @@ function AnnouncementDetailDrawer({
             ) : null}
           </Can>
           <Can permission="announcement.manage">
+            <Button size="sm" variant="secondary" icon="pencil" onClick={() => onEdit(announcement)}>
+              Edit
+            </Button>
             {canArchive ? (
               <Button size="sm" variant="secondary" icon="file-text" onClick={() => onArchive(announcement)}>
                 Archive
@@ -602,8 +696,14 @@ function AnnouncementDetailDrawer({
           </InlineNotice>
         ) : null}
 
+        {announcement.summary && (
+          <DetailSection title="Summary">
+            <p className="text-[13px] leading-6 font-medium text-[#17211d]">{announcement.summary}</p>
+          </DetailSection>
+        )}
+
         <DetailSection title="Message">
-          <p className="whitespace-pre-line text-[13px] leading-6 text-[#4d564f]">{announcement.message}</p>
+          <p className="whitespace-pre-line text-[13px] leading-6 text-[#4d564f]">{announcement.message || announcement.content}</p>
         </DetailSection>
 
         <DetailSection title="Channels">
@@ -660,6 +760,7 @@ function AddAnnouncementModal({
     title: draft.title.trim().length === 0 ? "Give the announcement a title." : undefined,
     message: draft.message.trim().length === 0 ? "Write the message the community will read." : undefined,
     channels: draft.channels.length === 0 ? "Pick at least one channel." : undefined,
+    scheduledAt: draft.status === "Scheduled" && !draft.scheduledAt ? "Scheduled announcements require a scheduled date and time." : undefined,
   };
   const valid = Object.values(errors).every((error) => error === undefined);
   const show = (key: keyof typeof errors) => (submitted ? errors[key] : undefined);
@@ -670,10 +771,19 @@ function AddAnnouncementModal({
     onClose();
   };
 
-  const submit = () => {
+  const submitWithStatus = (statusOverride?: AnnouncementDraft["status"]) => {
     setSubmitted(true);
-    if (!valid) return;
-    onSave(draft);
+    const targetStatus = statusOverride || draft.status;
+    if (draft.title.trim().length === 0 || draft.message.trim().length === 0 || draft.channels.length === 0) {
+      return;
+    }
+    if (targetStatus === "Scheduled" && !draft.scheduledAt) {
+      return;
+    }
+    onSave({
+      ...draft,
+      status: targetStatus,
+    });
     setDraft(emptyDraft);
     setSubmitted(false);
   };
@@ -683,14 +793,21 @@ function AddAnnouncementModal({
       open={open}
       onClose={close}
       title="New announcement"
-      description="Set the status to Draft to keep it off the board, or Published to make it live across the community."
+      description="Create a community announcement. Save as draft or publish immediately to the community."
       footer={
         <>
           <Button variant="secondary" onClick={close}>
             Cancel
           </Button>
-          <Button icon="check" onClick={submit}>
-            Save Announcement
+          <Button
+            variant="secondary"
+            icon="file-text"
+            onClick={() => submitWithStatus("Draft")}
+          >
+            Save as Draft
+          </Button>
+          <Button icon="check" onClick={() => submitWithStatus()}>
+            {draft.status === "Published" ? "Publish Immediately" : "Save Announcement"}
           </Button>
         </>
       }
@@ -703,6 +820,14 @@ function AddAnnouncementModal({
           onChange={(event) => set("title", event.target.value)}
           error={show("title")}
           placeholder="New autumn prayer timetable now in effect"
+          containerClassName="sm:col-span-2"
+        />
+
+        <TextField
+          label="Summary"
+          value={draft.summary || ""}
+          onChange={(event) => set("summary", event.target.value)}
+          placeholder="Brief summary for cards and highlights (optional)"
           containerClassName="sm:col-span-2"
         />
 
@@ -721,7 +846,7 @@ function AddAnnouncementModal({
         />
 
         <SelectField
-          label="Initial status"
+          label="Status"
           value={draft.status}
           onChange={(event) => set("status", event.target.value as any)}
           options={announcementStatuses.map((value) => ({ value, label: value }))}
@@ -735,6 +860,222 @@ function AddAnnouncementModal({
             description="Holds this notice above newer ones on the board."
           />
         </div>
+
+        {draft.status === "Scheduled" ? (
+          <TextField
+            label="Schedule publication at"
+            required
+            type="datetime-local"
+            value={draft.scheduledAt || ""}
+            onChange={(event) => set("scheduledAt", event.target.value)}
+            error={show("scheduledAt")}
+            containerClassName="sm:col-span-2"
+          />
+        ) : null}
+
+        <TextField
+          label="Expiration date"
+          type="date"
+          value={draft.expiresAt || ""}
+          onChange={(event) => set("expiresAt", event.target.value)}
+          placeholder="Notice expiration date (optional)"
+          containerClassName="sm:col-span-2"
+        />
+
+        <TextAreaField
+          label="Message"
+          required
+          rows={5}
+          value={draft.message}
+          onChange={(event) => set("message", event.target.value)}
+          error={show("message")}
+          placeholder="Write the notice as it should appear to the community…"
+          containerClassName="sm:col-span-2"
+        />
+
+        <div className="sm:col-span-2">
+          <label className="text-[12px] font-medium text-[#2d3732]">Channels</label>
+          <p className="mt-0.5 text-[11px] text-[#69726d]">Where this notice will be posted when published.</p>
+          <div className="mt-2 flex flex-wrap gap-2">
+            {announcementChannels.map((channel) => {
+              const active = draft.channels.includes(channel);
+              return (
+                <button
+                  type="button"
+                  key={channel}
+                  onClick={() => toggleChannel(channel)}
+                  className={`rounded-full border px-3 py-1 text-[12px] font-medium transition-colors ${
+                    active
+                      ? "border-[#0d4d3b] bg-[#0d4d3b] text-white"
+                      : "border-[#dcdacd] bg-white text-[#4d564f] hover:bg-[#f6f5ee]"
+                  }`}
+                >
+                  {channel}
+                </button>
+              );
+            })}
+          </div>
+          {show("channels") ? <p className="mt-1 text-[11px] text-[#a83232]">{show("channels")}</p> : null}
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+/* -------------------------------------------------------------------------- *
+ * Edit announcement
+ * -------------------------------------------------------------------------- */
+
+function EditAnnouncementModal({
+  announcement,
+  open,
+  onClose,
+  onSave,
+}: {
+  announcement: Announcement;
+  open: boolean;
+  onClose: () => void;
+  onSave: (input: UpdateAnnouncementInput) => void;
+}) {
+  const [draft, setDraft] = useState({
+    title: announcement.title || "",
+    summary: announcement.summary || "",
+    message: announcement.message || announcement.content || "",
+    category: announcement.category || "General",
+    audience: announcement.audience || "Whole community",
+    status: announcement.status || "Draft",
+    channels: announcement.channels || ["Website", "App"],
+    pinned: !!announcement.pinned,
+    scheduledAt: announcement.scheduledAt ? announcement.scheduledAt.slice(0, 16) : "",
+    expiresAt: announcement.expiresAt ? announcement.expiresAt.slice(0, 10) : "",
+  });
+  const [submitted, setSubmitted] = useState(false);
+
+  const set = (key: string, value: any) =>
+    setDraft((current) => ({ ...current, [key]: value }));
+
+  const toggleChannel = (channel: AnnouncementChannel) =>
+    setDraft((current) => ({
+      ...current,
+      channels: current.channels.includes(channel)
+        ? current.channels.filter((item) => item !== channel)
+        : [...current.channels, channel],
+    }));
+
+  const errors = {
+    title: draft.title.trim().length === 0 ? "Give the announcement a title." : undefined,
+    message: draft.message.trim().length === 0 ? "Write the message the community will read." : undefined,
+    channels: draft.channels.length === 0 ? "Pick at least one channel." : undefined,
+    scheduledAt: draft.status === "Scheduled" && !draft.scheduledAt ? "Scheduled announcements require a scheduled date and time." : undefined,
+  };
+  const valid = Object.values(errors).every((error) => error === undefined);
+  const show = (key: keyof typeof errors) => (submitted ? errors[key] : undefined);
+
+  const submit = () => {
+    setSubmitted(true);
+    if (!valid) return;
+    onSave({
+      title: draft.title.trim(),
+      message: draft.message.trim(),
+      content: draft.message.trim(),
+      summary: draft.summary.trim() || undefined,
+      category: draft.category as any,
+      audience: draft.audience as any,
+      status: draft.status as any,
+      channels: draft.channels,
+      pinned: draft.pinned,
+      isPinned: draft.pinned,
+      scheduledAt: draft.scheduledAt ? new Date(draft.scheduledAt).toISOString() : undefined,
+      expiresAt: draft.expiresAt ? new Date(draft.expiresAt).toISOString() : undefined,
+    });
+  };
+
+  return (
+    <Modal
+      open={open}
+      onClose={onClose}
+      title={`Edit: ${announcement.title}`}
+      description="Update announcement content, targeting, scheduling or publication status."
+      footer={
+        <>
+          <Button variant="secondary" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button icon="check" onClick={submit}>
+            Save Changes
+          </Button>
+        </>
+      }
+    >
+      <div className="grid gap-4 sm:grid-cols-2">
+        <TextField
+          label="Title"
+          required
+          value={draft.title}
+          onChange={(event) => set("title", event.target.value)}
+          error={show("title")}
+          placeholder="New autumn prayer timetable now in effect"
+          containerClassName="sm:col-span-2"
+        />
+
+        <TextField
+          label="Summary"
+          value={draft.summary}
+          onChange={(event) => set("summary", event.target.value)}
+          placeholder="Brief summary for cards and highlights (optional)"
+          containerClassName="sm:col-span-2"
+        />
+
+        <SelectField
+          label="Category"
+          value={draft.category}
+          onChange={(event) => set("category", event.target.value as any)}
+          options={announcementCategories.map((value) => ({ value, label: value }))}
+        />
+
+        <SelectField
+          label="Audience"
+          value={draft.audience}
+          onChange={(event) => set("audience", event.target.value as any)}
+          options={announcementAudiences.map((value) => ({ value, label: value }))}
+        />
+
+        <SelectField
+          label="Status"
+          value={draft.status}
+          onChange={(event) => set("status", event.target.value as any)}
+          options={announcementStatuses.map((value) => ({ value, label: value }))}
+        />
+
+        <div className="flex items-end pb-1">
+          <Toggle
+            label="Pin to the top"
+            checked={draft.pinned}
+            onChange={(checked) => set("pinned", checked)}
+            description="Holds this notice above newer ones on the board."
+          />
+        </div>
+
+        {draft.status === "Scheduled" ? (
+          <TextField
+            label="Schedule publication at"
+            required
+            type="datetime-local"
+            value={draft.scheduledAt}
+            onChange={(event) => set("scheduledAt", event.target.value)}
+            error={show("scheduledAt")}
+            containerClassName="sm:col-span-2"
+          />
+        ) : null}
+
+        <TextField
+          label="Expiration date"
+          type="date"
+          value={draft.expiresAt}
+          onChange={(event) => set("expiresAt", event.target.value)}
+          placeholder="Notice expiration date (optional)"
+          containerClassName="sm:col-span-2"
+        />
 
         <TextAreaField
           label="Message"

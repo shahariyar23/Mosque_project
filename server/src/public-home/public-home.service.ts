@@ -108,6 +108,19 @@ export class PublicHomeService {
   }
 
   /**
+   * Prayer times for a specific date (or today if omitted) via the calculation service,
+   * scoped to the mosque by slug. Returns null if coordinates missing or calculation fails.
+   */
+  async getPrayerTimesForDate(slug: string, date?: string) {
+    const mosque = await this.getPublicMosque(slug);
+    try {
+      return await this.prayerTimes.getPrayerTimes(mosque.id, date ? { date } : {});
+    } catch {
+      return null;
+    }
+  }
+
+  /**
    * The mosque's active Jumu'ah schedules via the existing service. Only the public fields are
    * projected — internal ids and timestamps are dropped.
    */
@@ -345,5 +358,24 @@ export class PublicHomeService {
       funds,
       jumuah,
     };
+  }
+
+  /**
+   * Lists all active mosques with public profile info.
+   */
+  async listActiveMosques() {
+    return this.prisma.mosque.findMany({
+      where: { isActive: true, status: 'active' },
+      orderBy: { name: 'asc' },
+      select: {
+        id: true,
+        name: true,
+        code: true,
+        slug: true,
+        city: true,
+        country: true,
+        timezone: true,
+      },
+    });
   }
 }

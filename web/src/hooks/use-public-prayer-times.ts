@@ -8,9 +8,18 @@ import {
   type PublicJumuahEntry,
   type PublicPrayerTimes,
 } from "@/services/publicHomeService";
+import { useMosqueBranding } from "@/components/mosque-branding-provider";
 
-const PRAYER_ORDER = ["fajr", "sunrise", "dhuhr", "asr", "maghrib", "isha"] as const;
-type PrayerKey = (typeof PRAYER_ORDER)[number];
+export const PRAYER_ORDER = ["fajr", "sunrise", "dhuhr", "asr", "maghrib", "isha"] as const;
+export type PrayerKey = (typeof PRAYER_ORDER)[number];
+
+export const DEFAULT_IQAMAH_OFFSETS: Partial<Record<PrayerKey, number>> = {
+  fajr: 20,
+  dhuhr: 15,
+  asr: 15,
+  maghrib: 10,
+  isha: 15,
+};
 
 type PublicPrayerData = {
   prayerTimes: PublicPrayerTimes | null;
@@ -46,9 +55,13 @@ export type PrayerDisplay = {
   id: PrayerKey;
   nameEn: string;
   nameBn: string;
+  arabicName?: string;
   time24: string;
   timeEn: string;
   timeBn: string;
+  iqamah24?: string;
+  iqamahEn?: string;
+  iqamahBn?: string;
 };
 
 export type PrayerTimesState = {
@@ -57,19 +70,26 @@ export type PrayerTimesState = {
   timezone: string;
   hijriDate: string | null;
   hijri: PublicPrayerTimes["hijri"];
+  methodName: string;
+  schoolName: string;
   nextPrayerIndex: number;
   countdownSeconds: number;
+  countdownHours: number;
+  countdownMinutes: number;
+  countdownSecs: number;
+  targetPrayer: PrayerDisplay | null;
+  rawPrayerTimes: PublicPrayerTimes | null;
   loading: boolean;
   error: string | null;
 };
 
-const PRAYER_NAMES: Record<PrayerKey, { en: string; bn: string }> = {
-  fajr: { en: "FAJR", bn: "ফজর" },
-  sunrise: { en: "SUNRISE", bn: "সূর্যোদয়" },
-  dhuhr: { en: "DHUHR", bn: "যোহর" },
-  asr: { en: "ASR", bn: "আসর" },
-  maghrib: { en: "MAGHRIB", bn: "মাগরিব" },
-  isha: { en: "ISHA", bn: "এশা" },
+export const PRAYER_NAMES: Record<PrayerKey, { en: string; bn: string; ar: string }> = {
+  fajr: { en: "FAJR", bn: "ফজর", ar: "الفجر" },
+  sunrise: { en: "SUNRISE", bn: "সূর্যোদয়", ar: "الشروق" },
+  dhuhr: { en: "DHUHR", bn: "যোহর", ar: "الظهر" },
+  asr: { en: "ASR", bn: "আসর", ar: "العصر" },
+  maghrib: { en: "MAGHRIB", bn: "মাগরিব", ar: "المغرب" },
+  isha: { en: "ISHA", bn: "এশা", ar: "العشاء" },
 };
 
 function parseTimeToDate(time24: string, timezone: string, refDate: Date): Date {
@@ -97,7 +117,7 @@ function getTimezoneOffsetMinutes(timezone: string, date: Date): number {
   return (local.getTime() - utc.getTime()) / 60000;
 }
 
-function formatTime12(time24: string, bn: boolean): string {
+export function formatTime12(time24: string, bn: boolean): string {
   const [hh, mm] = time24.split(":").map(Number);
   const period = hh >= 12 ? "PM" : "AM";
   const hour12 = hh % 12 || 12;
@@ -110,7 +130,7 @@ function formatTime12(time24: string, bn: boolean): string {
   return `${hour12}:${String(mm).padStart(2, "0")} ${period}`;
 }
 
-function convertToBengaliNumber(num: number): string {
+export function convertToBengaliNumber(num: number): string {
   const bnDigits = ["০", "১", "২", "৩", "৪", "৫", "৬", "৭", "৮", "৯"];
   return String(num)
     .split("")
@@ -118,15 +138,32 @@ function convertToBengaliNumber(num: number): string {
     .join("");
 }
 
-export function usePublicPrayerTimes(mosqueSlug: string = DEFAULT_PUBLIC_MOSQUE_SLUG) {
+export function shiftMinutes(time24: string, minutes: number): string {
+  const [hh, mm] = time24.split(":").map(Number);
+  const total = (hh * 60 + mm + minutes + 1440) % 1440;
+  const newH = Math.floor(total / 60);
+  const newM = total % 60;
+  return `${String(newH).padStart(2, "0")}:${String(newM).padStart(2, "0")}`;
+}
+
+export function usePublicPrayerTimes(customSlug?: string) {
+  const brandingContext = useMosqueBranding();
+  const mosqueSlug = customSlug || brandingContext?.activeSlug || DEFAULT_PUBLIC_MOSQUE_SLUG;
   const [state, setState] = useState<PrayerTimesState>({
     prayers: [],
     jumuah: [],
     timezone: "Asia/Dhaka",
     hijriDate: null,
     hijri: null,
+    methodName: "Islamic Foundation Bangladesh",
+    schoolName: "Hanafi",
     nextPrayerIndex: 0,
     countdownSeconds: 0,
+    countdownHours: 0,
+    countdownMinutes: 0,
+    countdownSecs: 0,
+    targetPrayer: null,
+    rawPrayerTimes: null,
     loading: true,
     error: null,
   });
@@ -157,10 +194,22 @@ export function usePublicPrayerTimes(mosqueSlug: string = DEFAULT_PUBLIC_MOSQUE_
 
     const diffMs = nextTime.getTime() - now.getTime();
     const diffSec = Math.max(0, Math.floor(diffMs / 1000));
+    const countdownHours = Math.floor(diffSec / 3600);
+    const countdownMinutes = Math.floor((diffSec % 3600) / 60);
+    const countdownSecs = diffSec % 60;
 
     setState((prev) => {
+      const targetPrayer = prev.prayers[nextIndex] || null;
       if (prev.nextPrayerIndex !== nextIndex || Math.abs(prev.countdownSeconds - diffSec) > 2) {
-        return { ...prev, nextPrayerIndex: nextIndex, countdownSeconds: diffSec };
+        return {
+          ...prev,
+          nextPrayerIndex: nextIndex,
+          countdownSeconds: diffSec,
+          countdownHours,
+          countdownMinutes,
+          countdownSecs,
+          targetPrayer,
+        };
       }
       return prev;
     });
@@ -191,13 +240,33 @@ export function usePublicPrayerTimes(mosqueSlug: string = DEFAULT_PUBLIC_MOSQUE_
           const timing = prayerTimes.timings[key];
           if (!timing) continue;
           const time24 = timing.time;
+
+          let iqamah24: string | undefined;
+          let iqamahEn: string | undefined;
+          let iqamahBn: string | undefined;
+
+          if (prayerTimes.iqamahTimings && prayerTimes.iqamahTimings[key]) {
+            iqamah24 = prayerTimes.iqamahTimings[key];
+          } else if (DEFAULT_IQAMAH_OFFSETS[key]) {
+            iqamah24 = shiftMinutes(time24, DEFAULT_IQAMAH_OFFSETS[key]!);
+          }
+
+          if (iqamah24) {
+            iqamahEn = formatTime12(iqamah24, false);
+            iqamahBn = formatTime12(iqamah24, true);
+          }
+
           prayers.push({
             id: key,
             nameEn: PRAYER_NAMES[key].en,
             nameBn: PRAYER_NAMES[key].bn,
+            arabicName: PRAYER_NAMES[key].ar,
             time24,
             timeEn: formatTime12(time24, false),
             timeBn: formatTime12(time24, true),
+            iqamah24,
+            iqamahEn,
+            iqamahBn,
           });
           parsedTimes.push(parseTimeToDate(time24, tz, now));
         }
@@ -205,6 +274,8 @@ export function usePublicPrayerTimes(mosqueSlug: string = DEFAULT_PUBLIC_MOSQUE_
         timesRef.current = parsedTimes;
 
         const hijriDate = prayerTimes.hijri?.date ?? null;
+        const methodName = prayerTimes.method || "Islamic Foundation Bangladesh";
+        const schoolName = prayerTimes.school || "Hanafi";
 
         setState((prev) => ({
           ...prev,
@@ -213,6 +284,10 @@ export function usePublicPrayerTimes(mosqueSlug: string = DEFAULT_PUBLIC_MOSQUE_
           timezone: tz,
           hijriDate,
           hijri: prayerTimes.hijri,
+          methodName,
+          schoolName,
+          rawPrayerTimes: prayerTimes,
+          targetPrayer: prayers[prev.nextPrayerIndex] || null,
           loading: false,
           error: null,
         }));

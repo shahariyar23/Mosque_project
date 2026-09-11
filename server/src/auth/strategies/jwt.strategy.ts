@@ -2,6 +2,7 @@ import { Inject, Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PassportStrategy } from '@nestjs/passport';
 import { ExtractJwt, Strategy } from 'passport-jwt';
+import type { Request } from 'express';
 
 import { env, type AppConfig } from '../../config/app.config';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -24,6 +25,10 @@ import { resolveSubject } from './resolve-subject';
  * The lookup itself is `resolveSubject`, shared with the refresh strategy rather than written twice, so
  * the two cannot drift into answering different questions about the same person. `passwordHash` is not
  * in the columns it reads.
+ *
+ * For platform `super_admin` accounts, honours the `x-mosque-id` request header to allow managing
+ * tenant-scoped resources for a specific mosque. Normal accounts remain strictly locked to their
+ * own `mosqueId` regardless of headers sent.
  */
 @Injectable()
 export class JwtStrategy extends PassportStrategy(Strategy) {
@@ -38,10 +43,28 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       // An expired token is not a valid one. Never relax this.
       ignoreExpiration: false,
       secretOrKey: env.accessSecret(config),
+      passReqToCallback: true,
     });
   }
 
-  async validate(payload: AccessTokenPayload): Promise<AuthenticatedUser> {
-    return resolveSubject(this.prisma, payload.sub);
+  async validate(req: Request, payload: AccessTokenPayload): Promise<AuthenticatedUser> {
+    const user = await resolveSubject(this.prisma, payload.sub);
+
+    // Support Super Admin explicit mosque context switching via x-mosque-id header
+    const targetMosqueId = req.headers ? (req.headers['x-mosque-id'] as string | undefined) : undefined;
+    if (targetMosqueId && user.role === 'super_admin') {
+      const exists = await this.prisma.mosque.findUnique({
+        where: { id: targetMosqueId },
+        select: { id: true },
+      });
+      if (exists) {
+        return {
+          ...user,
+          mosqueId: exists.id,
+        };
+      }
+    }
+
+    return user;
   }
 }

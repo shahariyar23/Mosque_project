@@ -17,6 +17,7 @@ import { PrismaModule } from './prisma/prisma.module';
 import { RolesModule } from './roles/roles.module';
 import { UsersModule } from './users/users.module';
 import { MosqueModule } from './mosque/mosque.module';
+import { AdminMosquesModule } from './admin-mosques/admin-mosques.module';
 import { VolunteersModule } from './volunteers/volunteers.module';
 import { PrayerTimesModule } from './prayer-times/prayer-times.module';
 import { JumuahModule } from './jumuah/jumuah.module';
@@ -111,6 +112,7 @@ import { CloudinaryModule } from './common/cloudinary/cloudinary.module';
     RolesModule,
     PermissionsModule,
     MosqueModule,
+    AdminMosquesModule,
     VolunteersModule,
     PrayerTimesModule,
     JumuahModule,

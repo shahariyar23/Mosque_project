@@ -158,6 +158,7 @@ describe('NotificationsService (PART 7 Verification)', () => {
           }
           return null;
         }),
+        groupBy: jest.fn().mockResolvedValue([]),
       },
       broadcastMessage: {
         create: jest.fn().mockImplementation(async ({ data }) => {

@@ -41,8 +41,8 @@ export function configureApp(app: INestApplication, config: AppConfig): void {
     origin: env.corsOrigins(config),
     credentials: true,
     methods: ['GET', 'POST', 'PATCH', 'PUT', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'x-request-id'],
-    exposedHeaders: ['x-request-id'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'x-request-id', 'x-mosque-id', 'X-Mosque-Id'],
+    exposedHeaders: ['x-request-id', 'x-mosque-id'],
     maxAge: 86_400,
   });
 

@@ -78,6 +78,14 @@ export type DeletedUser = {
   deletedAt: string;
 };
 
+/** Summary of roles, accounts, and users for the Roles & Access directory. */
+export type AccessSummary = {
+  totalUsers: number;
+  governedAccounts: number;
+  roleCounts: Partial<Record<Role, number>>;
+  users: User[];
+};
+
 /**
  * The filters `UserQueryDto` declares, and nothing else.
  *
@@ -154,6 +162,13 @@ export function fetchUsers(query: UserQuery = {}): Promise<ListResult<User>> {
     hasPositions: query.hasPositions,
     deleted: query.deleted,
   });
+}
+
+/**
+ * Access summary with role counts, governed accounts count, and user directory for access reference.
+ */
+export function fetchAccessSummary(): Promise<AccessSummary> {
+  return apiGet<AccessSummary>("/users/access-summary");
 }
 
 export function fetchUser(id: string): Promise<User> {

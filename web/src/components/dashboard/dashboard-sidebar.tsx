@@ -2,13 +2,14 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useDashboardSession } from "@/components/dashboard/session-provider";
 import { useLanguage } from "@/components/language-provider";
 import { Icon } from "@/components/finance/ui/icon";
 import { useDialogFocus } from "@/components/finance/ui/use-dialog-focus";
 import { filterNavigation } from "@/lib/navigation";
 import { useMosqueBranding } from "@/components/mosque-branding-provider";
+import { getActiveMosqueId, subscribeTenantChange } from "@/services/tenantStore";
 
 /**
  * The panel contents, shared by the desktop rail and the mobile drawer. `onNavigate` is only
@@ -23,6 +24,16 @@ function SidebarBody({ onNavigate }: { onNavigate?: () => void }) {
   const { permissions, user } = useDashboardSession();
   const { language } = useLanguage();
   const { branding } = useMosqueBranding();
+  const [activeMosqueId, setActiveMosqueId] = useState<string | null>(null);
+
+  const isSuperAdmin =
+    user?.role === "super_admin" ||
+    (user?.permissions && user.permissions.includes("platform.manage"));
+
+  useEffect(() => {
+    setActiveMosqueId(getActiveMosqueId());
+    return subscribeTenantChange((id) => setActiveMosqueId(id));
+  }, []);
 
   const groups = useMemo(() => filterNavigation(permissions), [permissions]);
 
@@ -43,10 +54,20 @@ function SidebarBody({ onNavigate }: { onNavigate?: () => void }) {
           )}
           <span className="min-w-0">
             <b className="block truncate text-[13px] tracking-[.16em]">
-              {branding.shortName || "NOOR"}
+              {isSuperAdmin && !activeMosqueId
+                ? "NOOR PLATFORM"
+                : branding.shortName || "NOOR"}
             </b>
-            <span className="block truncate text-[10px] tracking-[.2em] text-white/60">
-              MOSQUE ADMIN
+            <span
+              className={`block truncate text-[10px] tracking-[.2em] font-semibold ${
+                isSuperAdmin ? "text-[#e0be79]" : "text-white/60"
+              }`}
+            >
+              {isSuperAdmin
+                ? activeMosqueId
+                  ? "SUPER ADMIN VIEW"
+                  : "SUPER ADMIN"
+                : "MOSQUE ADMIN"}
             </span>
           </span>
         </Link>

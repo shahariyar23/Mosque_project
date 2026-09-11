@@ -159,10 +159,10 @@ export class EventsController {
   findOne(
     @CurrentUser() user: AuthenticatedUser | undefined,
     @Param('id') idOrSlug: string,
+    @Query('mosqueSlug') mosqueSlug?: string,
   ): Promise<EventDto> {
-    // For unauthenticated users, pass undefined and service will use primary mosque
     const mosqueId = user?.mosqueId;
-    return this.eventsService.findOne(mosqueId, idOrSlug);
+    return this.eventsService.findOne(mosqueId, idOrSlug, mosqueSlug);
   }
 
   @Post(':id/register')

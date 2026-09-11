@@ -11,8 +11,8 @@ import { StatGrid } from "@/components/ui/stat-card";
 import { RoleBadge } from "@/components/ui/status-badge";
 import { groupPermissions, permissionGroups } from "@/lib/mosque/access";
 import { formatCount } from "@/lib/mosque/format";
-import { useApiList } from "@/hooks/use-api";
-import { fetchUsers } from "@/services/userService";
+import { useApiResource } from "@/hooks/use-api";
+import { fetchAccessSummary, type User } from "@/services/userService";
 import { useDashboardSession } from "@/components/dashboard/session-provider";
 import type { StatMetric } from "@/lib/mosque/types";
 import {
@@ -72,20 +72,27 @@ export function AccessView() {
   const [selectedRole, setSelectedRole] = useState<Role | null>(null);
   const { can } = useDashboardSession();
 
-  // We fetch a large page of users to compute counts. Ideally the API would provide a stats endpoint.
-  const { rows: users = [] } = useApiList(fetchUsers, { limit: 1000 }, { enabled: can("user.view") });
+  const { data: summary } = useApiResource(
+    fetchAccessSummary,
+    [],
+    { enabled: can("user.view") || can("role.assign") || can("permission.assign") },
+  );
+
+  const users = summary?.users ?? [];
+  const governedAccounts = summary?.governedAccounts ?? users.filter((u) => u.role !== "member").length;
+  const totalUsers = summary?.totalUsers ?? users.length;
 
   const positionList = Object.keys(positionLabels) as Position[];
-  
+
   const heldByRole = useMemo(() => {
     return roles.reduce<Record<Role, number>>(
       (counts, role) => {
-        counts[role] = users.filter((user) => user.role === role).length;
+        counts[role] = summary?.roleCounts?.[role] ?? users.filter((user) => user.role === role).length;
         return counts;
       },
       {} as Record<Role, number>,
     );
-  }, [users]);
+  }, [summary, users]);
 
   const metrics: StatMetric[] = [
     {
@@ -115,8 +122,8 @@ export function AccessView() {
     {
       id: "accounts",
       label: "Accounts governed",
-      value: formatCount(users.filter(u => u.role !== "member").length),
-      hint: "Hold one of these roles",
+      value: formatCount(governedAccounts),
+      hint: `${formatCount(totalUsers)} total registered`,
       icon: "users",
       tone: "positive",
     },
@@ -236,16 +243,43 @@ export function AccessView() {
           icon="user"
         />
         <PanelBody>
-          <ul className="grid gap-2.5 sm:grid-cols-2 xl:grid-cols-3">
-            {positionList.map((position) => (
-              <li
-                key={position}
-                className="flex items-center justify-between gap-3 rounded-lg border border-[#e7e6dc] bg-[#faf9f4] px-3.5 py-2.5"
-              >
-                <span className="text-[13px] font-medium text-[#17211d]">{positionLabels[position].en}</span>
-                <span className="shrink-0 text-[12.5px] text-[#8b938d]">{positionLabels[position].bn}</span>
-              </li>
-            ))}
+          <ul className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+            {positionList.map((position) => {
+              const postHolders = users.filter((u) => u.positions?.includes(position));
+              return (
+                <li
+                  key={position}
+                  className="flex flex-col justify-between rounded-xl border border-[#e7e6dc] bg-[#faf9f4] p-3.5 transition-colors hover:border-[#0d4d3b]/30"
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-[13px] font-semibold text-[#17211d]">{positionLabels[position].en}</span>
+                    <span className="shrink-0 text-[12px] text-[#8b938d]">{positionLabels[position].bn}</span>
+                  </div>
+                  <div className="mt-2.5 flex items-center justify-between gap-2 border-t border-[#edece4] pt-2">
+                    {postHolders.length > 0 ? (
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        {postHolders.map((u) => (
+                          <span
+                            key={u.id}
+                            className="inline-flex items-center rounded-md border border-[#cfded6] bg-white px-2 py-0.5 text-[11.5px] font-medium text-[#0d4d3b] shadow-xs"
+                          >
+                            <span className="mr-1.5 h-1.5 w-1.5 rounded-full bg-[#107555]" />
+                            {u.fullName}
+                          </span>
+                        ))}
+                      </div>
+                    ) : (
+                      <span className="text-[11.5px] italic text-[#9ba39d]">Not currently assigned</span>
+                    )}
+                    {postHolders.length > 0 && (
+                      <Badge tone="success" dot={false}>
+                        {formatCount(postHolders.length)}
+                      </Badge>
+                    )}
+                  </div>
+                </li>
+              );
+            })}
           </ul>
         </PanelBody>
       </Panel>
@@ -258,8 +292,6 @@ export function AccessView() {
 /* -------------------------------------------------------------------------- *
  * Role detail drawer
  * -------------------------------------------------------------------------- */
-
-import type { User } from "@/services/userService";
 
 function RoleDetailDrawer({ role, users, onClose }: { role: Role; users: User[]; onClose: () => void }) {
   const granted = rolePermissions[role];

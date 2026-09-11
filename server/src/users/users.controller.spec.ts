@@ -42,6 +42,7 @@ const SAMPLE: UserResponseDto = {
 type ServiceMock = Record<
   | 'create'
   | 'findMany'
+  | 'getAccessSummary'
   | 'findOne'
   | 'update'
   | 'setStatus'
@@ -73,6 +74,12 @@ describe('UsersController', () => {
       findMany: jest.fn().mockResolvedValue({
         rows: [SAMPLE],
         meta: { page: 1, limit: 20, total: 1, totalPages: 1 },
+      }),
+      getAccessSummary: jest.fn().mockResolvedValue({
+        totalUsers: 1,
+        governedAccounts: 0,
+        roleCounts: { member: 1 },
+        users: [SAMPLE],
       }),
       findOne: jest.fn().mockResolvedValue(SAMPLE),
       update: jest.fn().mockResolvedValue(SAMPLE),
@@ -220,6 +227,22 @@ describe('UsersController', () => {
     expect(Object.keys(response)).toEqual(['success', 'message', 'data']);
   });
 
+  it('returns access summary in the standard envelope', async () => {
+    const response = await controller.getAccessSummary(ACTOR);
+
+    expect(users.getAccessSummary).toHaveBeenCalledWith(ACTOR);
+    expect(response).toEqual({
+      success: true,
+      message: 'Access summary retrieved successfully',
+      data: {
+        totalUsers: 1,
+        governedAccounts: 0,
+        roleCounts: { member: 1 },
+        users: [SAMPLE],
+      },
+    });
+  });
+
   /**
    * What each route requires, read off the real decorators with a real `Reflector`.
    *
@@ -262,6 +285,15 @@ describe('UsersController', () => {
       expect(requires('update')).toBeUndefined();
     });
 
+    it('gates access-summary on any of user.view, permission.assign, role.assign', () => {
+      expect(requiresAnyOf('getAccessSummary')).toEqual([
+        'user.view',
+        'permission.assign',
+        'role.assign',
+      ]);
+      expect(requires('getAccessSummary')).toBeUndefined();
+    });
+
     it.each([
       ['setRole', 'role.assign'],
       ['setPositions', 'position.assign'],
@@ -283,6 +315,7 @@ describe('UsersController', () => {
       const routes = [
         'create',
         'findAll',
+        'getAccessSummary',
         'findOne',
         'update',
         'setStatus',

@@ -29,12 +29,16 @@ export type MosqueBranding = {
 
 type MosqueBrandingContextValue = {
   branding: MosqueBranding;
+  activeSlug: string;
+  setActiveSlug: (slug: string) => void;
   updateBranding: (partial: Partial<MosqueBranding>) => void;
   refreshBranding: () => Promise<void>;
 };
 
 const STORAGE_KEY = "mosque_branding_v1";
+const PUBLIC_SLUG_STORAGE_KEY = "noor_public_mosque_slug";
 const EVENT_KEY = "mosque-branding-updated";
+const SLUG_EVENT_KEY = "noor:public_mosque_changed";
 
 const defaultBranding: MosqueBranding = {
   name: siteConfig.name,
@@ -80,6 +84,8 @@ function persistBranding(data: MosqueBranding) {
 
 const MosqueBrandingContext = createContext<MosqueBrandingContextValue>({
   branding: defaultBranding,
+  activeSlug: DEFAULT_PUBLIC_MOSQUE_SLUG,
+  setActiveSlug: () => {},
   updateBranding: () => {},
   refreshBranding: async () => {},
 });
@@ -87,10 +93,19 @@ const MosqueBrandingContext = createContext<MosqueBrandingContextValue>({
 export function MosqueBrandingProvider({ children }: { children: ReactNode }) {
   // Always initialize with defaultBranding so server-rendered HTML and client initial hydration match exactly
   const [branding, setBranding] = useState<MosqueBranding>(defaultBranding);
+  const [activeSlug, setActiveSlugState] = useState<string>(DEFAULT_PUBLIC_MOSQUE_SLUG);
   const { session } = useAuth();
 
-  // Hydrate stored branding from localStorage only after initial client mount to prevent SSR hydration mismatch
+  // Hydrate stored branding and active slug from localStorage only after initial client mount
   useEffect(() => {
+    if (typeof window !== "undefined") {
+      try {
+        const storedSlug = localStorage.getItem(PUBLIC_SLUG_STORAGE_KEY);
+        if (storedSlug) {
+          setActiveSlugState(storedSlug);
+        }
+      } catch {}
+    }
     const stored = getStoredBranding();
     if (stored) {
       setBranding((prev) => ({
@@ -98,6 +113,16 @@ export function MosqueBrandingProvider({ children }: { children: ReactNode }) {
         ...stored,
         isLoading: false,
       }));
+    }
+  }, []);
+
+  const setActiveSlug = useCallback((slug: string) => {
+    setActiveSlugState(slug);
+    if (typeof window !== "undefined") {
+      try {
+        localStorage.setItem(PUBLIC_SLUG_STORAGE_KEY, slug);
+        window.dispatchEvent(new CustomEvent(SLUG_EVENT_KEY, { detail: slug }));
+      } catch {}
     }
   }, []);
 
@@ -154,8 +179,8 @@ export function MosqueBrandingProvider({ children }: { children: ReactNode }) {
         }
       }
 
-      // 2. Fallback to public tenant endpoint
-      const pubMosque = await fetchPublicMosque(DEFAULT_PUBLIC_MOSQUE_SLUG);
+      // 2. Fallback to public tenant endpoint for current activeSlug
+      const pubMosque = await fetchPublicMosque(activeSlug);
       if (pubMosque) {
         updateBranding({
           name: pubMosque.name || siteConfig.name,
@@ -172,9 +197,9 @@ export function MosqueBrandingProvider({ children }: { children: ReactNode }) {
     } finally {
       setBranding((prev) => ({ ...prev, isLoading: false }));
     }
-  }, [session?.user?.mosqueId, updateBranding]);
+  }, [activeSlug, session?.user?.mosqueId, updateBranding]);
 
-  // Initial fetch and refresh when auth session resolves
+  // Refresh branding when activeSlug or session changes
   useEffect(() => {
     void refreshBranding();
   }, [refreshBranding]);
@@ -187,6 +212,13 @@ export function MosqueBrandingProvider({ children }: { children: ReactNode }) {
       const custom = e as CustomEvent<MosqueBranding>;
       if (custom.detail) {
         setBranding(custom.detail);
+      }
+    };
+
+    const handleSlugEvent = (e: Event) => {
+      const custom = e as CustomEvent<string>;
+      if (custom.detail) {
+        setActiveSlugState(custom.detail);
       }
     };
 
@@ -203,19 +235,26 @@ export function MosqueBrandingProvider({ children }: { children: ReactNode }) {
           // Ignore parse errors
         }
       }
+      if (e.key === PUBLIC_SLUG_STORAGE_KEY && e.newValue) {
+        setActiveSlugState(e.newValue);
+      }
     };
 
     window.addEventListener(EVENT_KEY, handleCustomEvent);
+    window.addEventListener(SLUG_EVENT_KEY, handleSlugEvent);
     window.addEventListener("storage", handleStorage);
 
     return () => {
       window.removeEventListener(EVENT_KEY, handleCustomEvent);
+      window.removeEventListener(SLUG_EVENT_KEY, handleSlugEvent);
       window.removeEventListener("storage", handleStorage);
     };
   }, []);
 
   return (
-    <MosqueBrandingContext.Provider value={{ branding, updateBranding, refreshBranding }}>
+    <MosqueBrandingContext.Provider
+      value={{ branding, activeSlug, setActiveSlug, updateBranding, refreshBranding }}
+    >
       {children}
     </MosqueBrandingContext.Provider>
   );

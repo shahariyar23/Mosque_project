@@ -1,6 +1,7 @@
 import { SiteHeader } from "@/components/site-header";
 import { HeroSection } from "@/components/hero-section";
 import { QuickLinks } from "@/components/home/QuickLinks";
+import { AnnouncementsSection } from "@/components/announcements-section";
 import { PrayerTimesSection } from "@/components/prayer-times-section";
 import { AboutSection } from "@/components/about-section";
 import { ServicesEventsSection } from "@/components/services-events-section";
@@ -13,6 +14,7 @@ export default function Home() {
       <SiteHeader />
       <HeroSection />
       <QuickLinks />
+      <AnnouncementsSection />
       <PrayerTimesSection />
       <AboutSection />
       <ServicesEventsSection />

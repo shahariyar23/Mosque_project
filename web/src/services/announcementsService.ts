@@ -141,15 +141,53 @@ export async function deleteAnnouncement(id: string): Promise<void> {
   return apiDelete(`/announcements/${id}`);
 }
 
+export interface PublicAnnouncementQuery {
+  page?: number;
+  limit?: number;
+  category?: string;
+  search?: string;
+}
+
+export interface PublicAnnouncementsResult {
+  data: Announcement[];
+  total: number;
+  page: number;
+  limit: number;
+  totalPages: number;
+}
+
 /**
  * Fetch public published announcements
  */
 export async function fetchPublicAnnouncements(
   slug: string,
-  query: { limit?: number; category?: string } = {},
-): Promise<{ data: Announcement[]; total: number }> {
-  return apiGet<{ data: Announcement[]; total: number }>(
+  query: PublicAnnouncementQuery = {},
+): Promise<PublicAnnouncementsResult> {
+  const res = await apiList<Announcement>(
     `/public/mosques/${slug}/announcements`,
-    query,
+    {
+      page: query.page,
+      limit: query.limit,
+      category: query.category && query.category !== "all" ? query.category : undefined,
+      search: query.search?.trim() || undefined,
+    },
   );
+
+  return {
+    data: res.rows,
+    total: res.meta.total,
+    page: res.meta.page,
+    limit: res.meta.limit,
+    totalPages: res.meta.totalPages,
+  };
+}
+
+/**
+ * Fetch a single public published announcement by ID
+ */
+export async function fetchPublicAnnouncementById(
+  slug: string,
+  id: string,
+): Promise<Announcement> {
+  return apiGet<Announcement>(`/public/mosques/${slug}/announcements/${id}`);
 }

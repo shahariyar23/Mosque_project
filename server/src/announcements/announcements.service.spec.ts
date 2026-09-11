@@ -49,6 +49,21 @@ describe('AnnouncementsService', () => {
             if (where.status && a.status !== where.status) return false;
             if (where.audience && a.audience !== where.audience) return false;
             if (where.isPinned !== undefined && a.isPinned !== where.isPinned) return false;
+            if (where.AND && Array.isArray(where.AND)) {
+              for (const cond of where.AND) {
+                if (cond.OR && Array.isArray(cond.OR)) {
+                  const isSearch = cond.OR.some((c: any) => c.title?.contains);
+                  if (isSearch) {
+                    const match = cond.OR.some((c: any) => {
+                      if (c.title?.contains && a.title.toLowerCase().includes(c.title.contains.toLowerCase())) return true;
+                      if (c.content?.contains && a.content.toLowerCase().includes(c.content.contains.toLowerCase())) return true;
+                      return false;
+                    });
+                    if (!match) return false;
+                  }
+                }
+              }
+            }
             return true;
           })
           .slice(skip, skip + take);
@@ -60,6 +75,21 @@ describe('AnnouncementsService', () => {
           if (where.status && a.status !== where.status) return false;
           if (where.audience && a.audience !== where.audience) return false;
           if (where.isPinned !== undefined && a.isPinned !== where.isPinned) return false;
+          if (where.AND && Array.isArray(where.AND)) {
+            for (const cond of where.AND) {
+              if (cond.OR && Array.isArray(cond.OR)) {
+                const isSearch = cond.OR.some((c: any) => c.title?.contains);
+                if (isSearch) {
+                  const match = cond.OR.some((c: any) => {
+                    if (c.title?.contains && a.title.toLowerCase().includes(c.title.contains.toLowerCase())) return true;
+                    if (c.content?.contains && a.content.toLowerCase().includes(c.content.contains.toLowerCase())) return true;
+                    return false;
+                  });
+                  if (!match) return false;
+                }
+              }
+            }
+          }
           return true;
         }).length;
       }),
@@ -268,6 +298,8 @@ describe('AnnouncementsService', () => {
     const pub = await service.findPublic('noor-mosque', {});
     expect(pub.rows).toHaveLength(1);
     expect(pub.rows[0].title).toBe('Public Notice');
+    expect(pub.page).toBe(1);
+    expect(pub.totalPages).toBe(1);
   });
 
   it('9. Automatically publishes due scheduled announcements', async () => {
@@ -283,5 +315,31 @@ describe('AnnouncementsService', () => {
     const processed = await service.processScheduledAnnouncements();
     expect(processed).toBe(1);
     expect(dispatchedNotifications).toHaveLength(2);
+  });
+
+  it('10. Finds a single public announcement by ID', async () => {
+    const created = await service.create(mockActor, {
+      title: 'Single Notice',
+      content: 'Important details here',
+      audience: AnnouncementAudienceEnum.everyone,
+      status: AnnouncementStatusEnum.published,
+    });
+
+    const found = await service.findPublicOne('noor-mosque', created.id);
+    expect(found).toBeDefined();
+    expect(found.id).toBe(created.id);
+    expect(found.title).toBe('Single Notice');
+  });
+
+  it('11. Searches public announcements', async () => {
+    await service.create(mockActor, {
+      title: 'Ramadan Timetable Announced',
+      content: 'Full schedule for taraweeh and iftar',
+      audience: AnnouncementAudienceEnum.everyone,
+      status: AnnouncementStatusEnum.published,
+    });
+
+    const searchResults = await service.findPublic('noor-mosque', { search: 'Ramadan' });
+    expect(searchResults.rows.some((r) => r.title.includes('Ramadan'))).toBe(true);
   });
 });

@@ -94,6 +94,9 @@ export const AUDIT_ACTIONS = [
   'BROADCAST_CREATED',
   'BROADCAST_SENT',
   'BROADCAST_DELETED',
+  'MOSQUE_CREATED',
+  'MOSQUE_UPDATED',
+  'MOSQUE_STATUS_CHANGED',
 ] as const;
 
 export type AuditAction = (typeof AUDIT_ACTIONS)[number];
@@ -122,6 +125,7 @@ export const AUDIT_RESOURCES = [
   'announcement',
   'quran_resource',
   'broadcast',
+  'mosque',
 ] as const;
 
 export type AuditResource = (typeof AUDIT_RESOURCES)[number];

@@ -49,8 +49,12 @@ export type PublicPrayerTimes = {
   timezone: string;
   coordinates: { latitude: number; longitude: number };
   timings: Partial<Record<string, PublicPrayerTiming>>;
-  source: "aladhan";
+  source: "aladhan" | string;
   adjusted: boolean;
+  method?: string;
+  school?: string;
+  iqamahTimings?: Record<string, string>;
+  manualOverrides?: Record<string, unknown>;
 };
 
 export type PublicJumuahEntry = {
@@ -149,6 +153,23 @@ export type PublicGalleryItem = {
   sortOrder: number;
 };
 
+export type PublicMosqueListItem = {
+  id: string;
+  name: string;
+  code: string | null;
+  slug: string;
+  city: string | null;
+  country: string | null;
+  timezone: string;
+};
+
+/**
+ * Lists all active registered mosques available on the platform.
+ */
+export async function fetchActivePublicMosques(): Promise<PublicMosqueListItem[]> {
+  return apiGet<PublicMosqueListItem[]>("/public/mosques");
+}
+
 /**
  * The mosque's public profile, or null when nothing is published.
  */
@@ -165,6 +186,16 @@ export async function fetchPublicTodayPrayerTimes(
 ): Promise<PublicPrayerTimes | null> {
   return apiGet<PublicPrayerTimes | null>(
     `/public/mosques/${encodeURIComponent(mosqueSlug)}/prayer-times/today`,
+  );
+}
+
+export async function fetchPublicPrayerTimesForDate(
+  mosqueSlug: string = DEFAULT_PUBLIC_MOSQUE_SLUG,
+  date?: string,
+): Promise<PublicPrayerTimes | null> {
+  return apiGet<PublicPrayerTimes | null>(
+    `/public/mosques/${encodeURIComponent(mosqueSlug)}/prayer-times`,
+    date ? { date } : undefined,
   );
 }
 

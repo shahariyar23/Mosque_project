@@ -45,6 +45,8 @@ async function main(): Promise<void> {
   const mosque = await prisma.mosque.upsert({
     where: { slug: 'noor-jame-masjid' },
     update: {
+      code: 'MOS-001',
+      status: 'active',
       story: storyText,
       mission: missionText,
       vision: visionText,
@@ -58,7 +60,10 @@ async function main(): Promise<void> {
       postalCode: '1207',
     },
     create: {
+      id: '3f1a7c2e-9b4d-4f6a-8c11-2d5e7a9b0c31',
       slug: 'noor-jame-masjid',
+      code: 'MOS-001',
+      status: 'active',
       name: 'Noor Jame Masjid',
       email: 'contact@noormosque.org',
       phone: '+880 1712 345678',
@@ -446,11 +451,209 @@ async function main(): Promise<void> {
     }
   }
 
+  // Seed sample announcements
+  const announcementsData = [
+    {
+      title: 'New Autumn Prayer Timetable Now in Effect',
+      summary: 'Congregational Iqamah times have been updated for Fajr, Asr, and Isha starting this week.',
+      content: 'Assalamu Alaikum wa Rahmatullahi wa Barakatuh. Please be advised that the updated autumn prayer timetable is now officially in effect at Noor Community Mosque. Fajr Iqamah has shifted to 5:15 AM, Asr to 4:45 PM, and Isha to 8:15 PM. Please check the website prayer board or collect a printed timetable from the main foyer.',
+      category: 'prayer' as const,
+      audience: 'everyone' as const,
+      status: 'published' as const,
+      channels: ['Website', 'App', 'Notice board'],
+      isPinned: true,
+      authorName: 'Imam Abdul Karim',
+      publishedAt: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000),
+    },
+    {
+      title: 'Annual Ramadan Pre-Registration & Iftar Sponsorship',
+      summary: 'Sponsor a community iftar plate or register for the annual Tahfeez Quran competition.',
+      content: 'We are pleased to invite families and community members to take part in our upcoming Ramadan preparations. Sponsorship packages for daily community iftars and Suhoor distributions are now open. You may contribute online via the Donations page or in person at the administration office.',
+      category: 'ramadan' as const,
+      audience: 'everyone' as const,
+      status: 'published' as const,
+      channels: ['Website', 'App', 'Email'],
+      isPinned: false,
+      authorName: 'Mosque Committee',
+      publishedAt: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000),
+    },
+    {
+      title: 'Notice of Annual Community General Meeting',
+      summary: 'Review of the annual fiscal report, ongoing facility expansions, and community Q&A session.',
+      content: 'All registered members and community patrons are warmly invited to attend our Annual General Meeting following Asr prayer in the main conference hall. The Board of Trustees will present our audited financial report and progress updates on the new educational wing.',
+      category: 'general' as const,
+      audience: 'everyone' as const,
+      status: 'published' as const,
+      channels: ['Website', 'Notice board'],
+      isPinned: false,
+      authorName: 'General Secretary',
+      publishedAt: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000),
+    },
+    {
+      title: 'Urgent: Building Maintenance Notice - Main Entrance Access',
+      summary: 'Main entrance portico undergoes scheduled stonework restoration. Please use North Entrance.',
+      content: 'Please exercise caution: scheduled restorative masonry work is taking place on the main entrance arches. All congregants and visitors are kindly requested to enter through the North Courtyard Entrance. Wheelchair accessible ramps remain fully operational via the side doors.',
+      category: 'urgent' as const,
+      audience: 'everyone' as const,
+      status: 'published' as const,
+      channels: ['Website', 'App', 'Notice board'],
+      isPinned: true,
+      authorName: 'Facilities Management',
+      publishedAt: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000),
+    },
+  ];
+
+  for (const ann of announcementsData) {
+    const existing = await prisma.announcement.findFirst({
+      where: { mosqueId: mosque.id, title: ann.title },
+    });
+    if (!existing) {
+      await prisma.announcement.create({
+        data: { ...ann, mosqueId: mosque.id },
+      });
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Mosque B: Uttara Central Masjid (MOS-002)
+  // Demonstrates independent multi-tenant isolation
+  // ---------------------------------------------------------------------------
+  const mosqueB = await prisma.mosque.upsert({
+    where: { slug: 'uttara-central-masjid' },
+    update: {
+      code: 'MOS-002',
+      status: 'active',
+      isActive: true,
+      name: 'Uttara Central Masjid',
+      city: 'Uttara, Dhaka',
+    },
+    create: {
+      id: '4b2a8d3e-1c5e-4f7b-9d22-3e6f8b0c1d42',
+      slug: 'uttara-central-masjid',
+      code: 'MOS-002',
+      name: 'Uttara Central Masjid',
+      email: 'contact@uttaramasjid.org',
+      phone: '+880 1812 998877',
+      website: 'https://uttaramasjid.org',
+      addressLine: 'Sector 7, Road 13',
+      city: 'Uttara, Dhaka',
+      district: 'Dhaka',
+      country: 'Bangladesh',
+      postalCode: '1230',
+      latitude: '23.8759',
+      longitude: '90.3795',
+      timezone: 'Asia/Dhaka',
+      establishedYear: 2004,
+      description: 'A vibrant community center and grand mosque serving Uttara and surrounding northern Dhaka.',
+      status: 'active',
+      isActive: true,
+      settings: { create: {} },
+    },
+  });
+
+  const peopleB: Array<{
+    fullName: string;
+    email: string;
+    phone: string;
+    role: Role;
+    positions: Position[];
+  }> = [
+    { fullName: 'Tariqul Islam', email: 'admin@uttara.example', phone: '+8801800000001', role: Role.mosque_admin, positions: [Position.president] },
+    { fullName: 'Imam Mahmud Hasan', email: 'imam@uttara.example', phone: '+8801800000002', role: Role.imam, positions: [Position.imam, Position.khatib] },
+    { fullName: 'Kazi Arif', email: 'secretary@uttara.example', phone: '+8801800000003', role: Role.secretary, positions: [Position.general_secretary] },
+    { fullName: 'Saiful Islam', email: 'member@uttara.example', phone: '+8801800000004', role: Role.member, positions: [Position.member] },
+  ];
+
+  for (const person of peopleB) {
+    await prisma.user.upsert({
+      where: { mosqueId_email: { mosqueId: mosqueB.id, email: person.email } },
+      update: { fullName: person.fullName, role: person.role, positions: person.positions, isActive: true },
+      create: { ...person, mosqueId: mosqueB.id, passwordHash, isActive: true },
+    });
+  }
+
+  // Distinct Funds for Mosque B
+  await prisma.donationFund.upsert({
+    where: { id: '7c3b9e4f-2d6f-4a8c-ae33-4f7a9c1d2e53' },
+    update: {},
+    create: {
+      id: '7c3b9e4f-2d6f-4a8c-ae33-4f7a9c1d2e53',
+      mosqueId: mosqueB.id,
+      name: 'Uttara Complex Development Fund',
+      slug: 'uttara-development-fund',
+      description: 'Expansion and solar energy setup for Uttara Central Masjid.',
+      targetAmount: 500000,
+      openingBalance: 85000,
+      status: 'active',
+      isPublic: true,
+    },
+  });
+
+  // Distinct Announcements for Mosque B
+  const announcementsB = [
+    {
+      title: 'Grand Opening of Uttara Central Islamic Research Library',
+      summary: 'New state-of-the-art community library with over 5,000 Islamic reference volumes.',
+      content: 'We are delighted to invite all brothers and sisters to the formal opening of the Islamic Research Library located on the 2nd floor. Members can register for borrow cards starting this Saturday.',
+      category: 'general' as const,
+      audience: 'everyone' as const,
+      status: 'published' as const,
+      channels: ['Website', 'Notice board'],
+      isPinned: true,
+      authorName: 'Uttara Admin',
+      publishedAt: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000),
+    },
+    {
+      title: 'Youth Quran Recitation & Memorization Workshop',
+      summary: 'Registration open for ages 8–16 with Qari Mahmud Hasan.',
+      content: 'Enrollment is now live for the four-week intensive Tajweed and Hifz basics workshop. Classes will be held every Saturday and Sunday after Asr prayer.',
+      category: 'event' as const,
+      audience: 'everyone' as const,
+      status: 'published' as const,
+      channels: ['Website', 'Notice board'],
+      isPinned: false,
+      authorName: 'Imam Mahmud Hasan',
+      publishedAt: new Date(Date.now() - 4 * 24 * 60 * 60 * 1000),
+    },
+  ];
+
+  for (const ann of announcementsB) {
+    const existing = await prisma.announcement.findFirst({
+      where: { mosqueId: mosqueB.id, title: ann.title },
+    });
+    if (!existing) {
+      await prisma.announcement.create({
+        data: { ...ann, mosqueId: mosqueB.id },
+      });
+    }
+  }
+
+  // Distinct Events for Mosque B
+  const existingEventB = await prisma.event.findFirst({
+    where: { mosqueId: mosqueB.id, slug: 'uttara-annual-quran-competition' },
+  });
+  if (!existingEventB) {
+    await prisma.event.create({
+      data: {
+        mosqueId: mosqueB.id,
+        title: 'Uttara Annual Quran Competition 2026',
+        slug: 'uttara-annual-quran-competition',
+        description: 'An open recitation competition across 3 categories with grand certificates and prizes.',
+        category: 'quran',
+        status: 'upcoming',
+        date: new Date('2026-10-15T00:00:00.000Z'),
+        startTime: '10:00',
+        endTime: '16:00',
+        location: 'Main Prayer Hall, Uttara Central Masjid',
+        capacity: 250,
+        registrationRequired: true,
+        isPublished: true,
+      },
+    });
+  }
+
   console.warn(
-    `Seeded "${mosque.name}" with story, mission, vision, ${people.length} accounts, ` +
-      `${milestonesData.length} milestones, ${valuesData.length} values, ` +
-      `${facilitiesData.length} facilities, ${servicesData.length} services, ` +
-      `${galleryData.length} gallery items, and ${eventsData.length} events.`,
+    `Seeded "${mosque.name}" (MOS-001) and "${mosqueB.name}" (MOS-002) with independent multi-tenant datasets.`,
   );
 }
 

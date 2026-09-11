@@ -9,6 +9,7 @@ import { gsap, useIsomorphicLayoutEffect } from "@/lib/gsap";
 import { siteConfig } from "@/config/site";
 import { usePublicPrayerTimes } from "@/hooks/use-public-prayer-times";
 import { useMosqueBranding } from "@/components/mosque-branding-provider";
+import { PublicMosqueSelector } from "@/components/public-mosque-selector";
 
 const links = [
   { label: "Home", href: "/", section: "home" },
@@ -343,24 +344,27 @@ function MosqueInformationBar({
           )}
         </p>
 
-        <div className="col-start-2 row-start-1 flex items-center gap-1 justify-self-end sm:ml-auto" aria-label="Language">
-          <button
-            type="button"
-            onClick={() => setLanguage("en")}
-            aria-pressed={language === "en"}
-            className={`min-h-8 rounded px-1.5 text-[11px] font-medium transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--ivory)] ${language === "en" ? "bg-[var(--gold)] text-[var(--ink)]" : "text-white/70 hover:text-white"}`}
-          >
-            English
-          </button>
-          <span className="text-[#c79a45]" aria-hidden="true">|</span>
-          <button
-            type="button"
-            onClick={() => setLanguage("bn")}
-            aria-pressed={language === "bn"}
-            className={`min-h-8 rounded px-1.5 text-[11px] font-medium transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--ivory)] ${language === "bn" ? "bg-[var(--gold)] text-[var(--ink)]" : "text-white/70 hover:text-white"}`}
-          >
-            বাংলা
-          </button>
+        <div className="col-start-2 row-start-1 flex items-center gap-2.5 justify-self-end sm:ml-auto" aria-label="Controls">
+          <PublicMosqueSelector />
+          <div className="flex items-center gap-1" aria-label="Language">
+            <button
+              type="button"
+              onClick={() => setLanguage("en")}
+              aria-pressed={language === "en"}
+              className={`min-h-8 rounded px-1.5 text-[11px] font-medium transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--ivory)] ${language === "en" ? "bg-[var(--gold)] text-[var(--ink)]" : "text-white/70 hover:text-white"}`}
+            >
+              English
+            </button>
+            <span className="text-[#c79a45]" aria-hidden="true">|</span>
+            <button
+              type="button"
+              onClick={() => setLanguage("bn")}
+              aria-pressed={language === "bn"}
+              className={`min-h-8 rounded px-1.5 text-[11px] font-medium transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--ivory)] ${language === "bn" ? "bg-[var(--gold)] text-[var(--ink)]" : "text-white/70 hover:text-white"}`}
+            >
+              বাংলা
+            </button>
+          </div>
         </div>
       </div>
     </aside>

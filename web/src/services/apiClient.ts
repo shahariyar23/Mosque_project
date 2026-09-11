@@ -2,6 +2,7 @@
 
 import { refreshSession } from "@/services/authService";
 import { ServiceError, type FieldErrors } from "@/services/query";
+import { getActiveMosqueId } from "@/services/tenantStore";
 import { getAccessToken, notifyUnauthenticated, setAccessToken } from "@/services/tokenStore";
 
 /**
@@ -192,6 +193,9 @@ async function send(input: RequestInput): Promise<unknown> {
   if (input.body !== undefined && !isFormData) headers["Content-Type"] = "application/json";
   if (token) headers.Authorization = `Bearer ${token}`;
 
+  const activeMosqueId = getActiveMosqueId();
+  if (activeMosqueId) headers["x-mosque-id"] = activeMosqueId;
+
   let response: Response;
   try {
     const body: BodyInit | undefined =
@@ -209,7 +213,10 @@ async function send(input: RequestInput): Promise<unknown> {
       // request is the one that has to present it.
       credentials: "include",
     });
-  } catch {
+  } catch (err) {
+    if (typeof window !== "undefined" && process.env.NODE_ENV !== "production") {
+      console.warn(`[apiClient] Network/CORS failure for ${input.method} ${input.path}:`, err);
+    }
     // A `fetch` rejection is a network or CORS failure — there is no response and no server message.
     // The underlying error text is not shown; it names internals and reads as noise to a person.
     throw new ServiceError(

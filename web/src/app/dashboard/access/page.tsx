@@ -16,7 +16,7 @@ export default function AccessPage() {
         subtitle="How the platform decides what each account can do — the seven roles, the permissions each carries area by area, and the committee posts the mosque uses."
         crumbs={[{ label: "Dashboard", href: "/dashboard" }, { label: "Roles & Access" }]}
       />
-      <RequirePermission anyOf={["permission.assign"]} area="Roles & Access">
+      <RequirePermission anyOf={["permission.assign", "role.assign", "user.view"]} area="Roles & Access">
         <AccessView />
       </RequirePermission>
     </div>
