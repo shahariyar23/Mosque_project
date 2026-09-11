@@ -1,3 +1,4 @@
+import 'multer';
 import {
   BadRequestException,
   ConflictException,
@@ -8,6 +9,7 @@ import {
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
+import { CloudinaryService } from '../common/cloudinary/cloudinary.service';
 import { AuditLogService } from '../audit/audit-log.service';
 import { buildPage, toSkipTake } from '../common/pagination/page';
 import type { AuthenticatedUser } from '../common/types/authenticated-user';
@@ -46,6 +48,7 @@ export class EventsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditLogService,
+    private readonly cloudinary: CloudinaryService,
   ) {}
 
   /**
@@ -1203,5 +1206,92 @@ export class EventsService {
       counter++;
       candidate = `${baseSlug}-${counter}`;
     }
+  }
+
+  /**
+   * Upload an event banner/poster image to Cloudinary.
+   */
+  async uploadEventImage(
+    mosqueId: string,
+    file: Express.Multer.File,
+  ): Promise<{ url: string; publicId: string }> {
+    if (!file) {
+      throw new BadRequestException('Image file is required.');
+    }
+
+    const allowedMimes = ['image/jpeg', 'image/png', 'image/webp', 'image/svg+xml'];
+    if (!allowedMimes.includes(file.mimetype)) {
+      throw new BadRequestException(
+        `Unsupported file type: ${file.mimetype}. Allowed: JPG, PNG, WebP, SVG.`,
+      );
+    }
+
+    if (file.size > 5 * 1024 * 1024) {
+      throw new BadRequestException('File exceeds 5MB size limit.');
+    }
+
+    const folder = `mosques/${mosqueId}/events`;
+    const uploaded = await this.cloudinary.uploadImage(file.buffer, folder);
+
+    return {
+      url: uploaded.secureUrl,
+      publicId: uploaded.publicId,
+    };
+  }
+
+  /**
+   * Upload and associate an event banner image with an existing event.
+   */
+  async uploadEventImageForEvent(
+    actor: AuthenticatedUser,
+    eventId: string,
+    file: Express.Multer.File,
+  ): Promise<EventDto> {
+    const existing = await this.prisma.event.findFirst({
+      where: { id: eventId, mosqueId: actor.mosqueId, deletedAt: null },
+      include: {
+        registrations: {
+          where: { status: 'confirmed' },
+          select: { guests: true },
+        },
+      },
+    });
+
+    if (!existing) {
+      throw new NotFoundException(`Event with ID "${eventId}" not found.`);
+    }
+
+    const { url } = await this.uploadEventImage(actor.mosqueId, file);
+
+    const updated = await this.prisma.event.update({
+      where: { id: eventId },
+      data: { imageUrl: url },
+      include: {
+        registrations: {
+          where: { status: 'confirmed' },
+          select: { guests: true },
+        },
+      },
+    });
+
+    await this.audit.record({
+      action: 'EVENT_UPDATED',
+      resource: 'event',
+      resourceId: eventId,
+      actorId: actor.id,
+      actorName: actor.email,
+      mosqueId: actor.mosqueId,
+      changes: {
+        before: { imageUrl: existing.imageUrl },
+        after: { imageUrl: url },
+      },
+    });
+
+    const registeredCount = updated.registrations.reduce(
+      (sum, reg) => sum + 1 + (reg.guests || 0),
+      0,
+    );
+
+    return EventDto.from(updated, registeredCount);
   }
 }

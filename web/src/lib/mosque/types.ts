@@ -72,6 +72,9 @@ export type MosqueProfile = {
   postalCode: string;
   addressLine: string;
   about: string;
+  story?: string;
+  mission?: string;
+  vision?: string;
   social: SocialLinks;
 };
 
@@ -404,6 +407,7 @@ export type EventDraft = {
   description: string;
   capacity: string;
   registrationRequired: boolean;
+  imageUrl?: string;
 };
 
 /* -------------------------------------------------------------------------- *

@@ -8,6 +8,7 @@ import { UserMenu } from "@/components/account/UserMenu";
 import { gsap, useIsomorphicLayoutEffect } from "@/lib/gsap";
 import { siteConfig } from "@/config/site";
 import { usePublicPrayerTimes } from "@/hooks/use-public-prayer-times";
+import { useMosqueBranding } from "@/components/mosque-branding-provider";
 
 const links = [
   { label: "Home", href: "/", section: "home" },
@@ -24,6 +25,7 @@ export function SiteHeader() {
   const [open, setOpen] = useState(false);
   const { language, setLanguage } = useLanguage();
   const { session, loading } = useAuth();
+  const { branding } = useMosqueBranding();
   const [scrolled, setScrolled] = useState(false);
   const [hidden, setHidden] = useState(false);
   const prevY = useRef(0);
@@ -146,13 +148,24 @@ export function SiteHeader() {
         <Link
           href="/"
           className="logo-mark -ml-2.5 flex items-center gap-3 px-2 py-1 outline-none transition-transform hover:scale-[1.02] focus-visible:ring-2 focus-visible:ring-white/20"
-          aria-label={`${siteConfig.name} Mosque home`}
+          aria-label={`${branding.name || siteConfig.name} Mosque home`}
+          suppressHydrationWarning
         >
-          <span className="grid h-10 w-10 place-items-center rounded-full border border-[#e0be79] text-xl text-[#e0be79] logo-mark">
-            ✦
-          </span>
+          {branding.logoUrl ? (
+            <img
+              src={branding.logoUrl}
+              alt={branding.name || siteConfig.name}
+              className="h-10 w-10 rounded-full object-cover border border-[#e0be79] shadow-sm logo-mark"
+            />
+          ) : (
+            <span className="grid h-10 w-10 place-items-center rounded-full border border-[#e0be79] text-xl text-[#e0be79] logo-mark">
+              ✦
+            </span>
+          )}
           <div className="hidden lg:block">
-            <b className="block text-sm tracking-[.18em]">{t(siteConfig.name.toUpperCase())}</b>
+            <b className="block text-sm tracking-[.18em]" suppressHydrationWarning>
+              {t((branding.shortName || branding.name || siteConfig.name).toUpperCase())}
+            </b>
             <span className="block text-[10px] uppercase tracking-[.18em] text-[#e0be79] opacity-90">
               Community Mosque
             </span>

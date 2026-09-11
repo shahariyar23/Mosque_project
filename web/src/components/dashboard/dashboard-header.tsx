@@ -5,11 +5,13 @@ import { DashboardSearch } from "@/components/dashboard/dashboard-search";
 import { DashboardUserMenu } from "@/components/dashboard/dashboard-user-menu";
 import { NotificationPopover } from "@/components/dashboard/notification-popover";
 import { Icon } from "@/components/finance/ui/icon";
+import { useMosqueBranding } from "@/components/mosque-branding-provider";
 
 type Props = { navOpen: boolean; onOpenNav: () => void };
 
 export function DashboardHeader({ navOpen, onOpenNav }: Props) {
   const { user } = useDashboardSession();
+  const { branding } = useMosqueBranding();
 
   return (
     <header className="sticky top-0 z-20 border-b border-[#e2e1d6] bg-[#f8f6ef]/95 backdrop-blur">
@@ -30,8 +32,16 @@ export function DashboardHeader({ navOpen, onOpenNav }: Props) {
         <div className="ml-auto flex items-center gap-2">
           {user ? (
             <span className="hidden items-center gap-1.5 rounded-full border border-[#deddd3] bg-white px-3 py-1.5 text-[11.5px] text-[#4d564f] xl:inline-flex">
-              <Icon name="mosque" size={14} className="text-[#c79a45]" />
-              {user.mosqueName}
+              {branding.logoUrl ? (
+                <img
+                  src={branding.logoUrl}
+                  alt="Mosque Logo"
+                  className="h-4 w-4 rounded-full object-cover border border-[#e0be79]/60"
+                />
+              ) : (
+                <Icon name="mosque" size={14} className="text-[#c79a45]" />
+              )}
+              {branding.name || user.mosqueName || "Noor Community Mosque"}
             </span>
           ) : null}
           <NotificationPopover />

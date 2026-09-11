@@ -26,6 +26,17 @@ export function EventCard({ event, onOpen }: { event: MosqueEvent; onOpen: () =>
         cancelled ? "border-[#ebc8c4]" : "border-[#e2e1d6]"
       }`}
     >
+      {event.imageUrl ? (
+        <div className="relative aspect-[16/9] w-full -mt-1 mb-3.5 overflow-hidden rounded-lg border border-[#e2e1d6] bg-[#072a20]">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={event.imageUrl}
+            alt={event.title}
+            className="h-full w-full object-cover"
+          />
+        </div>
+      ) : null}
+
       <div className="flex items-start justify-between gap-3">
         <div className="flex flex-wrap items-center gap-1.5">
           <EventCategoryChip category={event.category} />

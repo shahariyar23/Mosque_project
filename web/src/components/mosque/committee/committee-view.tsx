@@ -16,6 +16,7 @@ import { PositionsPicker, isValidPhone, roleOptions } from "@/components/mosque/
 import { PersonCell } from "@/components/ui/avatar";
 import { RoleBadge } from "@/components/ui/status-badge";
 import { useToast } from "@/components/ui/toast";
+import { apiUpload } from "@/services/apiClient";
 import {
   createUser,
   fetchUsers,
@@ -47,6 +48,7 @@ export function CommitteeView() {
   const [addModalOpen, setAddModalOpen] = useState(false);
   const [addMode, setAddMode] = useState<"assign" | "create">("assign");
   const [editModalOpen, setEditModalOpen] = useState(false);
+  const [photoModalUser, setPhotoModalUser] = useState<User | null>(null);
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
   const [editPositions, setEditPositions] = useState<Position[]>([]);
   const [savingPositions, setSavingPositions] = useState(false);
@@ -229,27 +231,39 @@ export function CommitteeView() {
     setEditModalOpen(true);
   };
 
-  const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file || !selectedUser) return;
+  const handleAvatarUploadFor = async (targetUserId: string, file: File) => {
     try {
       setUploadingAvatar(true);
-      const updated = await uploadUserAvatar(selectedUser.id, file);
-      setSelectedUser(updated);
+      let updated: User;
+      if (typeof uploadUserAvatar === "function") {
+        updated = await uploadUserAvatar(targetUserId, file);
+      } else {
+        const formData = new FormData();
+        formData.append("file", file);
+        updated = await apiUpload<User>(`/users/${targetUserId}/avatar`, formData);
+      }
+      setSelectedUser((prev) => (prev?.id === updated.id ? updated : prev));
+      setPhotoModalUser((prev) => (prev?.id === updated.id ? updated : prev));
       setCommitteeUsers((prev) => prev.map((u) => (u.id === updated.id ? updated : u)));
       notify({
         tone: "success",
-        message: "Avatar uploaded to Cloudinary successfully!",
+        message: "Photo uploaded to Cloudinary successfully!",
       });
     } catch (err: any) {
       notify({
         tone: "danger",
-        message: "Failed to upload avatar to Cloudinary.",
-        description: err.message,
+        message: "Failed to upload photo to Cloudinary.",
+        description: err?.message || "An unexpected error occurred while uploading.",
       });
     } finally {
       setUploadingAvatar(false);
     }
+  };
+
+  const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !selectedUser) return;
+    await handleAvatarUploadFor(selectedUser.id, file);
   };
 
   const handleSaveEditPositions = async () => {
@@ -442,6 +456,7 @@ export function CommitteeView() {
                         <PersonCell
                           name={user.fullName}
                           meta={user.email}
+                          avatarUrl={user.avatarUrl}
                         />
                       </td>
 
@@ -467,6 +482,14 @@ export function CommitteeView() {
                       <td className="py-3 px-4 text-right">
                         <div className="flex items-center justify-end gap-1.5">
                           <Can anyOf={["position.assign", "user.manage"]}>
+                            <Button
+                              variant="secondary"
+                              size="sm"
+                              icon="camera"
+                              onClick={() => setPhotoModalUser(user)}
+                            >
+                              Photo
+                            </Button>
                             <Button
                               variant="secondary"
                               size="sm"
@@ -724,6 +747,87 @@ export function CommitteeView() {
           </p>
           <PositionsPicker value={editPositions} onChange={setEditPositions} />
         </div>
+      </Modal>
+
+      {/* Modal: Dedicated Leader Photo Upload */}
+      <Modal
+        open={Boolean(photoModalUser)}
+        onClose={() => !uploadingAvatar && setPhotoModalUser(null)}
+        title={photoModalUser ? `Leader Photo · ${photoModalUser.fullName}` : "Leader Photo"}
+        description="Upload or change this committee member's official photograph for the public About page."
+        footer={
+          <div className="flex items-center justify-end gap-2 w-full">
+            <Button
+              variant="secondary"
+              onClick={() => setPhotoModalUser(null)}
+              disabled={uploadingAvatar}
+            >
+              Done
+            </Button>
+          </div>
+        }
+      >
+        {photoModalUser && (
+          <div className="space-y-4">
+            <div className="flex flex-col items-center justify-center p-6 rounded-2xl border border-[#e7e6dc] bg-[#faf9f4] text-center">
+              <div className="relative h-28 w-28 shrink-0 overflow-hidden rounded-full border-3 border-[#c79a45] shadow-md bg-[#073a2d] mb-4">
+                {photoModalUser.avatarUrl ? (
+                  /* eslint-disable-next-line @next/next/no-img-element */
+                  <img
+                    src={photoModalUser.avatarUrl}
+                    alt={photoModalUser.fullName}
+                    className="h-full w-full object-cover"
+                  />
+                ) : (
+                  <div className="grid h-full w-full place-items-center text-3xl font-bold text-[#c79a45]">
+                    {photoModalUser.fullName?.charAt(0).toUpperCase()}
+                  </div>
+                )}
+              </div>
+
+              <h4 className="text-base font-bold text-[#0e2a22]">{photoModalUser.fullName}</h4>
+              <p className="text-xs text-[#69726d] mb-2">{photoModalUser.email}</p>
+
+              <div className="flex flex-wrap justify-center gap-1 mb-4">
+                {photoModalUser.positions.map((p) => (
+                  <Badge key={p} tone="gold">
+                    {positionLabels[p]?.en || p}
+                  </Badge>
+                ))}
+              </div>
+
+              <label className="inline-flex items-center gap-2 px-4 py-2 text-xs font-semibold rounded-xl bg-[#0d4d3b] text-white hover:bg-[#0a3d2e] shadow-sm cursor-pointer transition-colors">
+                <Icon name="upload" size={15} />
+                {uploadingAvatar ? "Uploading to Cloudinary…" : photoModalUser.avatarUrl ? "Change Photo" : "Upload Photo"}
+                <input
+                  type="file"
+                  accept="image/*"
+                  className="sr-only"
+                  disabled={uploadingAvatar}
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (file && photoModalUser) {
+                      handleAvatarUploadFor(photoModalUser.id, file);
+                    }
+                  }}
+                />
+              </label>
+
+              <div className="mt-4 rounded-xl bg-white border border-[#e8e4d9] p-3 text-left w-full text-xs text-[#69726d] space-y-1">
+                <div className="font-semibold text-[#0e2a22] flex items-center gap-1.5">
+                  <Icon name="sparkle" size={14} className="text-[#c79a45]" />
+                  <span>Cloudinary CDN Integration</span>
+                </div>
+                <p className="text-[11.5px]">
+                  Uploaded portraits are optimized, compressed, and delivered globally via Cloudinary CDN.
+                </p>
+                <p className="text-[11px] text-[#8b938d]">
+                  Recommended: Square 1:1 aspect ratio, at least 400×400 px. Max size 5MB.
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
       </Modal>
 
       {/* Confirm Remove from Committee Dialog */}

@@ -34,6 +34,7 @@ import { useDebouncedValue } from "@/components/ui/use-debounced-value";
 import { useMutation, useResource } from "@/components/ui/use-resource";
 import { ServiceError } from "@/services/query";
 import type { UserStatus } from "@/services/enums";
+import { apiUpload } from "@/services/apiClient";
 import {
   createUser,
   deleteUser,
@@ -564,7 +565,7 @@ export function UsersView({ openAddOnMount = false }: { openAddOnMount?: boolean
     {
       key: "user",
       header: "User",
-      cell: (user) => <PersonCell name={user.name} meta={user.email} />,
+      cell: (user) => <PersonCell name={user.name} meta={user.email} avatarUrl={user.avatarUrl} />,
     },
     {
       key: "role",
@@ -1051,7 +1052,14 @@ function EditUserModal({
     if (!file) return;
     try {
       setUploadingAvatar(true);
-      const updated = await uploadUserAvatar(user.id, file);
+      let updated: User;
+      if (typeof uploadUserAvatar === "function") {
+        updated = await uploadUserAvatar(user.id, file);
+      } else {
+        const formData = new FormData();
+        formData.append("file", file);
+        updated = await apiUpload<User>(`/users/${user.id}/avatar`, formData);
+      }
       setAvatarUrl(updated.avatarUrl);
     } finally {
       setUploadingAvatar(false);

@@ -38,11 +38,14 @@ import {
   type Registration,
   type StatMetric,
 } from "@/lib/mosque/types";
+import { Icon } from "@/components/finance/ui/icon";
+import { apiUploadRaw } from "@/services/apiClient";
 import {
   createEvent,
   deleteEvent,
   fetchEvents,
   updateEvent,
+  uploadEventImage,
 } from "@/services/eventService";
 
 const emptyDraft: EventDraft = {
@@ -56,6 +59,7 @@ const emptyDraft: EventDraft = {
   description: "",
   capacity: "100",
   registrationRequired: true,
+  imageUrl: "",
 };
 
 export function EventsView({ openCreateOnMount = false }: { openCreateOnMount?: boolean }) {
@@ -216,6 +220,7 @@ export function EventsView({ openCreateOnMount = false }: { openCreateOnMount?: 
         description: draft.description.trim(),
         capacity: Number(draft.capacity) || 100,
         registrationRequired: draft.registrationRequired,
+        imageUrl: draft.imageUrl?.trim() || null,
       });
 
       setCreating(false);
@@ -250,6 +255,7 @@ export function EventsView({ openCreateOnMount = false }: { openCreateOnMount?: 
         description: draft.description.trim(),
         capacity: Number(draft.capacity) || 100,
         registrationRequired: draft.registrationRequired,
+        imageUrl: draft.imageUrl !== undefined ? (draft.imageUrl.trim() || null) : null,
       });
 
       setEditing(null);
@@ -612,6 +618,13 @@ function EventDetailDrawer({
           </InlineNotice>
         ) : null}
 
+        {event.imageUrl ? (
+          <div className="relative aspect-[16/9] w-full overflow-hidden rounded-xl border border-[#e2e1d6] bg-[#072a20] shadow-sm">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={event.imageUrl} alt={event.title} className="h-full w-full object-cover" />
+          </div>
+        ) : null}
+
         <DetailSection title="Details">
           <DetailGrid>
             <DetailField label="Date" value={formatLongDate(event.date)} />
@@ -687,6 +700,115 @@ function EventDetailDrawer({
         </DetailSection>
       </div>
     </DetailDrawer>
+  );
+}
+
+/* -------------------------------------------------------------------------- *
+ * Event Image / Banner Upload Field
+ * -------------------------------------------------------------------------- */
+
+function EventImageField({
+  imageUrl,
+  onChange,
+}: {
+  imageUrl?: string;
+  onChange: (url: string) => void;
+}) {
+  const { notify } = useToast();
+  const [uploading, setUploading] = useState(false);
+
+  const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      setUploading(true);
+      let res: { url: string };
+      if (typeof uploadEventImage === "function") {
+        res = await uploadEventImage(file);
+      } else {
+        const formData = new FormData();
+        formData.append("file", file);
+        res = await apiUploadRaw<{ url: string }>("/events/upload-image", formData);
+      }
+      onChange(res.url);
+      notify({
+        tone: "success",
+        message: "Event image uploaded to Cloudinary!",
+      });
+    } catch (err: any) {
+      notify({
+        tone: "danger",
+        message: "Failed to upload event image.",
+        description: err?.message || "Please check the file and try again.",
+      });
+    } finally {
+      setUploading(false);
+      e.target.value = "";
+    }
+  };
+
+  return (
+    <div className="sm:col-span-2 space-y-1.5">
+      <label className="block text-xs font-semibold text-[#17211d]">
+        Event Banner / Poster (Cloudinary)
+      </label>
+
+      {imageUrl ? (
+        <div className="relative aspect-[21/9] w-full overflow-hidden rounded-xl border border-[#dcdacd] bg-[#072a20] shadow-sm group">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={imageUrl}
+            alt="Event banner"
+            className="h-full w-full object-cover"
+          />
+          <div className="absolute inset-0 bg-black/45 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2.5">
+            <label className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-white text-[#17211d] hover:bg-[#f6f5ee] shadow cursor-pointer transition-colors">
+              <Icon name="camera" size={13} className="text-[#0d4d3b]" />
+              {uploading ? "Uploading…" : "Change Banner"}
+              <input
+                type="file"
+                accept="image/*"
+                className="sr-only"
+                disabled={uploading}
+                onChange={handleFile}
+              />
+            </label>
+            <button
+              type="button"
+              onClick={() => onChange("")}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-red-600 text-white hover:bg-red-700 shadow transition-colors"
+            >
+              <Icon name="trash" size={13} />
+              Remove
+            </button>
+          </div>
+          <span className="absolute bottom-2 left-2 px-2 py-0.5 rounded bg-black/75 text-[10.5px] font-medium text-white/95 backdrop-blur-sm">
+            Cloudinary CDN
+          </span>
+        </div>
+      ) : (
+        <label className="flex flex-col items-center justify-center gap-2 p-5 border-2 border-dashed border-[#cfd4cd] hover:border-[#0d4d3b] rounded-xl bg-[#faf9f4] hover:bg-[#f5f3ec] transition-colors cursor-pointer text-center">
+          <div className="w-10 h-10 rounded-full bg-[#0d4d3b]/10 text-[#0d4d3b] flex items-center justify-center">
+            <Icon name={uploading ? "refresh" : "upload"} size={20} className={uploading ? "animate-spin" : ""} />
+          </div>
+          <div>
+            <p className="text-xs font-semibold text-[#17211d]">
+              {uploading ? "Uploading to Cloudinary CDN…" : "Click to upload event banner or poster"}
+            </p>
+            <p className="text-[11px] text-[#69726d] mt-0.5">
+              16:9 ratio recommended (e.g. 1200×675 px). JPG, PNG, WebP up to 5MB.
+            </p>
+          </div>
+          <input
+            type="file"
+            accept="image/*"
+            className="sr-only"
+            disabled={uploading}
+            onChange={handleFile}
+          />
+        </label>
+      )}
+    </div>
   );
 }
 
@@ -821,6 +943,11 @@ function CreateEventModal({
           containerClassName="sm:col-span-2"
         />
 
+        <EventImageField
+          imageUrl={draft.imageUrl}
+          onChange={(url) => set("imageUrl", url)}
+        />
+
         <div className="rounded-lg border border-[#e7e6dc] bg-[#faf9f4] px-3.5 py-1 sm:col-span-2">
           <Toggle
             label="Registration required"
@@ -885,6 +1012,7 @@ function EditEventModal({
     description: event.description,
     capacity: String(event.capacity),
     registrationRequired: event.registrationRequired,
+    imageUrl: event.imageUrl || "",
   });
   const [submitted, setSubmitted] = useState(false);
 
@@ -997,6 +1125,11 @@ function EditEventModal({
           value={draft.description}
           onChange={(e) => set("description", e.target.value)}
           containerClassName="sm:col-span-2"
+        />
+
+        <EventImageField
+          imageUrl={draft.imageUrl}
+          onChange={(url) => set("imageUrl", url)}
         />
 
         <div className="rounded-lg border border-[#e7e6dc] bg-[#faf9f4] px-3.5 py-1 sm:col-span-2">

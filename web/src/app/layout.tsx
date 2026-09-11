@@ -3,6 +3,7 @@ import "./globals.css";
 import { LanguageProvider } from "@/components/language-provider";
 import { hindSiliguri, inter, montserrat, playfair, notoSerifBengali } from "./fonts";
 import { AuthProvider } from "@/components/auth-provider";
+import { MosqueBrandingProvider } from "@/components/mosque-branding-provider";
 import { NoorLoader } from "@/components/loading/NoorLoader";
 import { ToastProvider } from "@/components/ui/toast";
 
@@ -36,10 +37,12 @@ export default function RootLayout({
           visitor read as signed in, which is exactly what the guards exist to distinguish.
         */}
         <AuthProvider>
-          <NoorLoader />
-          <LanguageProvider>
-            <ToastProvider>{children}</ToastProvider>
-          </LanguageProvider>
+          <MosqueBrandingProvider>
+            <NoorLoader />
+            <LanguageProvider>
+              <ToastProvider>{children}</ToastProvider>
+            </LanguageProvider>
+          </MosqueBrandingProvider>
         </AuthProvider>
       </body>
     </html>

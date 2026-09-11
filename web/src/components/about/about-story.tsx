@@ -14,11 +14,6 @@ export function AboutStory({ mosque, loading = false }: AboutStoryProps) {
   const { language } = useLanguage();
   const bn = language === "bn";
 
-  if (!loading && mosque && !mosque.story) {
-    // If backend data loaded but story is explicitly null/empty, hide gracefully
-    return null;
-  }
-
   // Split story into paragraphs if it exists
   const backendStoryParagraphs = mosque?.story
     ? mosque.story.split("\n\n").filter(Boolean)

@@ -13,10 +13,6 @@ export function AboutMilestones({ milestones = [], loading = false }: AboutMiles
   const { language } = useLanguage();
   const bn = language === "bn";
 
-  if (!loading && milestones.length === 0) {
-    return null;
-  }
-
   // Fallback items if loading or empty in development
   const displayItems = milestones.length > 0
     ? milestones.map((m) => ({

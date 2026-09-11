@@ -1,5 +1,21 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Query } from '@nestjs/common';
-import { ApiBearerAuth, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
+import 'multer';
+import {
+  Body,
+  Controller,
+  Delete,
+  FileTypeValidator,
+  Get,
+  MaxFileSizeValidator,
+  Param,
+  ParseFilePipe,
+  Patch,
+  Post,
+  Query,
+  UploadedFile,
+  UseInterceptors,
+} from '@nestjs/common';
+import { ApiBearerAuth, ApiConsumes, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
+import { FileInterceptor } from '@nestjs/platform-express';
 
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { Permissions } from '../common/decorators/permissions.decorator';
@@ -163,6 +179,57 @@ export class EventsController {
     @Param('id') eventId: string,
   ): Promise<MyEventRegistrationDto> {
     return this.eventsService.registerCurrentUser(user, eventId);
+  }
+
+  @Post('upload-image')
+  @Permissions('event.create')
+  @UseInterceptors(FileInterceptor('file'))
+  @ApiConsumes('multipart/form-data')
+  @ApiOperation({
+    summary: 'Upload event image',
+    description: 'Uploads an event banner or poster to Cloudinary CDN.',
+  })
+  @ApiResponse({ status: 201, description: 'Image uploaded successfully.' })
+  @ApiResponse({ status: 400, description: 'Invalid file or file too large.' })
+  async uploadImage(
+    @CurrentUser() user: AuthenticatedUser,
+    @UploadedFile(
+      new ParseFilePipe({
+        validators: [
+          new MaxFileSizeValidator({ maxSize: 5 * 1024 * 1024 }),
+          new FileTypeValidator({ fileType: /(jpg|jpeg|png|webp|svg\+xml)$/ }),
+        ],
+      }),
+    )
+    file: Express.Multer.File,
+  ): Promise<{ url: string; publicId: string }> {
+    return this.eventsService.uploadEventImage(user.mosqueId, file);
+  }
+
+  @Post(':id/image')
+  @Permissions('event.update')
+  @UseInterceptors(FileInterceptor('file'))
+  @ApiConsumes('multipart/form-data')
+  @ApiOperation({
+    summary: 'Upload event image for existing event',
+    description: 'Uploads an event banner image and updates the event.',
+  })
+  @ApiResponse({ status: 201, type: EventDto })
+  @ApiResponse({ status: 404, description: 'Event not found.' })
+  async uploadImageForEvent(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+    @UploadedFile(
+      new ParseFilePipe({
+        validators: [
+          new MaxFileSizeValidator({ maxSize: 5 * 1024 * 1024 }),
+          new FileTypeValidator({ fileType: /(jpg|jpeg|png|webp|svg\+xml)$/ }),
+        ],
+      }),
+    )
+    file: Express.Multer.File,
+  ): Promise<EventDto> {
+    return this.eventsService.uploadEventImageForEvent(user, id, file);
   }
 
   @Post()

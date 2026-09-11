@@ -13,10 +13,6 @@ export function AboutMissionVision({ mosque, loading = false }: AboutMissionVisi
   const { language } = useLanguage();
   const bn = language === "bn";
 
-  if (!loading && mosque && !mosque.mission && !mosque.vision) {
-    return null;
-  }
-
   const missionText = (!bn && mosque?.mission)
     ? mosque.mission
     : bn

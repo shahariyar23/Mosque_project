@@ -1,3 +1,5 @@
+"use client";
+
 /**
  * `/mosque` — the mosque's own record, its settings, and its facilities.
  *
@@ -56,6 +58,9 @@ export type Mosque = {
   timezone: string;
   establishedYear: number | null;
   description: string | null;
+  story?: string | null;
+  mission?: string | null;
+  vision?: string | null;
   logoUrl: string | null;
   isActive: boolean;
   createdAt: string;
@@ -80,6 +85,9 @@ export type UpdateMosqueInput = {
   /** Lowercase words joined by single hyphens, ≤ 64 characters. Changing it breaks existing links. */
   slug?: string;
   description?: string | null;
+  story?: string | null;
+  mission?: string | null;
+  vision?: string | null;
   /** ≤ 160 characters, must be a valid address. */
   email?: string | null;
   /** ≤ 32 characters. */
@@ -288,3 +296,92 @@ export function uploadMosqueLogo(file: File): Promise<Mosque> {
   formData.append("file", file);
   return apiUploadRaw<Mosque>("/mosque/logo", formData);
 }
+
+/* ------------------------------------------------------------------ *
+ * Milestones
+ * ------------------------------------------------------------------ */
+
+export type Milestone = {
+  id: string;
+  mosqueId: string;
+  year: string;
+  title: string;
+  description: string;
+  sortOrder: number;
+  isPublished: boolean;
+  createdAt?: string;
+  updatedAt?: string;
+};
+
+export type CreateMilestoneInput = {
+  year: string;
+  title: string;
+  description: string;
+  sortOrder?: number;
+  isPublished?: boolean;
+};
+
+export type UpdateMilestoneInput = Partial<CreateMilestoneInput>;
+
+export function fetchMilestones(): Promise<Milestone[]> {
+  return apiGetRaw<Milestone[]>("/mosque/milestones");
+}
+
+export function createMilestone(input: CreateMilestoneInput): Promise<Milestone> {
+  return apiPostRaw<Milestone>("/mosque/milestones", input);
+}
+
+export function updateMilestone(id: string, input: UpdateMilestoneInput): Promise<Milestone> {
+  return apiPatchRaw<Milestone>(`/mosque/milestones/${id}`, input);
+}
+
+export function deleteMilestone(id: string): Promise<void> {
+  return apiDeleteRaw(`/mosque/milestones/${id}`);
+}
+
+/* ------------------------------------------------------------------ *
+ * Core Beliefs & Values
+ * ------------------------------------------------------------------ */
+
+export type MosqueValue = {
+  id: string;
+  mosqueId: string;
+  num: string;
+  icon?: string | null;
+  title: string;
+  subtitle?: string | null;
+  description: string;
+  sortOrder: number;
+  isPublished: boolean;
+  createdAt?: string;
+  updatedAt?: string;
+};
+
+export type CreateValueInput = {
+  num: string;
+  icon?: string | null;
+  title: string;
+  subtitle?: string | null;
+  description: string;
+  sortOrder?: number;
+  isPublished?: boolean;
+};
+
+export type UpdateValueInput = Partial<CreateValueInput>;
+
+export function fetchValues(): Promise<MosqueValue[]> {
+  return apiGetRaw<MosqueValue[]>("/mosque/values");
+}
+
+export function createValue(input: CreateValueInput): Promise<MosqueValue> {
+  return apiPostRaw<MosqueValue>("/mosque/values", input);
+}
+
+export function updateValue(id: string, input: UpdateValueInput): Promise<MosqueValue> {
+  return apiPatchRaw<MosqueValue>(`/mosque/values/${id}`, input);
+}
+
+export function deleteValue(id: string): Promise<void> {
+  return apiDeleteRaw(`/mosque/values/${id}`);
+}
+

@@ -35,6 +35,12 @@ export const mosqueProfile: MosqueProfile = {
     "The mosque is governed by an elected committee of eleven members. Accounts are published each quarter and " +
     "read aloud after Jumu'ah at the end of the financial year. Everyone is welcome — for prayer, for study, or " +
     "simply to sit quietly.",
+  story:
+    "Noor Community Mosque was established with a clear and humble mission: to maintain a pure sanctuary for the worship of Allah, where every individual finds welcoming tranquility, compassionate counsel, and sacred learning.",
+  mission:
+    "To foster an inspiring, tranquil, and compassionate sanctuary for authentic Islamic worship and lifelong learning, cultivating moral integrity across generations.",
+  vision:
+    "To be an enlightened community where deep faith, scholarly wisdom, and practical mercy flourish together—guiding youth, strengthening families, and serving society.",
   social: {
     facebook: siteConfig.facebook,
     youtube: siteConfig.youtube,

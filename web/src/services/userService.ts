@@ -1,3 +1,5 @@
+"use client";
+
 /**
  * `/users` — the people in the mosque.
  *

@@ -24,10 +24,6 @@ export function AboutValues({ values = [], loading = false }: AboutValuesProps) 
   const { language } = useLanguage();
   const bn = language === "bn";
 
-  if (!loading && values.length === 0) {
-    return null;
-  }
-
   const defaultValues = [
     {
       num: "01",

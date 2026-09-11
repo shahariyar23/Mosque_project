@@ -3,6 +3,7 @@ import { Prisma, RegistrationStatus, Role } from '@prisma/client';
 import { Test, TestingModule } from '@nestjs/testing';
 
 import { AuditLogService } from '../audit/audit-log.service';
+import { CloudinaryService } from '../common/cloudinary/cloudinary.service';
 import type { AuthenticatedUser } from '../common/types/authenticated-user';
 import { PrismaService } from '../prisma/prisma.service';
 import { EventsService } from './events.service';
@@ -124,6 +125,15 @@ describe('EventsService', () => {
           provide: AuditLogService,
           useValue: {
             record: jest.fn().mockResolvedValue(undefined),
+          },
+        },
+        {
+          provide: CloudinaryService,
+          useValue: {
+            uploadImage: jest.fn().mockResolvedValue({
+              secureUrl: 'https://res.cloudinary.com/demo/image/upload/event-banner.jpg',
+              publicId: 'mosques/123/events/event-banner',
+            }),
           },
         },
       ],
@@ -620,6 +630,74 @@ describe('EventsService', () => {
           where: { id: REGISTRATION_ID },
           data: expect.objectContaining({ status: RegistrationStatus.cancelled }),
         }),
+      );
+    });
+  });
+
+  describe('uploadEventImage', () => {
+    it('uploads valid image file to Cloudinary and returns secure URL', async () => {
+      const mockFile = {
+        buffer: Buffer.from('fake-image-data'),
+        mimetype: 'image/jpeg',
+        size: 1024 * 100, // 100KB
+      } as Express.Multer.File;
+
+      const result = await service.uploadEventImage(MOSQUE_ID, mockFile);
+
+      expect(result.url).toBe('https://res.cloudinary.com/demo/image/upload/event-banner.jpg');
+      expect(result.publicId).toBe('mosques/123/events/event-banner');
+    });
+
+    it('throws BadRequestException if file is missing', async () => {
+      await expect(service.uploadEventImage(MOSQUE_ID, null as any)).rejects.toThrow();
+    });
+
+    it('throws BadRequestException for unsupported file type', async () => {
+      const badFile = {
+        buffer: Buffer.from('text'),
+        mimetype: 'application/pdf',
+        size: 1024,
+      } as Express.Multer.File;
+
+      await expect(service.uploadEventImage(MOSQUE_ID, badFile)).rejects.toThrow();
+    });
+  });
+
+  describe('uploadEventImageForEvent', () => {
+    it('uploads image and updates event record in Prisma', async () => {
+      const mockFile = {
+        buffer: Buffer.from('fake-image-data'),
+        mimetype: 'image/png',
+        size: 1024 * 200,
+      } as Express.Multer.File;
+
+      table().findFirst.mockResolvedValue(mockEventRow());
+      table().update.mockResolvedValue(
+        mockEventRow({ imageUrl: 'https://res.cloudinary.com/demo/image/upload/event-banner.jpg' }),
+      );
+
+      const result = await service.uploadEventImageForEvent(ACTOR, EVENT_ID, mockFile);
+
+      expect(result.imageUrl).toBe('https://res.cloudinary.com/demo/image/upload/event-banner.jpg');
+      expect(table().update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: EVENT_ID },
+          data: { imageUrl: 'https://res.cloudinary.com/demo/image/upload/event-banner.jpg' },
+        }),
+      );
+    });
+
+    it('throws NotFoundException if event does not exist in user mosque', async () => {
+      const mockFile = {
+        buffer: Buffer.from('fake-image-data'),
+        mimetype: 'image/png',
+        size: 1024 * 200,
+      } as Express.Multer.File;
+
+      table().findFirst.mockResolvedValue(null);
+
+      await expect(service.uploadEventImageForEvent(ACTOR, 'non-existent', mockFile)).rejects.toThrow(
+        NotFoundException,
       );
     });
   });

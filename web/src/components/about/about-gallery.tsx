@@ -15,10 +15,6 @@ export function AboutGallery({ gallery = [], loading = false }: AboutGalleryProp
   const { language } = useLanguage();
   const bn = language === "bn";
 
-  if (!loading && gallery.length === 0) {
-    return null;
-  }
-
   const defaultItems = [
     {
       src: "/arshan-latheef-fnq9X0fjGqc-unsplash.jpg",

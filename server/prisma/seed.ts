@@ -1,5 +1,7 @@
 /* eslint-disable no-console */
 import {
+  EventCategory,
+  EventStatus,
   Position,
   PrismaClient,
   Role,
@@ -349,11 +351,106 @@ async function main(): Promise<void> {
     }
   }
 
+  // Community Events
+  const eventsData = [
+    {
+      title: 'Weekly Quran Tafsir & Reflection',
+      slug: 'weekly-quran-tafsir',
+      category: EventCategory.education,
+      status: EventStatus.upcoming,
+      date: new Date('2026-09-15T00:00:00.000Z'),
+      startTime: '19:30',
+      endTime: '21:00',
+      location: 'Main Prayer Sanctuary',
+      speaker: 'Shaykh Ahmadullah',
+      description: 'Join us for an inspiring evening reflection on Surah Al-Kahf, practical lessons for daily life, and open community Q&A over warm tea.',
+      capacity: 150,
+      registrationRequired: false,
+      imageUrl: '/alim-L7J4ytEFRCg-unsplash.jpg',
+      isPublished: true,
+    },
+    {
+      title: 'Youth Leadership & Mentorship Circle',
+      slug: 'youth-leadership-circle',
+      category: EventCategory.youth,
+      status: EventStatus.upcoming,
+      date: new Date('2026-09-18T00:00:00.000Z'),
+      startTime: '17:00',
+      endTime: '19:00',
+      location: 'Youth Activity Suite',
+      speaker: 'Ustadh Tariq Aziz',
+      description: 'Empowering students and young professionals with Islamic values, career counseling, ethical leadership, and supportive brotherhood fellowship.',
+      capacity: 80,
+      registrationRequired: true,
+      imageUrl: '/fmaily praying.jpg',
+      isPublished: true,
+    },
+    {
+      title: 'Sisters Tajweed & Quran Halaqah',
+      slug: 'sisters-quran-halaqah',
+      category: EventCategory.quran,
+      status: EventStatus.upcoming,
+      date: new Date('2026-09-20T00:00:00.000Z'),
+      startTime: '10:30',
+      endTime: '12:30',
+      location: 'Sisters Prayer & Educational Suite',
+      speaker: 'Ustadha Fatima Begum',
+      description: 'Structured Quran tajweed revision, memorization practice, and sisterhood networking circle welcoming sisters of all recitation proficiencies.',
+      capacity: 60,
+      registrationRequired: true,
+      imageUrl: '/nourhan-sabek-6npKzC58MUE-unsplash.jpg',
+      isPublished: true,
+    },
+    {
+      title: 'Annual Community Health & Blood Donation Drive',
+      slug: 'community-health-fair',
+      category: EventCategory.community,
+      status: EventStatus.upcoming,
+      date: new Date('2026-09-26T00:00:00.000Z'),
+      startTime: '09:00',
+      endTime: '16:00',
+      location: 'Mosque Courtyard & Multi-purpose Hall',
+      speaker: 'Dr. Mahmud Hasan',
+      description: 'Free medical checkups, diabetes & blood pressure screenings, and a voluntary blood donation drive organized with certified health professionals.',
+      capacity: 300,
+      registrationRequired: false,
+      imageUrl: '/pexels-qaarif-14793742.jpg',
+      isPublished: true,
+    },
+    {
+      title: 'Zakat Calculation & Wealth Purification Workshop',
+      slug: 'zakat-awareness-workshop',
+      category: EventCategory.charity,
+      status: EventStatus.upcoming,
+      date: new Date('2026-10-02T00:00:00.000Z'),
+      startTime: '18:00',
+      endTime: '20:30',
+      location: 'Conference Hall',
+      speaker: 'Mufti Abdullah',
+      description: 'Comprehensive practical seminar explaining accurate Zakat computation on businesses, stocks, real estate, and gold according to authentic Shariah rules.',
+      capacity: 100,
+      registrationRequired: true,
+      imageUrl: '/arshan-latheef-fnq9X0fjGqc-unsplash.jpg',
+      isPublished: true,
+    },
+  ];
+
+  for (const ev of eventsData) {
+    const existing = await prisma.event.findFirst({
+      where: { mosqueId: mosque.id, slug: ev.slug },
+    });
+    if (!existing) {
+      await prisma.event.create({
+        data: { ...ev, mosqueId: mosque.id },
+      });
+    }
+  }
+
   console.warn(
     `Seeded "${mosque.name}" with story, mission, vision, ${people.length} accounts, ` +
       `${milestonesData.length} milestones, ${valuesData.length} values, ` +
-      `${facilitiesData.length} facilities, ${servicesData.length} services, and ` +
-      `${galleryData.length} gallery items.`,
+      `${facilitiesData.length} facilities, ${servicesData.length} services, ` +
+      `${galleryData.length} gallery items, and ${eventsData.length} events.`,
   );
 }
 
