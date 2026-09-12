@@ -9,7 +9,7 @@ import { getActiveMosqueId, subscribeTenantChange } from "@/services/tenantStore
 
 export function DashboardLanding() {
   const { user } = useDashboardSession();
-  const [activeMosqueId, setActiveMosqueId] = useState<string | null>(null);
+  const [activeMosqueId, setActiveMosqueId] = useState<string | null>(() => getActiveMosqueId());
   const [mounted, setMounted] = useState(false);
 
   const isSuperAdmin =
@@ -17,9 +17,12 @@ export function DashboardLanding() {
     (user?.permissions && user.permissions.includes("platform.manage"));
 
   useEffect(() => {
-    setActiveMosqueId(getActiveMosqueId());
-    setMounted(true);
-    return subscribeTenantChange((id) => setActiveMosqueId(id));
+    const mountedTimer = window.setTimeout(() => setMounted(true), 0);
+    const unsubscribe = subscribeTenantChange((id) => setActiveMosqueId(id));
+    return () => {
+      window.clearTimeout(mountedTimer);
+      unsubscribe();
+    };
   }, []);
 
   if (!mounted) {
@@ -35,7 +38,10 @@ export function DashboardLanding() {
   return (
     <div className="space-y-4">
       {isSuperAdmin && activeMosqueId && <SuperAdminMosqueBanner />}
-      <DashboardOverview />
+      {/* A tenant change must discard the previous overview state before the next request.
+          The API validates the selector, and this key prevents Noor's in-memory response from
+          remaining visible while the Uttara request is in flight. */}
+      <DashboardOverview key={activeMosqueId ?? "own-mosque"} />
     </div>
   );
 }

@@ -17,8 +17,7 @@ import type { Session } from "@/lib/session";
  * layout, and handed here as props. Nothing in this file reads a cookie, decodes a token, or touches
  * `localStorage` — a client that can edit its own permission list is not a permission check.
  *
- * The value survives the arrival of real authentication unchanged. Only the layout's `getSession()`
- * call changes.
+ * The value is sourced from the real authenticated session provided by `DashboardGate`.
  */
 type SessionValue = {
   /** `null` only when a component renders outside the provider, which is a wiring bug. */

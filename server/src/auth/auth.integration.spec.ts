@@ -117,6 +117,8 @@ type MosqueRow = {
   slug: string;
   name: string;
   isActive: boolean;
+  status?: string;
+  domain?: string | null;
 };
 
 type RefreshTokenRow = {
@@ -924,6 +926,30 @@ describe('Auth (integration)', () => {
         .expect(200);
     });
 
+    it('refuses a Noor account on the Uttara website', async () => {
+      seedMember({ email: 'member@noor.example' });
+      database.mosques.push({
+        id: randomUUID(),
+        slug: 'uttara',
+        name: 'Uttara Central Masjid',
+        domain: 'uttara.mostak.tech',
+        status: 'active',
+        isActive: true,
+      });
+
+      const response = await request(server)
+        .post('/api/v1/auth/login')
+        .set('Origin', 'http://uttara.mostak.tech:3000')
+        .send({ email: 'member@noor.example', password: PASSWORD })
+        .expect(401);
+
+      expect(response.body).toMatchObject({
+        code: 'INVALID_CREDENTIALS',
+        message: 'Invalid credentials.',
+      });
+      expect(database.refreshTokens).toHaveLength(0);
+    });
+
     it('sets the refresh token as an HttpOnly cookie scoped to the auth routes', async () => {
       seedMember();
 
@@ -1332,6 +1358,25 @@ describe('Auth (integration)', () => {
         .get('/api/v1/auth/me')
         .set('Authorization', `Bearer ${issued}`)
         .expect(200);
+    });
+
+    it('does not restore a Noor session on the Uttara website', async () => {
+      seedMember({ email: 'member@noor.example' });
+      const { refreshToken } = await signIn({ email: 'member@noor.example' });
+      database.mosques.push({
+        id: randomUUID(),
+        slug: 'uttara',
+        name: 'Uttara Central Masjid',
+        domain: 'uttara.mostak.tech',
+        status: 'active',
+        isActive: true,
+      });
+
+      await request(server)
+        .post('/api/v1/auth/refresh')
+        .set('Origin', 'http://uttara.mostak.tech:3000')
+        .set('Cookie', cookieHeader(refreshToken))
+        .expect(401);
     });
 
     it('revokes the presented token and links the chain', async () => {

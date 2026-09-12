@@ -3,7 +3,7 @@ import { PageHeader } from "@/components/dashboard/page-header";
 import { RequirePermission } from "@/components/finance/ui/permission-gate";
 
 /**
- * The permission check here used to read `getSession()` — the hard-coded demo profile — so it granted or
+ * The permission check here previously read a hard-coded demo profile, so it granted or
  * refused access on invented permissions rather than the signed-in account's own. `RequirePermission`
  * reads the real session, and renders the same no-access panel every other gated page uses instead of a
  * one-off card written for this route.

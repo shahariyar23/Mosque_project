@@ -141,7 +141,8 @@ export class AuthService {
    * "account disabled" would be friendlier, and would also let anyone confirm an address is registered.
    */
   async login(dto: LoginDto, origin: SessionOrigin): Promise<SessionResult> {
-    const credentials = await this.findCredentials(dto);
+    const mosqueId = await this.resolveOriginMosque(origin);
+    const credentials = await this.findCredentials(dto, mosqueId);
 
     if (!credentials) {
       // Burn the CPU a verification would have cost. Argon2id takes tens of milliseconds by design, so
@@ -402,6 +403,9 @@ export class AuthService {
     presented: string,
     origin: SessionOrigin,
   ): Promise<SessionResult> {
+    const mosqueId = await this.resolveOriginMosque(origin);
+    if (mosqueId !== undefined && mosqueId !== user.mosqueId) throw unauthenticated();
+
     const stored = await this.prisma.refreshToken.findUnique({
       where: { tokenHash: hashToken(presented) },
       select: { id: true, userId: true, expiresAt: true, revokedAt: true },
@@ -673,11 +677,15 @@ export class AuthService {
    * them unique *within a mosque*, so a deployment serving several can legitimately hold the same
    * address twice. One row is the ordinary case; two means the caller has to say which mosque.
    */
-  private async findCredentials(dto: LoginDto): Promise<CredentialRow | null> {
+  private async findCredentials(
+    dto: LoginDto,
+    mosqueId?: string,
+  ): Promise<CredentialRow | null> {
     const where: Prisma.UserWhereInput = {
       // A soft-deleted account cannot sign in. Same filter as every other read in the project.
       deletedAt: null,
       ...identifierOf(dto),
+      ...(mosqueId === undefined ? {} : { mosqueId }),
       // Filtered through the relation, so narrowing by mosque costs no extra query.
       ...(dto.mosqueSlug === undefined ? {} : { mosque: { slug: dto.mosqueSlug } }),
     };
@@ -691,6 +699,28 @@ export class AuthService {
     if (matches.length > 1) throw mosqueRequired();
 
     return matches[0] ?? null;
+  }
+
+  /**
+   * Resolves a browser-hosted mosque session to its tenant.
+   *
+   * Native clients and local development normally have no Origin header, so they retain the explicit
+   * `mosqueSlug` and duplicate-address behaviour. A real mosque website has a canonical hostname in
+   * the database. On that website an account from another mosque must not be able to create or renew a
+   * session, even when the refresh-cookie domain is shared by the parent domain.
+   */
+  private async resolveOriginMosque(origin: SessionOrigin): Promise<string | undefined> {
+    const hostname = origin.hostname;
+    if (!hostname || hostname === 'localhost' || hostname === '127.0.0.1') return undefined;
+
+    const mosque = await this.prisma.mosque.findUnique({
+      where: { domain: hostname },
+      select: { id: true, isActive: true, status: true },
+    });
+
+    if (!mosque || !mosque.isActive || mosque.status !== 'active') throw unauthenticated();
+
+    return mosque.id;
   }
 
   /**

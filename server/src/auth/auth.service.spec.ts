@@ -215,7 +215,7 @@ describe('AuthService', () => {
         updateMany: jest.fn().mockResolvedValue({ count: 1 }),
       },
       mosque: {
-        findUnique: jest.fn().mockResolvedValue({ id: MOSQUE_ID, isActive: true }),
+        findUnique: jest.fn().mockResolvedValue({ id: MOSQUE_ID, isActive: true, status: 'active' }),
         findMany: jest.fn().mockResolvedValue([{ id: MOSQUE_ID }]),
       },
       refreshToken: {
@@ -524,6 +524,25 @@ describe('AuthService', () => {
 
       expect(whereOf(prisma.user.findMany)).toMatchObject({
         mosque: { slug: 'noor-jame-masjid' },
+      });
+    });
+
+    it('scopes a mosque website sign in to the mosque assigned to that hostname', async () => {
+      prisma.mosque.findUnique.mockResolvedValue({
+        id: OTHER_ID,
+        isActive: true,
+        status: 'active',
+      });
+
+      await service.login(loginDto(), { ...ORIGIN, hostname: 'uttara.mostak.tech' });
+
+      expect(whereOf(prisma.user.findMany)).toMatchObject({
+        email: 'karim@noor.example',
+        mosqueId: OTHER_ID,
+      });
+      expect(prisma.mosque.findUnique).toHaveBeenCalledWith({
+        where: { domain: 'uttara.mostak.tech' },
+        select: { id: true, isActive: true, status: true },
       });
     });
 

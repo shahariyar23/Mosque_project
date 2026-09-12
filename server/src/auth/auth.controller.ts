@@ -309,11 +309,22 @@ export class AuthController {
 /**
  * Where a session was created from.
  *
- * Recorded on the refresh-token row so a future session list can say "Chrome on Windows, yesterday". It
- * is never read back for a decision — pinning a session to an IP breaks every mobile network, and a
- * user-agent string is a client-supplied header, so treating either as proof of identity would be
- * trusting the caller to describe themselves honestly.
+ * Device details are recorded on the refresh-token row so a future session list can say "Chrome on
+ * Windows, yesterday". The browser hostname, when supplied by an allowed mosque website, is used to
+ * bind login and refresh to that mosque. It is not a replacement for credentials or authorization.
  */
 function originOf(request: Request): SessionOrigin {
-  return { userAgent: request.get('user-agent'), ipAddress: request.ip };
+  const rawOrigin = request.get('origin');
+  let hostname: string | undefined;
+
+  if (rawOrigin) {
+    try {
+      hostname = new URL(rawOrigin).hostname.toLowerCase();
+    } catch {
+      // An invalid Origin cannot identify a mosque. CORS handles browser-origin validation and the
+      // auth service treats an absent hostname as a direct API request.
+    }
+  }
+
+  return { userAgent: request.get('user-agent'), ipAddress: request.ip, hostname };
 }

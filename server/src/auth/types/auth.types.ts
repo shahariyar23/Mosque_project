@@ -70,10 +70,17 @@ export const SUBJECT_SELECT = {
   isActive: true,
 } satisfies Prisma.UserSelect;
 
-/** Where a session was created from. Recorded for the session list, never used for a decision. */
+/**
+ * Where a session was created from.
+ *
+ * The browser hostname is used only to keep a mosque website's sign in and refresh flow inside
+ * that mosque. Device details are recorded for a future session list and are never used to make an
+ * authorization decision.
+ */
 export interface SessionOrigin {
   userAgent?: string;
   ipAddress?: string;
+  hostname?: string;
 }
 
 /** A freshly signed refresh token and the row that now records it. */
