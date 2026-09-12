@@ -99,7 +99,7 @@ const WEEKDAYS_BN = ["শনি", "রবি", "সোম", "মঙ্গল", "
 export default function PrayerTimesPage() {
   const { language } = useLanguage();
   const isBn = language === "bn";
-  const { branding } = useMosqueBranding();
+  const { branding, activeSlug } = useMosqueBranding();
 
   const {
     prayers,
@@ -294,7 +294,7 @@ export default function PrayerTimesPage() {
     }
 
     setSelectedDayLoading(true);
-    fetchPublicPrayerTimesForDate(DEFAULT_PUBLIC_MOSQUE_SLUG, selectedDate)
+    fetchPublicPrayerTimesForDate(activeSlug || DEFAULT_PUBLIC_MOSQUE_SLUG, selectedDate)
       .then((data) => {
         if (!active) return;
         if (data) {
@@ -315,7 +315,7 @@ export default function PrayerTimesPage() {
     return () => {
       active = false;
     };
-  }, [selectedDate, todayIso, rawPrayerTimes]);
+  }, [selectedDate, todayIso, rawPrayerTimes, activeSlug]);
 
   // Calendar navigation
   const changeMonth = (offset: number) => {

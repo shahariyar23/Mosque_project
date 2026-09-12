@@ -39,6 +39,24 @@ const STORAGE_KEY = "mosque_branding_v1";
 const PUBLIC_SLUG_STORAGE_KEY = "noor_public_mosque_slug";
 const EVENT_KEY = "mosque-branding-updated";
 const SLUG_EVENT_KEY = "noor:public_mosque_changed";
+const PUBLIC_ROOT_DOMAIN = "mostak.tech";
+
+/** The public tenant is the first label of its mostak.tech hostname. */
+export function resolvePublicMosqueSlug(hostname: string): string {
+  const host = hostname.toLowerCase().split(":")[0];
+  const suffix = `.${PUBLIC_ROOT_DOMAIN}`;
+
+  if (!host.endsWith(suffix)) return DEFAULT_PUBLIC_MOSQUE_SLUG;
+
+  const subdomain = host.slice(0, -suffix.length);
+  if (!subdomain || subdomain === "www" || subdomain.includes(".")) {
+    return DEFAULT_PUBLIC_MOSQUE_SLUG;
+  }
+
+  return /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/.test(subdomain)
+    ? subdomain
+    : DEFAULT_PUBLIC_MOSQUE_SLUG;
+}
 
 const defaultBranding: MosqueBranding = {
   name: siteConfig.name,
@@ -93,16 +111,28 @@ const MosqueBrandingContext = createContext<MosqueBrandingContextValue>({
 export function MosqueBrandingProvider({ children }: { children: ReactNode }) {
   // Always initialize with defaultBranding so server-rendered HTML and client initial hydration match exactly
   const [branding, setBranding] = useState<MosqueBranding>(defaultBranding);
-  const [activeSlug, setActiveSlugState] = useState<string>(DEFAULT_PUBLIC_MOSQUE_SLUG);
+  const [activeSlug, setActiveSlugState] = useState<string>(() =>
+    typeof window === "undefined"
+      ? DEFAULT_PUBLIC_MOSQUE_SLUG
+      : resolvePublicMosqueSlug(window.location.hostname),
+  );
   const { session } = useAuth();
 
   // Hydrate stored branding and active slug from localStorage only after initial client mount
   useEffect(() => {
     if (typeof window !== "undefined") {
       try {
-        const storedSlug = localStorage.getItem(PUBLIC_SLUG_STORAGE_KEY);
+        const hostname = window.location.hostname;
+        const hostnameSlug = resolvePublicMosqueSlug(hostname);
+        const isPublicDomain =
+          hostname === PUBLIC_ROOT_DOMAIN || hostname.endsWith(`.${PUBLIC_ROOT_DOMAIN}`);
+        const storedSlug = isPublicDomain
+          ? null
+          : localStorage.getItem(PUBLIC_SLUG_STORAGE_KEY);
         if (storedSlug) {
           setActiveSlugState(storedSlug);
+        } else {
+          setActiveSlugState(hostnameSlug);
         }
       } catch {}
     }
@@ -158,8 +188,12 @@ export function MosqueBrandingProvider({ children }: { children: ReactNode }) {
 
   const refreshBranding = useCallback(async () => {
     try {
-      // 1. If signed in, try authenticated /mosque endpoint first
-      if (session?.user?.mosqueId) {
+      const hostname = typeof window !== "undefined" ? window.location.hostname : "";
+      const isPublicHostname =
+        hostname === PUBLIC_ROOT_DOMAIN || hostname.endsWith(`.${PUBLIC_ROOT_DOMAIN}`);
+
+      // Public website branding always follows its hostname, even when a visitor is signed in.
+      if (!isPublicHostname && session?.user?.mosqueId) {
         try {
           const authMosque = await fetchMosque();
           if (authMosque) {
@@ -179,8 +213,12 @@ export function MosqueBrandingProvider({ children }: { children: ReactNode }) {
         }
       }
 
-      // 2. Fallback to public tenant endpoint for current activeSlug
-      const pubMosque = await fetchPublicMosque(activeSlug);
+      // 2. Public tenants come from the hostname; activeSlug remains for local development and legacy routes.
+      const hostnameSlug = isPublicHostname
+        ? resolvePublicMosqueSlug(hostname)
+        : DEFAULT_PUBLIC_MOSQUE_SLUG;
+      const publicSlug = hostnameSlug !== DEFAULT_PUBLIC_MOSQUE_SLUG ? hostnameSlug : activeSlug;
+      const pubMosque = await fetchPublicMosque(publicSlug);
       if (pubMosque) {
         updateBranding({
           name: pubMosque.name || siteConfig.name,

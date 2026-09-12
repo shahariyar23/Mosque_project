@@ -1227,6 +1227,12 @@ describe('UsersService', () => {
       expect(whereOf(prisma.user.findFirst).mosqueId).toBeUndefined();
     });
 
+    it('scopes a platform administrator back to the selected mosque', async () => {
+      await service.findMany({}, platform({ tenantContext: 'mosque' }));
+
+      expect(whereOf(prisma.user.findMany).mosqueId).toBe(MOSQUE_ID);
+    });
+
     it('confines a suspended platform administrator to their own mosque', async () => {
       // `effectivePermissions` resolves an inactive account to nothing, so the exemption goes with the
       // rest of their authority. The alternative — reading the role name — would leave a suspended

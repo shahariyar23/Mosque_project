@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useLanguage } from "@/components/language-provider";
+import { useMosqueBranding } from "@/components/mosque-branding-provider";
 import { formatAmount } from "@/lib/finance/format";
 import {
   DEFAULT_PUBLIC_MOSQUE_SLUG,
@@ -23,7 +24,9 @@ export function PublicTransparencySection({
   className?: string;
 }) {
   const { language } = useLanguage();
+  const { activeSlug } = useMosqueBranding();
   const bengali = language === "bn";
+  const resolvedMosqueSlug = activeSlug || mosqueSlug;
 
   const [activeTab, setActiveTab] = useState<"funds" | "jummah">("funds");
   const [funds, setFunds] = useState<PublicFundProgress[]>([]);
@@ -41,9 +44,9 @@ export function PublicTransparencySection({
         setError(null);
 
         const [fundsRes, summaryRes, collectionsRes] = await Promise.all([
-          fetchPublicFunds(mosqueSlug).catch(() => []),
-          fetchPublicTransparencySummary(mosqueSlug).catch(() => null),
-          fetchPublicJummahCollections(mosqueSlug, { limit: 50 }).catch(() => ({
+          fetchPublicFunds(resolvedMosqueSlug).catch(() => []),
+          fetchPublicTransparencySummary(resolvedMosqueSlug).catch(() => null),
+          fetchPublicJummahCollections(resolvedMosqueSlug, { limit: 50 }).catch(() => ({
             rows: [],
             meta: { page: 1, limit: 50, total: 0, totalPages: 1 },
           })),
@@ -68,7 +71,7 @@ export function PublicTransparencySection({
     return () => {
       mounted = false;
     };
-  }, [mosqueSlug]);
+  }, [resolvedMosqueSlug]);
 
   return (
     <section className={`mx-auto max-w-7xl px-5 py-12 lg:px-8 ${className}`}>

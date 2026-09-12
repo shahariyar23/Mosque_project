@@ -11,6 +11,7 @@ import { AuthModule } from './auth/auth.module';
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
 import { PermissionsGuard } from './common/guards/permissions.guard';
 import { RolesGuard } from './common/guards/roles.guard';
+import { PublicTenantGuard } from './common/guards/public-tenant.guard';
 import { HealthModule } from './health/health.module';
 import { PermissionsModule } from './permissions/permissions.module';
 import { PrismaModule } from './prisma/prisma.module';
@@ -162,6 +163,7 @@ import { CloudinaryModule } from './common/cloudinary/cloudinary.module';
     { provide: APP_GUARD, useClass: JwtAuthGuard },
     { provide: APP_GUARD, useClass: RolesGuard },
     { provide: APP_GUARD, useClass: PermissionsGuard },
+    { provide: APP_GUARD, useClass: PublicTenantGuard },
   ],
 })
 export class AppModule {}

@@ -49,6 +49,12 @@ export class EnvironmentVariables {
   })
   DATABASE_URL!: string;
 
+  /** Maximum seconds Prisma waits for a client-side pool connection during request bursts. */
+  @IsInt()
+  @Min(1)
+  @Max(120)
+  DATABASE_POOL_TIMEOUT_SECONDS = 30;
+
   /**
    * Signing secrets. Long minimum because these are the whole of the token security story, and
    * distinct from each other so a leaked access secret cannot be used to mint refresh tokens

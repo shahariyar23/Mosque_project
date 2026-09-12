@@ -10,6 +10,9 @@ export class AdminMosqueSummaryDto {
   @ApiPropertyOptional({ example: 'MOS-001' })
   code: string | null;
 
+  @ApiPropertyOptional({ example: 'uttara.mostak.tech' })
+  domain: string | null;
+
   @ApiProperty({ example: 'Noor Jame Masjid' })
   name: string;
 

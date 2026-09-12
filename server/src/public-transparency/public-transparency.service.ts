@@ -222,7 +222,7 @@ export class PublicTransparencyService {
 
   private async getPublicMosque(slug: string) {
     const mosque = await this.prisma.mosque.findUnique({
-      where: { slug, isActive: true },
+      where: { slug, isActive: true, status: 'active' },
       select: {
         id: true,
         name: true,

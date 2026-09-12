@@ -54,7 +54,7 @@ export class PublicHomeService {
    */
   private async getPublicMosque(slug: string) {
     const mosque = await this.prisma.mosque.findUnique({
-      where: { slug, isActive: true },
+      where: { slug, isActive: true, status: 'active' },
       select: { id: true },
     });
 
@@ -70,7 +70,7 @@ export class PublicHomeService {
 
   async getMosque(slug: string): Promise<PublicMosqueDto | null> {
     const mosque = await this.prisma.mosque.findUnique({
-      where: { slug, isActive: true },
+      where: { slug, isActive: true, status: 'active' },
       select: {
         slug: true,
         name: true,

@@ -9,7 +9,6 @@ import { gsap, useIsomorphicLayoutEffect } from "@/lib/gsap";
 import { siteConfig } from "@/config/site";
 import { usePublicPrayerTimes } from "@/hooks/use-public-prayer-times";
 import { useMosqueBranding } from "@/components/mosque-branding-provider";
-import { PublicMosqueSelector } from "@/components/public-mosque-selector";
 
 const links = [
   { label: "Home", href: "/", section: "home" },
@@ -345,7 +344,6 @@ function MosqueInformationBar({
         </p>
 
         <div className="col-start-2 row-start-1 flex items-center gap-2.5 justify-self-end sm:ml-auto" aria-label="Controls">
-          <PublicMosqueSelector />
           <div className="flex items-center gap-1" aria-label="Language">
             <button
               type="button"

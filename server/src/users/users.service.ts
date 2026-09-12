@@ -671,7 +671,7 @@ export class UsersService {
    * caller could offer a different one.
    */
   private mosqueScope(actor: AuthenticatedUser): { mosqueId?: string } {
-    return hasPermission(effectivePermissions(actor), 'platform.manage')
+    return actor.tenantContext !== 'mosque' && hasPermission(effectivePermissions(actor), 'platform.manage')
       ? {}
       : { mosqueId: actor.mosqueId };
   }

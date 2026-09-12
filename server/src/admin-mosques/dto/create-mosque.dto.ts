@@ -1,6 +1,7 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
   IsEmail,
+  IsFQDN,
   IsNotEmpty,
   IsNumber,
   IsOptional,
@@ -27,6 +28,12 @@ export class CreateMosqueDto {
   @IsOptional()
   @MaxLength(64)
   slug?: string;
+
+  @ApiPropertyOptional({ description: 'Unique public hostname', example: 'dhanmondi.mostak.tech' })
+  @IsFQDN({ require_tld: true })
+  @IsOptional()
+  @MaxLength(255)
+  domain?: string;
 
   @ApiPropertyOptional({ description: 'Contact email' })
   @IsEmail()

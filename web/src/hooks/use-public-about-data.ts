@@ -20,6 +20,7 @@ import {
   type PublicService,
   type PublicCommunityStats,
 } from "@/services/publicHomeService";
+import { useMosqueBranding } from "@/components/mosque-branding-provider";
 
 export type AboutData = {
   mosque: PublicMosqueInfo | null;
@@ -32,7 +33,9 @@ export type AboutData = {
   stats: PublicCommunityStats | null;
 };
 
-export function usePublicAboutData(mosqueSlug: string = DEFAULT_PUBLIC_MOSQUE_SLUG) {
+export function usePublicAboutData(mosqueSlug?: string) {
+  const { activeSlug } = useMosqueBranding();
+  const resolvedMosqueSlug = mosqueSlug || activeSlug || DEFAULT_PUBLIC_MOSQUE_SLUG;
   const [data, setData] = useState<AboutData>({
     mosque: null,
     facilities: [],
@@ -60,14 +63,14 @@ export function usePublicAboutData(mosqueSlug: string = DEFAULT_PUBLIC_MOSQUE_SL
           services,
           stats,
         ] = await Promise.allSettled([
-          fetchPublicMosque(mosqueSlug),
-          fetchPublicFacilities(mosqueSlug),
-          fetchPublicLeadership(mosqueSlug),
-          fetchPublicMilestones(mosqueSlug),
-          fetchPublicValues(mosqueSlug),
-          fetchPublicGallery(mosqueSlug),
-          fetchPublicServices(mosqueSlug, 8),
-          fetchPublicCommunityStats(mosqueSlug),
+          fetchPublicMosque(resolvedMosqueSlug),
+          fetchPublicFacilities(resolvedMosqueSlug),
+          fetchPublicLeadership(resolvedMosqueSlug),
+          fetchPublicMilestones(resolvedMosqueSlug),
+          fetchPublicValues(resolvedMosqueSlug),
+          fetchPublicGallery(resolvedMosqueSlug),
+          fetchPublicServices(resolvedMosqueSlug, 8),
+          fetchPublicCommunityStats(resolvedMosqueSlug),
         ]);
 
         if (!mounted) return;
@@ -92,7 +95,7 @@ export function usePublicAboutData(mosqueSlug: string = DEFAULT_PUBLIC_MOSQUE_SL
     return () => {
       mounted = false;
     };
-  }, [mosqueSlug]);
+  }, [resolvedMosqueSlug]);
 
   return { data, loading };
 }

@@ -483,7 +483,7 @@ export class AnnouncementsService implements OnModuleInit, OnModuleDestroy {
     query: { page?: number; limit?: number; category?: string; search?: string },
   ): Promise<{ rows: AnnouncementResponseDto[]; total: number; page: number; limit: number; totalPages: number }> {
     const mosque = await this.prisma.mosque.findUnique({
-      where: { slug: mosqueSlug },
+      where: { slug: mosqueSlug, isActive: true, status: 'active' },
       select: { id: true },
     });
 
@@ -560,7 +560,7 @@ export class AnnouncementsService implements OnModuleInit, OnModuleDestroy {
    */
   async findPublicOne(mosqueSlug: string, id: string): Promise<AnnouncementResponseDto> {
     const mosque = await this.prisma.mosque.findUnique({
-      where: { slug: mosqueSlug },
+      where: { slug: mosqueSlug, isActive: true, status: 'active' },
       select: { id: true },
     });
 

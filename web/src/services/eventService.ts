@@ -55,6 +55,7 @@ export type EventQuery = {
   from?: string;
   to?: string;
   all?: boolean;
+  mosqueSlug?: string;
 };
 
 export type CreateEventInput = {
@@ -174,8 +175,11 @@ export async function fetchEvents(
 /**
  * Fetch a single event by ID or slug.
  */
-export async function fetchEvent(idOrSlug: string): Promise<MosqueEvent> {
-  const result = await apiGetRaw<BackendEvent>(`/events/${encodeURIComponent(idOrSlug)}`);
+export async function fetchEvent(idOrSlug: string, mosqueSlug?: string): Promise<MosqueEvent> {
+  const result = await apiGetRaw<BackendEvent>(
+    `/events/${encodeURIComponent(idOrSlug)}`,
+    mosqueSlug ? { mosqueSlug } : undefined,
+  );
   return toFrontendEvent(result);
 }
 

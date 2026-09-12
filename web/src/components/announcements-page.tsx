@@ -22,10 +22,13 @@ import {
   type PublicAnnouncementsResult,
 } from "@/services/announcementsService";
 import { DEFAULT_PUBLIC_MOSQUE_SLUG } from "@/services/publicHomeService";
+import { useMosqueBranding } from "@/components/mosque-branding-provider";
 
 export function AnnouncementsPage() {
   const { language } = useLanguage();
   const bn = language === "bn";
+  const { activeSlug } = useMosqueBranding();
+  const mosqueSlug = activeSlug || DEFAULT_PUBLIC_MOSQUE_SLUG;
 
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
   const [total, setTotal] = useState(0);
@@ -52,7 +55,7 @@ export function AnnouncementsPage() {
     setLoading(true);
     setError(null);
 
-    fetchPublicAnnouncements(DEFAULT_PUBLIC_MOSQUE_SLUG, {
+    fetchPublicAnnouncements(mosqueSlug, {
       page,
       limit: 9,
       category: category !== "all" ? category : undefined,
@@ -76,7 +79,7 @@ export function AnnouncementsPage() {
     return () => {
       mounted = false;
     };
-  }, [page, category, debouncedSearch, bn]);
+  }, [page, category, debouncedSearch, bn, mosqueSlug]);
 
   // Find any urgent announcement for the top highlight
   const urgentAnnouncement = useMemo(() => {

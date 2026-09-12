@@ -68,6 +68,8 @@ model Mosque {
   slug String @unique @db.VarChar(64)
   /// Business identifier code, e.g. MOS-001
   code String? @unique @db.VarChar(32)
+  /// Canonical public hostname, e.g. uttara.mostak.tech. Null until a domain is assigned.
+  domain String? @unique @db.VarChar(255)
   name String @db.VarChar(160)
   /// Tenant status: active, suspended, inactive
   status String @default("active") @db.VarChar(32)

@@ -79,6 +79,15 @@ export function fetchRamadanSchedules(query: RamadanQuery = {}): Promise<Ramadan
   });
 }
 
+export function fetchPublicRamadanSchedules(
+  mosqueSlug: string,
+  query: RamadanQuery = {},
+): Promise<Ramadan[]> {
+  return apiGetRaw<Ramadan[]>(`/ramadan/public/mosques/${encodeURIComponent(mosqueSlug)}`, {
+    year: query.year,
+  });
+}
+
 /**
  * Fetch a single Ramadan schedule row by its UUID.
  *

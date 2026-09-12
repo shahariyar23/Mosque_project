@@ -1,5 +1,7 @@
 "use client";
 
+import { useEffect, useState } from "react";
+
 /**
  * Tenant context store for Super Admin multi-mosque management.
  *
@@ -52,5 +54,17 @@ export function subscribeTenantChange(callback: (mosqueId: string | null) => voi
   return () => {
     window.removeEventListener(EVENT_NAME, handler);
   };
+}
+
+/**
+ * A monotonic signal for data hooks. The selected ID is read by apiClient at request time; this signal
+ * tells mounted resource hooks that their previous response belongs to a different tenant context.
+ */
+export function useTenantRevision(): number {
+  const [revision, setRevision] = useState(0);
+
+  useEffect(() => subscribeTenantChange(() => setRevision((current) => current + 1)), []);
+
+  return revision;
 }
 

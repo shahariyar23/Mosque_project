@@ -3,6 +3,7 @@
 import { useRef } from "react";
 import dynamic from "next/dynamic";
 import { useLanguage } from "@/components/language-provider";
+import { useMosqueBranding } from "@/components/mosque-branding-provider";
 import { gsap, ScrollTrigger, useIsomorphicLayoutEffect } from "@/lib/gsap";
 import { fetchPublicFunds, DEFAULT_PUBLIC_MOSQUE_SLUG } from "@/services/publicTransparencyService";
 import { useEffect, useState } from "react";
@@ -19,13 +20,14 @@ type FundProgress = {
 export function DonationFooterSection() {
   const { language } = useLanguage();
   const bn = language === "bn";
+  const { activeSlug } = useMosqueBranding();
   const containerRef = useRef<HTMLElement>(null);
   const [funds, setFunds] = useState<FundProgress[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     let mounted = true;
-    fetchPublicFunds(DEFAULT_PUBLIC_MOSQUE_SLUG)
+    fetchPublicFunds(activeSlug || DEFAULT_PUBLIC_MOSQUE_SLUG)
       .then((result) => {
         if (!mounted) return;
         const activeFunds = result
@@ -48,7 +50,7 @@ export function DonationFooterSection() {
     return () => {
       mounted = false;
     };
-  }, []);
+  }, [activeSlug]);
 
   useIsomorphicLayoutEffect(() => {
     const ctx = gsap.context(() => {

@@ -208,6 +208,7 @@ export class AdminMosquesService {
       id: m.id,
       slug: m.slug,
       code: m.code,
+      domain: m.domain,
       name: m.name,
       status: m.status,
       isActive: m.isActive,
@@ -273,6 +274,7 @@ export class AdminMosquesService {
       id: mosque.id,
       slug: mosque.slug,
       code: mosque.code,
+      domain: mosque.domain,
       name: mosque.name,
       status: mosque.status,
       isActive: mosque.isActive,
@@ -324,6 +326,14 @@ export class AdminMosquesService {
       throw new ConflictException(`A mosque with slug "${slug}" already exists.`);
     }
 
+    const domain = dto.domain?.trim().toLowerCase() || null;
+    if (domain) {
+      const existingDomain = await this.prisma.mosque.findUnique({ where: { domain } });
+      if (existingDomain) {
+        throw new ConflictException(`A mosque with domain "${domain}" already exists.`);
+      }
+    }
+
     // Determine or generate unique business code
     let code = dto.code?.trim().toUpperCase();
     if (code) {
@@ -351,6 +361,7 @@ export class AdminMosquesService {
           name: dto.name.trim(),
           code,
           slug,
+          domain,
           email: dto.email?.trim() || null,
           phone: dto.phone?.trim() || null,
           website: dto.website?.trim() || null,
@@ -437,11 +448,22 @@ export class AdminMosquesService {
       }
     }
 
+    if (dto.domain !== undefined) {
+      const domain = dto.domain.trim().toLowerCase() || null;
+      if (domain) {
+        const domainCheck = await this.prisma.mosque.findUnique({ where: { domain } });
+        if (domainCheck && domainCheck.id !== id) {
+          throw new ConflictException(`Domain "${domain}" is already in use.`);
+        }
+      }
+    }
+
     const updated = await this.prisma.mosque.update({
       where: { id },
       data: {
         name: dto.name !== undefined ? dto.name.trim() : undefined,
         code: dto.code !== undefined ? dto.code.trim().toUpperCase() : undefined,
+        domain: dto.domain !== undefined ? dto.domain.trim().toLowerCase() || null : undefined,
         email: dto.email !== undefined ? dto.email?.trim() || null : undefined,
         phone: dto.phone !== undefined ? dto.phone?.trim() || null : undefined,
         website: dto.website !== undefined ? dto.website?.trim() || null : undefined,

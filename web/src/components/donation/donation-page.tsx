@@ -24,6 +24,7 @@ import {
   Info,
 } from "lucide-react";
 import { useLanguage } from "@/components/language-provider";
+import { useMosqueBranding } from "@/components/mosque-branding-provider";
 import { useToast } from "@/components/ui/toast";
 import {
   fetchPublicFunds,
@@ -73,6 +74,7 @@ export function DonationPage() {
   const { language } = useLanguage();
   const bn = language === "bn";
   const { notify } = useToast();
+  const { activeSlug } = useMosqueBranding();
 
   // State
   const [amount, setAmount] = useState<number>(2500);
@@ -96,7 +98,7 @@ export function DonationPage() {
     let active = true;
     setLoadingFunds(true);
 
-    fetchPublicFunds(DEFAULT_PUBLIC_MOSQUE_SLUG)
+    fetchPublicFunds(activeSlug || DEFAULT_PUBLIC_MOSQUE_SLUG)
       .then((data) => {
         if (!active) return;
         const activeFunds = (data || []).filter(
@@ -117,7 +119,7 @@ export function DonationPage() {
     return () => {
       active = false;
     };
-  }, []);
+  }, [activeSlug]);
 
   const activeDonationAmount = useMemo(() => {
     if (customAmount.trim()) {

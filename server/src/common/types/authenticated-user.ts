@@ -17,6 +17,8 @@ export interface AuthenticatedUser extends PermissionSubject {
   id: string;
   /** The mosque whose records this request may reach. */
   mosqueId: string;
+  /** Server-resolved request mode: global platform administration or one selected mosque. */
+  tenantContext?: 'global' | 'mosque';
   email: string;
   role: Role;
   /** Granted on top of the role. Plain strings: anything outside the registry is ignored. */

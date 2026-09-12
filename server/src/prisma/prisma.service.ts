@@ -1,6 +1,29 @@
 import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { PrismaClient } from '@prisma/client';
 
+const DEFAULT_POOL_TIMEOUT_SECONDS = 30;
+
+/**
+ * Adds an explicit wait budget for Prisma's client-side pool. Neon pooled URLs commonly expose a
+ * small per-process pool; without this setting Prisma's implicit 10-second timeout turns a short
+ * request burst into a 500 before an available connection can be reused.
+ */
+function runtimeDatabaseUrl(): string | undefined {
+  const rawUrl = process.env.DATABASE_URL;
+  if (!rawUrl) return undefined;
+
+  const url = new URL(rawUrl);
+  if (!url.searchParams.has('pool_timeout')) {
+    const configured = Number(process.env.DATABASE_POOL_TIMEOUT_SECONDS);
+    const timeout = Number.isInteger(configured) && configured > 0
+      ? configured
+      : DEFAULT_POOL_TIMEOUT_SECONDS;
+    url.searchParams.set('pool_timeout', String(timeout));
+  }
+
+  return url.toString();
+}
+
 /**
  * The Prisma client, as an injectable Nest provider.
  *
@@ -14,6 +37,9 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
 
   constructor() {
     super({
+      datasources: {
+        db: { url: runtimeDatabaseUrl() },
+      },
       // `warn` and `error` only. Prisma's `query` event logs interpolated parameters, which for this
       // API would put donor details — and on sign-in, a password hash — into the logs.
       log: [

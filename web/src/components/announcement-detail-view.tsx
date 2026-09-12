@@ -18,10 +18,13 @@ import {
 import type { Announcement } from "@/lib/mosque/types";
 import { fetchPublicAnnouncementById } from "@/services/announcementsService";
 import { DEFAULT_PUBLIC_MOSQUE_SLUG } from "@/services/publicHomeService";
+import { useMosqueBranding } from "@/components/mosque-branding-provider";
 
 export function AnnouncementDetailView({ idOrSlug }: { idOrSlug: string }) {
   const { language } = useLanguage();
   const bn = language === "bn";
+  const { activeSlug } = useMosqueBranding();
+  const mosqueSlug = activeSlug || DEFAULT_PUBLIC_MOSQUE_SLUG;
 
   const [announcement, setAnnouncement] = useState<Announcement | null>(null);
   const [loading, setLoading] = useState(true);
@@ -33,7 +36,7 @@ export function AnnouncementDetailView({ idOrSlug }: { idOrSlug: string }) {
     setLoading(true);
     setError(null);
 
-    fetchPublicAnnouncementById(DEFAULT_PUBLIC_MOSQUE_SLUG, idOrSlug)
+    fetchPublicAnnouncementById(mosqueSlug, idOrSlug)
       .then((res: Announcement) => {
         if (mounted) setAnnouncement(res);
       })
@@ -53,7 +56,7 @@ export function AnnouncementDetailView({ idOrSlug }: { idOrSlug: string }) {
     return () => {
       mounted = false;
     };
-  }, [idOrSlug, bn]);
+  }, [idOrSlug, bn, mosqueSlug]);
 
   const handleShare = async () => {
     try {

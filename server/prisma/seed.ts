@@ -46,6 +46,7 @@ async function main(): Promise<void> {
     where: { slug: 'noor-jame-masjid' },
     update: {
       code: 'MOS-001',
+      domain: 'noor.mostak.tech',
       status: 'active',
       story: storyText,
       mission: missionText,
@@ -63,6 +64,7 @@ async function main(): Promise<void> {
       id: '3f1a7c2e-9b4d-4f6a-8c11-2d5e7a9b0c31',
       slug: 'noor-jame-masjid',
       code: 'MOS-001',
+      domain: 'noor.mostak.tech',
       status: 'active',
       name: 'Noor Jame Masjid',
       email: 'contact@noormosque.org',
@@ -519,9 +521,10 @@ async function main(): Promise<void> {
   // Demonstrates independent multi-tenant isolation
   // ---------------------------------------------------------------------------
   const mosqueB = await prisma.mosque.upsert({
-    where: { slug: 'uttara-central-masjid' },
+    where: { slug: 'uttara' },
     update: {
       code: 'MOS-002',
+      domain: 'uttara.mostak.tech',
       status: 'active',
       isActive: true,
       name: 'Uttara Central Masjid',
@@ -529,8 +532,9 @@ async function main(): Promise<void> {
     },
     create: {
       id: '4b2a8d3e-1c5e-4f7b-9d22-3e6f8b0c1d42',
-      slug: 'uttara-central-masjid',
+      slug: 'uttara',
       code: 'MOS-002',
+      domain: 'uttara.mostak.tech',
       name: 'Uttara Central Masjid',
       email: 'contact@uttaramasjid.org',
       phone: '+880 1812 998877',

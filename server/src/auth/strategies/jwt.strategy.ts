@@ -1,4 +1,4 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { ForbiddenException, Inject, Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PassportStrategy } from '@nestjs/passport';
 import { ExtractJwt, Strategy } from 'passport-jwt';
@@ -50,21 +50,30 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
   async validate(req: Request, payload: AccessTokenPayload): Promise<AuthenticatedUser> {
     const user = await resolveSubject(this.prisma, payload.sub);
 
-    // Support Super Admin explicit mosque context switching via x-mosque-id header
-    const targetMosqueId = req.headers ? (req.headers['x-mosque-id'] as string | undefined) : undefined;
+    // Support Super Admin explicit mosque context switching via x-mosque-id header. The header is
+    // only a selector; the database remains the authority for tenant existence and availability.
+    const rawTargetMosqueId = req.headers?.['x-mosque-id'];
+    const targetMosqueId = Array.isArray(rawTargetMosqueId) ? rawTargetMosqueId[0] : rawTargetMosqueId;
     if (targetMosqueId && user.role === 'super_admin') {
-      const exists = await this.prisma.mosque.findUnique({
+      const target = await this.prisma.mosque.findUnique({
         where: { id: targetMosqueId },
-        select: { id: true },
+        select: { id: true, status: true, isActive: true },
       });
-      if (exists) {
-        return {
-          ...user,
-          mosqueId: exists.id,
-        };
+
+      if (!target || target.status !== 'active' || !target.isActive) {
+        throw new ForbiddenException('The selected mosque is unavailable.');
       }
+
+      return {
+        ...user,
+        mosqueId: target.id,
+        tenantContext: 'mosque',
+      };
     }
 
-    return user;
+    return {
+      ...user,
+      tenantContext: user.role === 'super_admin' ? 'global' : 'mosque',
+    };
   }
 }

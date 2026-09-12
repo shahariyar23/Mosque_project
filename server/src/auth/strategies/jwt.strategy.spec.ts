@@ -57,6 +57,7 @@ describe('JwtStrategy — Multi-Tenant Context Switching & Isolation', () => {
     const result = await strategy.validate(req, { sub: SUPER_ADMIN_USER.id } as any);
 
     expect(result.mosqueId).toBe('mosque-001');
+    expect(result.tenantContext).toBe('global');
     expect(mockPrisma.mosque.findUnique).not.toHaveBeenCalled();
   });
 
@@ -70,12 +71,13 @@ describe('JwtStrategy — Multi-Tenant Context Switching & Isolation', () => {
     const result = await strategy.validate(req, { sub: MOSQUE_ADMIN_USER.id } as any);
 
     expect(result.mosqueId).toBe('mosque-001'); // strictly locked to own mosque
+    expect(result.tenantContext).toBe('mosque');
     expect(mockPrisma.mosque.findUnique).not.toHaveBeenCalled();
   });
 
   it('switches mosqueId when super_admin passes a valid existing target mosque', async () => {
     jest.spyOn(resolveSubjectModule, 'resolveSubject').mockResolvedValue(SUPER_ADMIN_USER);
-    mockPrisma.mosque.findUnique.mockResolvedValue({ id: 'mosque-002' });
+    mockPrisma.mosque.findUnique.mockResolvedValue({ id: 'mosque-002', status: 'active', isActive: true });
 
     const req = {
       headers: { 'x-mosque-id': 'mosque-002' },
@@ -85,12 +87,13 @@ describe('JwtStrategy — Multi-Tenant Context Switching & Isolation', () => {
 
     expect(mockPrisma.mosque.findUnique).toHaveBeenCalledWith({
       where: { id: 'mosque-002' },
-      select: { id: true },
+      select: { id: true, status: true, isActive: true },
     });
     expect(result.mosqueId).toBe('mosque-002');
+    expect(result.tenantContext).toBe('mosque');
   });
 
-  it('retains original mosqueId when super_admin passes non-existent mosque ID', async () => {
+  it('rejects a non-existent mosque instead of falling back to the original mosque', async () => {
     jest.spyOn(resolveSubjectModule, 'resolveSubject').mockResolvedValue(SUPER_ADMIN_USER);
     mockPrisma.mosque.findUnique.mockResolvedValue(null);
 
@@ -98,8 +101,21 @@ describe('JwtStrategy — Multi-Tenant Context Switching & Isolation', () => {
       headers: { 'x-mosque-id': 'non-existent-mosque-id' },
     } as unknown as Request;
 
-    const result = await strategy.validate(req, { sub: SUPER_ADMIN_USER.id } as any);
+    await expect(strategy.validate(req, { sub: SUPER_ADMIN_USER.id } as any)).rejects.toThrow(
+      'The selected mosque is unavailable.',
+    );
+  });
 
-    expect(result.mosqueId).toBe('mosque-001');
+  it('rejects an inactive target mosque', async () => {
+    jest.spyOn(resolveSubjectModule, 'resolveSubject').mockResolvedValue(SUPER_ADMIN_USER);
+    mockPrisma.mosque.findUnique.mockResolvedValue({ id: 'mosque-002', status: 'suspended', isActive: false });
+
+    const req = {
+      headers: { 'x-mosque-id': 'mosque-002' },
+    } as unknown as Request;
+
+    await expect(strategy.validate(req, { sub: SUPER_ADMIN_USER.id } as any)).rejects.toThrow(
+      'The selected mosque is unavailable.',
+    );
   });
 });

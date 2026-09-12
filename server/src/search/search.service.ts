@@ -30,7 +30,7 @@ export class SearchService {
    * Scopes queries to the actor's mosque unless they hold platform.manage.
    */
   private mosqueScope(actor: AuthenticatedUser): { mosqueId?: string } {
-    return hasPermission(effectivePermissions(actor), 'platform.manage')
+    return actor.tenantContext !== 'mosque' && hasPermission(effectivePermissions(actor), 'platform.manage')
       ? {}
       : { mosqueId: actor.mosqueId };
   }

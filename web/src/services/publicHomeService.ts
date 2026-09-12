@@ -10,7 +10,7 @@
 import { apiGet } from "./apiClient";
 
 /** The primary website tenant. Must match the backend seed's mosque slug. */
-export const DEFAULT_PUBLIC_MOSQUE_SLUG = "noor-jame-masjid";
+export const DEFAULT_PUBLIC_MOSQUE_SLUG = "noor";
 
 export type PublicMosqueInfo = {
   slug: string;

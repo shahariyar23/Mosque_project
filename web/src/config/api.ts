@@ -16,6 +16,15 @@ export function getApiBaseUrl(): string {
   // Browser-level safety net: ensure requests never hit the frontend asset origin
   if (typeof window !== "undefined") {
     const host = window.location.hostname;
+    const isLocalMostakHost =
+      window.location.protocol === "http:" &&
+      window.location.port === "3000" &&
+      (host === "mostak.tech" || host.endsWith(".mostak.tech"));
+
+    if (isLocalMostakHost) {
+      return "http://localhost:4000";
+    }
+
     if (host === "mostak.tech" || host.endsWith(".mostak.tech")) {
       return "https://api.mostak.tech";
     }

@@ -65,12 +65,20 @@ export class EventsService {
     }
 
     if (mosqueSlug) {
-      const mosque = await this.prisma.mosque.findUnique({
-        where: { slug: mosqueSlug },
-        select: { id: true, status: true },
+      const mosque = await this.prisma.mosque.findFirst({
+        where: {
+          OR: [
+            { slug: mosqueSlug },
+            { domain: mosqueSlug },
+            { domain: { startsWith: `${mosqueSlug}.` } },
+          ],
+          isActive: true,
+          status: 'active',
+        },
+        select: { id: true },
       });
 
-      if (!mosque || mosque.status === 'suspended') {
+      if (!mosque) {
         throw new NotFoundException(`Mosque '${mosqueSlug}' not found.`);
       }
 
@@ -95,6 +103,7 @@ export class EventsService {
     const where: Prisma.EventWhereInput = {
       mosqueId: resolvedMosqueId,
       deletedAt: null,
+      ...(!mosqueId && { isPublished: true }),
       ...(query.category !== undefined && { category: query.category }),
       ...(query.status !== undefined && { status: query.status }),
       ...(query.search && {
@@ -205,6 +214,7 @@ export class EventsService {
     const where: Prisma.EventWhereInput = {
       ...(resolvedMosqueId ? { mosqueId: resolvedMosqueId } : {}),
       deletedAt: null,
+      ...(!mosqueId && { isPublished: true }),
       ...(isUuid ? { id: idOrSlug } : { slug: idOrSlug }),
     };
 
