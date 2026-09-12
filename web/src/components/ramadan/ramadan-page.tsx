@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { ArrowRight, Clock3, MoonStar, Search, Sparkles } from "lucide-react";
 import { InnerPage } from "@/components/inner-page";
 import { useResource } from "@/components/ui/use-resource";
@@ -12,6 +12,8 @@ import {
   getTodayInTimezone,
 } from "@/lib/mosque/format";
 import { fetchRamadanSchedules } from "@/services/ramadanService";
+import { fetchPublicRamadanSchedules } from "@/services/ramadanService";
+import { useMosqueBranding } from "@/components/mosque-branding-provider";
 
 function countdown(seconds: number) {
   const hours = Math.floor(seconds / 3600)
@@ -27,10 +29,15 @@ function countdown(seconds: number) {
 }
 
 export function PublicRamadanPage() {
+  const { activeSlug } = useMosqueBranding();
   const [search, setSearch] = useState("");
   const [now, setNow] = useState<Date | null>(null);
 
-  const { data: rawSchedules, error, initialising, reload } = useResource(fetchRamadanSchedules);
+  const loadPublicRamadan = useCallback(
+    () => fetchPublicRamadanSchedules(activeSlug),
+    [activeSlug],
+  );
+  const { data: rawSchedules, error, initialising, reload } = useResource(loadPublicRamadan);
 
   useEffect(() => {
     const timer = window.setInterval(() => setNow(new Date()), 1000);

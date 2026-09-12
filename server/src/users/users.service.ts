@@ -183,6 +183,46 @@ export class UsersService {
     };
   }
 
+  /**
+   * Summary of governed accounts, role distributions, and users for access management.
+   */
+  async getAccessSummary(actor: AuthenticatedUser): Promise<{
+    totalUsers: number;
+    governedAccounts: number;
+    roleCounts: Record<string, number>;
+    users: UserResponseDto[];
+  }> {
+    const where: Prisma.UserWhereInput = { deletedAt: null, ...this.mosqueScope(actor) };
+
+    const [totalUsers, governedAccounts, roleGroups, users] = await Promise.all([
+      this.prisma.user.count({ where }),
+      this.prisma.user.count({ where: { ...where, role: { not: 'member' } } }),
+      this.prisma.user.groupBy({
+        by: ['role'],
+        where,
+        _count: { _all: true },
+      }),
+      this.prisma.user.findMany({
+        where,
+        select: USER_SELECT,
+        orderBy: [{ role: 'asc' }, { fullName: 'asc' }],
+        take: 200,
+      }),
+    ]);
+
+    const roleCounts: Record<string, number> = {};
+    for (const group of roleGroups) {
+      roleCounts[group.role] = group._count._all;
+    }
+
+    return {
+      totalUsers,
+      governedAccounts,
+      roleCounts,
+      users: users.map((row) => UserResponseDto.from(row)),
+    };
+  }
+
   async findOne(id: string, actor: AuthenticatedUser): Promise<UserResponseDto> {
     const user = await this.prisma.user.findFirst({
       where: { id, deletedAt: null, ...this.mosqueScope(actor) },
@@ -631,7 +671,7 @@ export class UsersService {
    * caller could offer a different one.
    */
   private mosqueScope(actor: AuthenticatedUser): { mosqueId?: string } {
-    return hasPermission(effectivePermissions(actor), 'platform.manage')
+    return actor.tenantContext !== 'mosque' && hasPermission(effectivePermissions(actor), 'platform.manage')
       ? {}
       : { mosqueId: actor.mosqueId };
   }

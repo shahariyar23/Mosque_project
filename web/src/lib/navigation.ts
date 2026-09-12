@@ -388,6 +388,19 @@ export const NAVIGATION: NavGroup[] = [
       },
     ],
   },
+  {
+    heading: "Platform",
+    headingBn: "প্ল্যাটফর্ম",
+    items: [
+      {
+        label: "All Mosques",
+        labelBn: "সকল মসজিদ",
+        href: "/dashboard/admin/mosques",
+        icon: "mosque",
+        permission: "platform.manage",
+      },
+    ],
+  },
 ];
 
 /** A nav item after filtering, with its label already resolved for the viewer's scope. */

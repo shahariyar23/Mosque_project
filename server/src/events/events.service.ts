@@ -53,43 +53,57 @@ export class EventsService {
 
   /**
    * Resolve the mosque ID for a request.
-   * If mosqueId is provided, use it. Otherwise, return the first/primary mosque.
-   * This allows unauthenticated users to see the default mosque's events.
+   * Uses authenticated user's mosqueId or resolves by explicit mosqueSlug.
+   * Never falls back arbitrarily to the first mosque in the database.
    */
-  private async resolveMosqueId(mosqueId: string | undefined): Promise<string> {
+  private async resolveMosqueId(
+    mosqueId: string | undefined,
+    mosqueSlug?: string,
+  ): Promise<string> {
     if (mosqueId) {
       return mosqueId;
     }
 
-    // For unauthenticated requests, find the first/primary mosque
-    const mosque = await this.prisma.mosque.findFirst({
-      orderBy: { createdAt: 'asc' },
-      select: { id: true },
-    });
+    if (mosqueSlug) {
+      const mosque = await this.prisma.mosque.findFirst({
+        where: {
+          OR: [
+            { slug: mosqueSlug },
+            { domain: mosqueSlug },
+            { domain: { startsWith: `${mosqueSlug}.` } },
+          ],
+          isActive: true,
+          status: 'active',
+        },
+        select: { id: true },
+      });
 
-    if (!mosque) {
-      throw new Error('No mosque found in the system.');
+      if (!mosque) {
+        throw new NotFoundException(`Mosque '${mosqueSlug}' not found.`);
+      }
+
+      return mosque.id;
     }
 
-    return mosque.id;
+    throw new BadRequestException('Mosque context or slug required.');
   }
 
   /**
    * List mosque events.
    * Returns a standard paginated envelope (or all events when query.all is true).
-   * For unauthenticated users, returns events from the primary mosque.
    */
   async findAll(
     mosqueId: string | undefined,
     query: ListEventsQueryDto = {},
   ): Promise<PaginatedEventsDto | EventDto[]> {
-    const resolvedMosqueId = await this.resolveMosqueId(mosqueId);
+    const resolvedMosqueId = await this.resolveMosqueId(mosqueId, query.mosqueSlug);
     const todayStr = new Date().toISOString().slice(0, 10);
     const todayDate = toDateOnly(todayStr);
 
     const where: Prisma.EventWhereInput = {
       mosqueId: resolvedMosqueId,
       deletedAt: null,
+      ...(!mosqueId && { isPublished: true }),
       ...(query.category !== undefined && { category: query.category }),
       ...(query.status !== undefined && { status: query.status }),
       ...(query.search && {
@@ -177,13 +191,30 @@ export class EventsService {
   /**
    * Find a single event by ID or slug.
    * For unauthenticated users, finds events from the primary mosque.
+  /**
+   * Find a single event by ID or slug.
+   * Scoped to authenticated user's mosque, explicit mosqueSlug, or UUID lookup.
    */
-  async findOne(mosqueId: string | undefined, idOrSlug: string): Promise<EventDto> {
-    const resolvedMosqueId = await this.resolveMosqueId(mosqueId);
+  async findOne(
+    mosqueId: string | undefined,
+    idOrSlug: string,
+    mosqueSlug?: string,
+  ): Promise<EventDto> {
     const isUuid = UUID_REGEX.test(idOrSlug);
+
+    let resolvedMosqueId = mosqueId;
+    if (!resolvedMosqueId && mosqueSlug) {
+      resolvedMosqueId = await this.resolveMosqueId(undefined, mosqueSlug);
+    }
+
+    if (!resolvedMosqueId && !isUuid) {
+      throw new BadRequestException('Mosque context or slug required.');
+    }
+
     const where: Prisma.EventWhereInput = {
-      mosqueId: resolvedMosqueId,
+      ...(resolvedMosqueId ? { mosqueId: resolvedMosqueId } : {}),
       deletedAt: null,
+      ...(!mosqueId && { isPublished: true }),
       ...(isUuid ? { id: idOrSlug } : { slug: idOrSlug }),
     };
 

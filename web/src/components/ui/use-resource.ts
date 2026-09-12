@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ServiceError, type FieldErrors } from "@/services/query";
+import { useTenantRevision } from "@/services/tenantStore";
 
 /**
  * Reads a service module from a client component.
@@ -44,6 +45,7 @@ export type ResourceOptions = {
 
 export function useResource<T>(load: () => Promise<T>, options?: ResourceOptions): Resource<T> {
   const enabled = options?.enabled ?? true;
+  const tenantRevision = useTenantRevision();
 
   const [data, setData] = useState<T | undefined>(undefined);
   const [error, setError] = useState<string | undefined>(undefined);
@@ -63,11 +65,20 @@ export function useResource<T>(load: () => Promise<T>, options?: ResourceOptions
    * that changes it rather than one render later; closing the gate needs no state update at all; and a
    * request abandoned mid-flight never marks itself settled, so the next one is still awaited.
    */
-  const [settled, setSettled] = useState<{ load: () => Promise<T>; nonce: number } | null>(null);
+  const [settled, setSettled] = useState<{
+    load: () => Promise<T>;
+    nonce: number;
+    tenantRevision: number;
+  } | null>(null);
 
   const requestId = useRef(0);
 
-  const loading = enabled && (settled === null || settled.load !== load || settled.nonce !== nonce);
+  const loading =
+    enabled &&
+    (settled === null ||
+      settled.load !== load ||
+      settled.nonce !== nonce ||
+      settled.tenantRevision !== tenantRevision);
 
   useEffect(() => {
     if (!enabled) {
@@ -82,8 +93,8 @@ export function useResource<T>(load: () => Promise<T>, options?: ResourceOptions
       .then((result) => {
         if (id !== requestId.current) return;
         setData(result);
-        setError(undefined);
         setLoaded(true);
+        setError(undefined);
       })
       .catch((cause: unknown) => {
         if (id !== requestId.current) return;
@@ -93,13 +104,19 @@ export function useResource<T>(load: () => Promise<T>, options?: ResourceOptions
       })
       .finally(() => {
         if (id !== requestId.current) return;
-        setSettled({ load, nonce });
+        setSettled({ load, nonce, tenantRevision });
       });
-  }, [load, nonce, enabled]);
+  }, [load, nonce, enabled, tenantRevision]);
 
   const reload = useCallback(() => setNonce((current) => current + 1), []);
 
-  return { data, error, loading, initialising: loading && !loaded, reload };
+  return {
+    data: settled?.tenantRevision === tenantRevision ? data : undefined,
+    error,
+    loading,
+    initialising: loading && (settled?.tenantRevision !== tenantRevision || !loaded),
+    reload,
+  };
 }
 
 /**

@@ -30,6 +30,22 @@ export class RamadanService {
     return rows.map((row) => RamadanDto.from(row));
   }
 
+  async findPublic(slug: string, query: ListRamadanQueryDto = {}): Promise<RamadanDto[]> {
+    const mosque = await this.prisma.mosque.findFirst({
+      where: { slug, isActive: true, status: 'active' },
+      select: { id: true },
+    });
+
+    if (!mosque) {
+      throw new NotFoundException({
+        code: 'PUBLIC_MOSQUE_NOT_FOUND',
+        message: 'The mosque was not found or is not active.',
+      });
+    }
+
+    return this.findAll(mosque.id, query);
+  }
+
   async findOne(mosqueId: string, id: string): Promise<RamadanDto> {
     return RamadanDto.from(await this.getOwned(mosqueId, id));
   }

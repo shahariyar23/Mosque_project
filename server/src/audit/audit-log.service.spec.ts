@@ -459,6 +459,12 @@ describe('AuditLogService', () => {
       expect(whereOf(prisma.auditLog.findMany).mosqueId).toBeUndefined();
     });
 
+    it('scopes a platform administrator back to the selected mosque', async () => {
+      await service.findMany(platformActor({ tenantContext: 'mosque' }), {});
+
+      expect(whereOf(prisma.auditLog.findMany).mosqueId).toBe(MOSQUE_ID);
+    });
+
     it('confines a suspended platform administrator to their own mosque', async () => {
       // `effectivePermissions` resolves to nothing for an inactive account, so the exception is lost
       // with the rest of their authority rather than surviving it.

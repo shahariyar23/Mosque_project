@@ -38,6 +38,17 @@ export class PublicHomeController {
     return this.publicHome.getTodayPrayerTimes(slug);
   }
 
+  @Get('prayer-times')
+  @ApiOperation({
+    summary: 'Public prayer times for a mosque',
+    description:
+      'Calculated through the existing prayer-times service. Defaults to today in mosque timezone, or accepts ?date=YYYY-MM-DD.',
+  })
+  @ApiOkResponse({ description: 'Prayer times for the requested date, or null.' })
+  getPrayerTimes(@Param('slug') slug: string, @Query('date') date?: string) {
+    return this.publicHome.getPrayerTimesForDate(slug, date);
+  }
+
   @Get('jumuah')
   @ApiOperation({ summary: 'Public Jumu’ah schedules' })
   @ApiOkResponse({ description: 'The mosque’s active Jumu’ah schedules.' })

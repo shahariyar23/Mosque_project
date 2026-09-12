@@ -12,6 +12,7 @@ import {
   type PublicEvent,
   type PublicCommunityStats,
 } from "@/services/publicHomeService";
+import { useMosqueBranding } from "@/components/mosque-branding-provider";
 
 export type HomeData = {
   mosque: PublicMosqueInfo | null;
@@ -27,7 +28,9 @@ export type LoadingState = {
   stats: boolean;
 };
 
-export function usePublicHomeData(mosqueSlug: string = DEFAULT_PUBLIC_MOSQUE_SLUG) {
+export function usePublicHomeData(customSlug?: string) {
+  const { activeSlug } = useMosqueBranding();
+  const mosqueSlug = customSlug || activeSlug || DEFAULT_PUBLIC_MOSQUE_SLUG;
   const [data, setData] = useState<HomeData>({
     mosque: null,
     services: [],

@@ -13,6 +13,7 @@ import { ApiBearerAuth, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagg
 
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { Permissions } from '../common/decorators/permissions.decorator';
+import { Public } from '../common/decorators/public.decorator';
 import type { AuthenticatedUser } from '../common/types/authenticated-user';
 import {
   CreateRamadanDto,
@@ -33,6 +34,17 @@ import { RamadanService } from './ramadan.service';
 @Controller('ramadan')
 export class RamadanController {
   constructor(private readonly ramadan: RamadanService) {}
+
+  @Get('public/mosques/:slug')
+  @Public()
+  @ApiOperation({ summary: 'List public Ramadan schedules for a mosque' })
+  @ApiResponse({ status: 200, type: [RamadanDto] })
+  findPublic(
+    @Param('slug') slug: string,
+    @Query() query: ListRamadanQueryDto,
+  ): Promise<RamadanDto[]> {
+    return this.ramadan.findPublic(slug, query);
+  }
 
   @Get()
   @Permissions('prayer.view')

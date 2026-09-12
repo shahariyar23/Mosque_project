@@ -7,6 +7,7 @@ import { Megaphone } from "lucide-react";
 import type { Announcement } from "@/lib/mosque/types";
 import { fetchPublicAnnouncements } from "@/services/announcementsService";
 import { DEFAULT_PUBLIC_MOSQUE_SLUG } from "@/services/publicHomeService";
+import { useMosqueBranding } from "@/components/mosque-branding-provider";
 
 /**
  * The public announcements strip.
@@ -15,8 +16,10 @@ import { DEFAULT_PUBLIC_MOSQUE_SLUG } from "@/services/publicHomeService";
  * public API is unavailable — the whole section renders nothing. A single failed fetch never takes
  * any other home page section down with it.
  */
-export function AnnouncementsSection() {
+export function AnnouncementsSection({ customSlug }: { customSlug?: string }) {
   const { language } = useLanguage();
+  const { activeSlug } = useMosqueBranding();
+  const mosqueSlug = customSlug || activeSlug || DEFAULT_PUBLIC_MOSQUE_SLUG;
   const bn = language === "bn";
 
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
@@ -24,7 +27,7 @@ export function AnnouncementsSection() {
 
   useEffect(() => {
     let mounted = true;
-    fetchPublicAnnouncements(DEFAULT_PUBLIC_MOSQUE_SLUG, { limit: 5 })
+    fetchPublicAnnouncements(mosqueSlug, { limit: 5 })
       .then((res) => {
         const rows = res?.data ?? [];
         if (mounted && rows.length > 0) setAnnouncements(rows.slice(0, 5));
@@ -38,7 +41,7 @@ export function AnnouncementsSection() {
     return () => {
       mounted = false;
     };
-  }, []);
+  }, [mosqueSlug]);
 
   if (loading) return null;
   if (announcements.length === 0) return null;
@@ -83,19 +86,27 @@ export function AnnouncementsSection() {
 
         <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {announcements.map((announcement) => (
-            <article
-              key={announcement.title + (announcement.publishedAt ?? "")}
-              className="rounded-lg border border-[#1b4334] bg-gradient-to-b from-[#0a271e] via-[#082019] to-[#061913] p-4 xs:p-5 transition-colors hover:border-[#dca74e]/40"
+            <Link
+              key={announcement.id || announcement.title}
+              href={`/announcements/${announcement.id}`}
+              className="rounded-lg border border-[#1b4334] bg-gradient-to-b from-[#0a271e] via-[#082019] to-[#061913] p-4 xs:p-5 transition-all duration-200 hover:border-[#dca74e]/50 hover:shadow-lg hover:shadow-[#0c382b]/30 block group"
             >
-              <span className="text-[9px] xs:text-[10px] font-bold tracking-widest uppercase text-[#dca74e]">
-                {categoryLabel(announcement.category)}
-              </span>
-              <h3 className="mt-1.5 text-sm xs:text-base font-semibold text-white leading-snug">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-[9px] xs:text-[10px] font-bold tracking-widest uppercase text-[#dca74e]">
+                  {categoryLabel(announcement.category)}
+                </span>
+                {announcement.pinned && (
+                  <span className="text-[9px] font-semibold text-[#f5d78e] bg-[#dca74e]/15 px-1.5 py-0.5 rounded border border-[#dca74e]/30">
+                    {bn ? "পিন করা" : "Pinned"}
+                  </span>
+                )}
+              </div>
+              <h3 className="mt-1.5 text-sm xs:text-base font-semibold text-white leading-snug group-hover:text-[#f5d78e] transition-colors">
                 {announcement.title}
               </h3>
-              {announcement.message && (
+              {(announcement.summary || announcement.message) && (
                 <p className="mt-1.5 text-xs xs:text-[13px] leading-relaxed text-[#8ea499] line-clamp-2">
-                  {announcement.message}
+                  {announcement.summary || announcement.message}
                 </p>
               )}
               {announcement.author && (
@@ -103,7 +114,7 @@ export function AnnouncementsSection() {
                   {announcement.author}
                 </p>
               )}
-            </article>
+            </Link>
           ))}
         </div>
       </div>

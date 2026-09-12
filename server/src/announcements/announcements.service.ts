@@ -381,15 +381,25 @@ export class AnnouncementsService implements OnModuleInit, OnModuleDestroy {
       },
     });
 
+    let auditAction: 'ANNOUNCEMENT_UPDATED' | 'ANNOUNCEMENT_PUBLISHED' | 'ANNOUNCEMENT_ARCHIVED' = 'ANNOUNCEMENT_UPDATED';
+    let auditNote = `Updated announcement "${updated.title}"`;
+    if (newlyPublished) {
+      auditAction = 'ANNOUNCEMENT_PUBLISHED';
+      auditNote = `Published announcement "${updated.title}"`;
+    } else if (dto.status === AnnouncementStatusEnum.archived && existing.status !== AnnouncementStatus.archived) {
+      auditAction = 'ANNOUNCEMENT_ARCHIVED';
+      auditNote = `Archived announcement "${updated.title}"`;
+    }
+
     await this.audit.record({
       mosqueId: actor.mosqueId,
       actorId: actor.id,
       actorName: actor.email,
       actorRole: actor.role,
-      action: 'ANNOUNCEMENT_UPDATED',
+      action: auditAction,
       resource: 'announcement',
       resourceId: updated.id,
-      note: `Updated announcement "${updated.title}"`,
+      note: auditNote,
     });
 
     if (newlyPublished) {
@@ -470,10 +480,10 @@ export class AnnouncementsService implements OnModuleInit, OnModuleDestroy {
    */
   async findPublic(
     mosqueSlug: string,
-    query: { limit?: number; category?: string },
-  ): Promise<{ rows: AnnouncementResponseDto[]; total: number }> {
+    query: { page?: number; limit?: number; category?: string; search?: string },
+  ): Promise<{ rows: AnnouncementResponseDto[]; total: number; page: number; limit: number; totalPages: number }> {
     const mosque = await this.prisma.mosque.findUnique({
-      where: { slug: mosqueSlug },
+      where: { slug: mosqueSlug, isActive: true, status: 'active' },
       select: { id: true },
     });
 
@@ -482,27 +492,47 @@ export class AnnouncementsService implements OnModuleInit, OnModuleDestroy {
     }
 
     const now = new Date();
+    const andConditions: Prisma.AnnouncementWhereInput[] = [
+      {
+        OR: [
+          { expiresAt: null },
+          { expiresAt: { gt: now } },
+        ],
+      },
+    ];
+
+    if (query.search && query.search.trim()) {
+      const term = query.search.trim();
+      andConditions.push({
+        OR: [
+          { title: { contains: term, mode: 'insensitive' } },
+          { content: { contains: term, mode: 'insensitive' } },
+          { summary: { contains: term, mode: 'insensitive' } },
+        ],
+      });
+    }
+
     const where: Prisma.AnnouncementWhereInput = {
       mosqueId: mosque.id,
       status: AnnouncementStatus.published,
       audience: AnnouncementAudience.everyone,
       publishedAt: { lte: now },
-      OR: [
-        { expiresAt: null },
-        { expiresAt: { gt: now } },
-      ],
+      AND: andConditions,
     };
 
     if (query.category && query.category !== 'all') {
       where.category = query.category.toLowerCase() as AnnouncementCategory;
     }
 
-    const limit = Math.min(50, Math.max(1, query.limit || 20));
+    const page = Math.max(1, query.page ? Number(query.page) : 1);
+    const limit = Math.min(50, Math.max(1, query.limit ? Number(query.limit) : 20));
+    const skip = (page - 1) * limit;
 
     const [total, items] = await Promise.all([
       this.prisma.announcement.count({ where }),
       this.prisma.announcement.findMany({
         where,
+        skip,
         take: limit,
         orderBy: [
           { isPinned: 'desc' },
@@ -514,10 +544,53 @@ export class AnnouncementsService implements OnModuleInit, OnModuleDestroy {
       }),
     ]);
 
+    const totalPages = Math.ceil(total / limit) || 1;
+
     return {
       rows: items.map((item) => this.mapToDto(item)),
       total,
+      page,
+      limit,
+      totalPages,
     };
+  }
+
+  /**
+   * Public single published announcement by ID
+   */
+  async findPublicOne(mosqueSlug: string, id: string): Promise<AnnouncementResponseDto> {
+    const mosque = await this.prisma.mosque.findUnique({
+      where: { slug: mosqueSlug, isActive: true, status: 'active' },
+      select: { id: true },
+    });
+
+    if (!mosque) {
+      throw new NotFoundException(`Mosque with slug "${mosqueSlug}" not found`);
+    }
+
+    const now = new Date();
+    const announcement = await this.prisma.announcement.findFirst({
+      where: {
+        id,
+        mosqueId: mosque.id,
+        status: AnnouncementStatus.published,
+        audience: AnnouncementAudience.everyone,
+        publishedAt: { lte: now },
+        OR: [
+          { expiresAt: null },
+          { expiresAt: { gt: now } },
+        ],
+      },
+      include: {
+        createdBy: { select: { fullName: true } },
+      },
+    });
+
+    if (!announcement) {
+      throw new NotFoundException(`Announcement with ID "${id}" not found`);
+    }
+
+    return this.mapToDto(announcement);
   }
 
   /**

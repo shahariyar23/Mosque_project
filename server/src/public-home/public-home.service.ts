@@ -54,7 +54,7 @@ export class PublicHomeService {
    */
   private async getPublicMosque(slug: string) {
     const mosque = await this.prisma.mosque.findUnique({
-      where: { slug, isActive: true },
+      where: { slug, isActive: true, status: 'active' },
       select: { id: true },
     });
 
@@ -70,7 +70,7 @@ export class PublicHomeService {
 
   async getMosque(slug: string): Promise<PublicMosqueDto | null> {
     const mosque = await this.prisma.mosque.findUnique({
-      where: { slug, isActive: true },
+      where: { slug, isActive: true, status: 'active' },
       select: {
         slug: true,
         name: true,
@@ -102,6 +102,19 @@ export class PublicHomeService {
     const mosque = await this.getPublicMosque(slug);
     try {
       return await this.prayerTimes.getPrayerTimes(mosque.id, {});
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Prayer times for a specific date (or today if omitted) via the calculation service,
+   * scoped to the mosque by slug. Returns null if coordinates missing or calculation fails.
+   */
+  async getPrayerTimesForDate(slug: string, date?: string) {
+    const mosque = await this.getPublicMosque(slug);
+    try {
+      return await this.prayerTimes.getPrayerTimes(mosque.id, date ? { date } : {});
     } catch {
       return null;
     }
@@ -345,5 +358,24 @@ export class PublicHomeService {
       funds,
       jumuah,
     };
+  }
+
+  /**
+   * Lists all active mosques with public profile info.
+   */
+  async listActiveMosques() {
+    return this.prisma.mosque.findMany({
+      where: { isActive: true, status: 'active' },
+      orderBy: { name: 'asc' },
+      select: {
+        id: true,
+        name: true,
+        code: true,
+        slug: true,
+        city: true,
+        country: true,
+        timezone: true,
+      },
+    });
   }
 }

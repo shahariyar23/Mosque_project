@@ -7,6 +7,7 @@ import { PrayerTimesModule } from '../prayer-times/prayer-times.module';
 import { PublicTransparencyModule } from '../public-transparency/public-transparency.module';
 import { ServicesModule } from '../services/services.module';
 import { PublicHomeController } from './public-home.controller';
+import { PublicMosquesController } from './public-mosques.controller';
 import { PublicHomeService } from './public-home.service';
 
 @Module({
@@ -18,7 +19,7 @@ import { PublicHomeService } from './public-home.service';
     AnnouncementsModule,
     PublicTransparencyModule,
   ],
-  controllers: [PublicHomeController],
+  controllers: [PublicHomeController, PublicMosquesController],
   providers: [PublicHomeService],
 })
 export class PublicHomeModule {}

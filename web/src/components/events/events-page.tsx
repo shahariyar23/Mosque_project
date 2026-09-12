@@ -4,6 +4,7 @@ import { useState, useMemo, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { useLanguage } from "@/components/language-provider";
 import { useAuth } from "@/components/auth-provider";
+import { useMosqueBranding } from "@/components/mosque-branding-provider";
 import { type MosqueEvent, type EventCategory } from "@/lib/mosque/types";
 import { fetchEvents, fetchMyRegisteredEvents } from "@/services/eventService";
 import { EventsHero } from "@/components/events/events-hero";
@@ -11,13 +12,13 @@ import { FeaturedEventCard } from "@/components/events/featured-event-card";
 import { EventsFilters } from "@/components/events/events-filters";
 import { EventCard } from "@/components/events/event-card";
 import { EventsCta } from "@/components/events/events-cta";
-import { mosqueEvents } from "@/components/events/event-data";
 import { Calendar, ChevronDown, ChevronUp, History, Sparkles, Clock, AlertCircle } from "lucide-react";
 
 export function EventsPage() {
   const { language } = useLanguage();
   const bn = language === "bn";
   const { session } = useAuth();
+  const { activeSlug } = useMosqueBranding();
 
   const [search, setSearch] = useState("");
   const [selectedCategory, setSelectedCategory] = useState<string>("all");
@@ -45,7 +46,7 @@ export function EventsPage() {
     void loadRegistrations();
   }, [loadRegistrations]);
 
-  // Fetch events from API with graceful fallback to curated community events
+  // Public events must come only from the active mosque's API tenant.
   useEffect(() => {
     const loadEvents = async () => {
       try {
@@ -53,60 +54,22 @@ export function EventsPage() {
         setError(null);
         
         const [upcomingResult, pastResult] = await Promise.all([
-          fetchEvents({ timeframe: "upcoming", all: true }).catch(() => ({ rows: [] })),
-          fetchEvents({ timeframe: "past", all: true }).catch(() => ({ rows: [] })),
+          fetchEvents({ timeframe: "upcoming", all: true, mosqueSlug: activeSlug }),
+          fetchEvents({ timeframe: "past", all: true, mosqueSlug: activeSlug }),
         ]);
 
         const combined = [...(upcomingResult?.rows || []), ...(pastResult?.rows || [])];
-
-        if (combined.length > 0) {
-          setAllEvents(combined);
-        } else {
-          // Graceful fallback to curated community schedule if database has 0 events
-          const fallbackList: MosqueEvent[] = mosqueEvents.map((m) => ({
-            id: m.id || m.slug,
-            slug: m.slug,
-            title: bn ? m.bnTitle || m.title : m.title,
-            category: m.category as any,
-            status: m.past ? "Completed" : "Upcoming",
-            date: m.date,
-            startTime: m.startTime,
-            endTime: m.endTime,
-            location: bn ? m.bnLocation || m.location : m.location,
-            description: bn ? m.bnDescription || m.description : m.description,
-            capacity: m.capacity || 100,
-            registered: m.registered || 0,
-            registrationRequired: m.registrationRequired ?? true,
-            imageUrl: m.image,
-          }));
-          setAllEvents(fallbackList);
-        }
+        setAllEvents(combined);
       } catch (err) {
-        console.warn("Failed to fetch events, using curated schedule:", err);
-        const fallbackList: MosqueEvent[] = mosqueEvents.map((m) => ({
-          id: m.id || m.slug,
-          slug: m.slug,
-          title: bn ? m.bnTitle || m.title : m.title,
-          category: m.category as any,
-          status: m.past ? "Completed" : "Upcoming",
-          date: m.date,
-          startTime: m.startTime,
-          endTime: m.endTime,
-          location: bn ? m.bnLocation || m.location : m.location,
-          description: bn ? m.bnDescription || m.description : m.description,
-          capacity: m.capacity || 100,
-          registered: m.registered || 0,
-          registrationRequired: m.registrationRequired ?? true,
-          imageUrl: m.image,
-        }));
-        setAllEvents(fallbackList);
+        setAllEvents([]);
+        setError(err instanceof Error ? err.message : "Unable to load this mosque's events.");
       } finally {
         setLoading(false);
       }
     };
 
     loadEvents();
-  }, [bn]);
+  }, [activeSlug]);
 
   // Separate upcoming and past
   const upcomingEventsAll = useMemo(

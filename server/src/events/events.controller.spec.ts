@@ -124,7 +124,12 @@ describe('EventsController', () => {
 
     it('delegates findOne with mosqueId and idOrSlug', async () => {
       await controller.findOne(user, 'youth-seminar');
-      expect(service.findOne).toHaveBeenCalledWith(MOSQUE_ID, 'youth-seminar');
+      expect(service.findOne).toHaveBeenCalledWith(MOSQUE_ID, 'youth-seminar', undefined);
+    });
+
+    it('delegates findOne with mosqueSlug when unauthenticated', async () => {
+      await controller.findOne(undefined, 'youth-seminar', 'uttara-central-masjid');
+      expect(service.findOne).toHaveBeenCalledWith(undefined, 'youth-seminar', 'uttara-central-masjid');
     });
 
     it('delegates findMyRegistrations with user and query', async () => {

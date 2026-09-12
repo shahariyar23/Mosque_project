@@ -311,6 +311,11 @@ export class ListEventsQueryDto {
   @Type(() => Boolean)
   @IsBoolean()
   all?: boolean;
+
+  @ApiPropertyOptional({ description: 'Mosque slug for public tenant filtering' })
+  @IsOptional()
+  @IsString()
+  mosqueSlug?: string;
 }
 
 export class MyRegistrationsQueryDto {

@@ -864,27 +864,37 @@ export type Announcement = {
   id: string;
   title: string;
   message: string;
+  content?: string;
+  summary?: string | null;
   category: AnnouncementCategory;
   audience: AnnouncementAudience;
   status: AnnouncementStatus;
   channels: AnnouncementChannel[];
   /** Pinned notices sit above the rest on the community site until they are unpinned or expire. */
   pinned: boolean;
+  isPinned?: boolean;
   author: string;
   /** Publication date, or the scheduled date when the status is Scheduled. */
   publishedAt: IsoDate;
+  scheduledAt?: IsoDate | null;
   /** When the notice should drop off the site; absent means it stays until archived by hand. */
-  expiresAt?: IsoDate;
+  expiresAt?: IsoDate | null;
+  archivedAt?: IsoDate | null;
+  createdAt?: string;
+  updatedAt?: string;
 };
 
 export type AnnouncementDraft = {
   title: string;
   message: string;
+  summary?: string;
   category: AnnouncementCategory;
   audience: AnnouncementAudience;
   status: AnnouncementStatus;
   channels: AnnouncementChannel[];
   pinned: boolean;
+  scheduledAt?: string;
+  expiresAt?: string;
 };
 
 /* -------------------------------------------------------------------------- *

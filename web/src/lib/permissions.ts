@@ -316,6 +316,8 @@ export const rolePermissions: Record<Role, Permission[]> = {
     "article.manage",
     "class.view",
     "class.manage",
+    "announcement.manage",
+    "announcement.publish",
     "member.view",
     "report.view",
     "salary.viewOwn",

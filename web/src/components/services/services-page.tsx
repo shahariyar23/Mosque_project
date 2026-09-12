@@ -1,11 +1,12 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { IslamicTexture } from "@/components/islamic-texture";
 import { useLanguage } from "@/components/language-provider";
+import { useMosqueBranding } from "@/components/mosque-branding-provider";
+import { fetchPublicServices, DEFAULT_PUBLIC_MOSQUE_SLUG, type PublicService } from "@/services/publicHomeService";
 import {
-  mosqueServices,
   serviceActionLabels,
   serviceCategories,
   type MosqueService,
@@ -13,6 +14,30 @@ import {
 } from "@/components/services/service-data";
 
 type DirectoryCategory = "All" | ServiceCategory;
+
+function toMosqueService(service: PublicService): MosqueService {
+  const categoryMap: Record<string, ServiceCategory> = {
+    education: "Education",
+    welfare: "Community",
+    marriage: "Family",
+    funeral: "Funeral",
+    facilities: "Facilities",
+    worship: "Worship",
+  };
+  const category = categoryMap[service.category.toLowerCase()] || "Community";
+
+  return {
+    slug: service.slug,
+    category,
+    title: service.name,
+    bnTitle: service.name,
+    description: service.description || service.summary,
+    bnDescription: service.description || service.summary,
+    action: "Contact team",
+    href: `/services/${encodeURIComponent(service.slug)}`,
+    icon: "✦",
+  };
+}
 
 function ServiceCard({
   service,
@@ -93,22 +118,38 @@ function SectionHeading({
 export function ServicesPage() {
   const { language } = useLanguage();
   const bengali = language === "bn";
+  const { activeSlug } = useMosqueBranding();
+  const [services, setServices] = useState<MosqueService[]>([]);
   const [category, setCategory] = useState<DirectoryCategory>("All");
   const [query, setQuery] = useState("");
-  const featured = mosqueServices.filter((service) => service.featured);
+  useEffect(() => {
+    let mounted = true;
+    fetchPublicServices(activeSlug || DEFAULT_PUBLIC_MOSQUE_SLUG, 50)
+      .then((rows) => {
+        if (mounted) setServices(rows.map(toMosqueService));
+      })
+      .catch(() => {
+        if (mounted) setServices([]);
+      });
+    return () => {
+      mounted = false;
+    };
+  }, [activeSlug]);
+
+  const featured = services.slice(0, 3);
   const filtered = useMemo(
     () =>
-      mosqueServices.filter((service) => {
+      services.filter((service) => {
         const matchesCategory =
           category === "All" || service.category === category;
         const text =
           `${service.title} ${service.bnTitle} ${service.description} ${service.bnDescription}`.toLowerCase();
         return matchesCategory && text.includes(query.toLowerCase());
       }),
-    [category, query],
+    [category, query, services],
   );
   const getCategoryServices = (value: ServiceCategory) =>
-    mosqueServices.filter((service) => service.category === value);
+    services.filter((service) => service.category === value);
   const labels: Record<ServiceCategory, [string, string, string]> = {
     Worship: [
       "WORSHIP & SPIRITUAL LIFE",

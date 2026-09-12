@@ -269,7 +269,7 @@ export class ApprovalsService {
    * mosque's request is not found rather than found and refused.
    */
   private mosqueScope(actor: AuthenticatedUser): { mosqueId?: string } {
-    return hasPermission(effectivePermissions(actor), 'platform.manage')
+    return actor.tenantContext !== 'mosque' && hasPermission(effectivePermissions(actor), 'platform.manage')
       ? {}
       : { mosqueId: actor.mosqueId };
   }

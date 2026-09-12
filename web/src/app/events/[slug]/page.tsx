@@ -4,7 +4,7 @@ import { useEffect, useState, use } from "react";
 import Link from "next/link";
 import { InnerPage } from "@/components/inner-page";
 import { EventDetail } from "@/components/events/event-detail";
-import { getEvent } from "@/components/events/event-data";
+import { useMosqueBranding } from "@/components/mosque-branding-provider";
 import { fetchEvent } from "@/services/eventService";
 import type { MosqueEvent } from "@/lib/mosque/types";
 import { AlertCircle, ArrowLeft, RefreshCw } from "lucide-react";
@@ -16,6 +16,7 @@ export default function EventDetailPage({
 }) {
   const resolvedParams = use(params);
   const slug = resolvedParams.slug;
+  const { activeSlug } = useMosqueBranding();
   const [event, setEvent] = useState<MosqueEvent | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -24,31 +25,10 @@ export default function EventDetailPage({
     setLoading(true);
     setError(null);
     try {
-      const data = await fetchEvent(slug);
+      const data = await fetchEvent(slug, activeSlug);
       setEvent(data);
     } catch {
-      // Graceful fallback to static data if backend is offline or event was seeded statically
-      const mock = getEvent(slug);
-      if (mock) {
-        setEvent({
-          id: mock.id || mock.slug,
-          slug: mock.slug,
-          title: mock.title,
-          category: mock.category as any,
-          status: mock.past ? ("Completed" as any) : ("Upcoming" as any),
-          date: mock.date,
-          startTime: mock.startTime,
-          endTime: mock.endTime,
-          location: mock.location,
-          description: mock.description,
-          capacity: mock.capacity || 100,
-          registered: mock.registered || 0,
-          registrationRequired: mock.registrationRequired || false,
-          imageUrl: mock.image,
-        });
-      } else {
-        setError("Event not found. It may have been removed or the link is incorrect.");
-      }
+      setError("Event not found for this mosque. It may have been removed or the link is incorrect.");
     } finally {
       setLoading(false);
     }
@@ -56,7 +36,7 @@ export default function EventDetailPage({
 
   useEffect(() => {
     void loadEvent();
-  }, [slug]);
+  }, [slug, activeSlug]);
 
   if (loading) {
     return (

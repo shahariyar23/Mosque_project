@@ -22,19 +22,52 @@ export class PublicAnnouncementsController {
   })
   async findPublic(
     @Param('slug') slug: string,
+    @Query('page') page?: number,
     @Query('limit') limit?: number,
     @Query('category') category?: string,
+    @Query('search') search?: string,
   ) {
     const result = await this.announcementsService.findPublic(slug, {
+      page: page ? Number(page) : 1,
       limit: limit ? Number(limit) : 20,
       category,
+      search,
     });
 
     return {
       success: true,
       message: 'Public announcements retrieved successfully',
       data: result.rows,
+      meta: {
+        page: result.page,
+        limit: result.limit,
+        total: result.total,
+        totalPages: result.totalPages,
+      },
       total: result.total,
+    };
+  }
+
+  @Get(':id')
+  @ApiOperation({
+    summary: 'Public single announcement details',
+    description:
+      'Returns an active published announcement for the specified mosque by ID. ' +
+      'No authentication required.',
+  })
+  @ApiOkResponse({
+    description: 'Public announcement details.',
+    type: AnnouncementEnvelopeDto,
+  })
+  async findOne(
+    @Param('slug') slug: string,
+    @Param('id') id: string,
+  ) {
+    const item = await this.announcementsService.findPublicOne(slug, id);
+    return {
+      success: true,
+      message: 'Announcement retrieved successfully',
+      data: item,
     };
   }
 }

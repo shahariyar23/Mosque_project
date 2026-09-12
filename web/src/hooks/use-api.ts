@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ServiceError } from "@/services/query";
+import { useTenantRevision } from "@/services/tenantStore";
 
 const GENERIC_MESSAGE = "Something went wrong while loading this section. Please try again.";
 
@@ -15,11 +16,13 @@ export function useApiResource<T>(
   options?: ResourceOptions
 ) {
   const enabled = options?.enabled ?? true;
+  const tenantRevision = useTenantRevision();
 
   const [data, setData] = useState<T | undefined>(undefined);
   const [error, setError] = useState<string | undefined>(undefined);
   const [loading, setLoading] = useState(false);
   const [nonce, setNonce] = useState(0);
+  const [dataRevision, setDataRevision] = useState<number | null>(null);
 
   const requestId = useRef(0);
 
@@ -33,6 +36,7 @@ export function useApiResource<T>(
       .then((result) => {
         if (id !== requestId.current) return;
         setData(result);
+        setDataRevision(tenantRevision);
         setError(undefined);
       })
       .catch((cause: unknown) => {
@@ -44,11 +48,11 @@ export function useApiResource<T>(
         setLoading(false);
       });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [nonce, enabled, ...deps]);
+  }, [nonce, enabled, tenantRevision, ...deps]);
 
   const refetch = useCallback(() => setNonce((current) => current + 1), []);
 
-  return { data, error, loading, refetch };
+  return { data: dataRevision === tenantRevision ? data : undefined, error, loading, refetch };
 }
 
 export type PageMeta = {
@@ -64,12 +68,14 @@ export function useApiList<T>(
   options?: ResourceOptions
 ) {
   const enabled = options?.enabled ?? true;
+  const tenantRevision = useTenantRevision();
 
   const [rows, setRows] = useState<T[]>([]);
   const [meta, setMeta] = useState<PageMeta | undefined>(undefined);
   const [error, setError] = useState<string | undefined>(undefined);
   const [loading, setLoading] = useState(false);
   const [nonce, setNonce] = useState(0);
+  const [rowsRevision, setRowsRevision] = useState<number | null>(null);
 
   const requestId = useRef(0);
 
@@ -87,6 +93,7 @@ export function useApiList<T>(
         if (id !== requestId.current) return;
         setRows(result.rows);
         setMeta(result.meta);
+        setRowsRevision(tenantRevision);
         setError(undefined);
       })
       .catch((cause: unknown) => {
@@ -98,9 +105,15 @@ export function useApiList<T>(
         setLoading(false);
       });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [nonce, enabled, fetcher, serializedQuery]);
+  }, [nonce, enabled, tenantRevision, fetcher, serializedQuery]);
 
   const refetch = useCallback(() => setNonce((current) => current + 1), []);
 
-  return { rows, meta, error, loading, refetch };
+  return {
+    rows: rowsRevision === tenantRevision ? rows : [],
+    meta: rowsRevision === tenantRevision ? meta : undefined,
+    error,
+    loading,
+    refetch,
+  };
 }

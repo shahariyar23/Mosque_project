@@ -1,14 +1,26 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { SiteHeader } from "@/components/site-header";
 import { SiteFooter } from "@/components/site-footer";
 import { useLanguage } from "@/components/language-provider";
 import { useMosqueBranding } from "@/components/mosque-branding-provider";
-import { siteConfig } from "@/config/site";
-import { usePublicPrayerTimes } from "@/hooks/use-public-prayer-times";
-import { getTodayInTimezone } from "@/lib/mosque/format";
+import {
+  usePublicPrayerTimes,
+  PrayerDisplay,
+  PrayerKey,
+  PRAYER_ORDER,
+  PRAYER_NAMES,
+  formatTime12,
+  shiftMinutes,
+  convertToBengaliNumber,
+} from "@/hooks/use-public-prayer-times";
+import {
+  fetchPublicPrayerTimesForDate,
+  DEFAULT_PUBLIC_MOSQUE_SLUG,
+  type PublicPrayerTimes,
+} from "@/services/publicHomeService";
 import {
   Clock,
   Calendar,
@@ -17,36 +29,20 @@ import {
   Sun,
   Sunset,
   Moon,
-  Sparkles,
   Printer,
-  MapPin,
-  AlertTriangle,
-  ArrowRight,
-  CheckCircle2,
-  ChevronLeft,
-  ChevronRight,
-  Share2,
   Copy,
   Check,
-  Users,
   ShieldCheck,
   BookOpen,
+  MapPin,
+  ChevronLeft,
+  ChevronRight,
+  AlertTriangle,
+  Users,
+  Sparkles,
 } from "lucide-react";
 
-const TIMEZONE = "Asia/Dhaka";
-const DAYS_EN = ["Sat", "Sun", "Mon", "Tue", "Wed", "Thu", "Fri"];
-const DAYS_BN = ["শনি", "রবি", "সোম", "মঙ্গল", "বুধ", "বৃহঃ", "শুক্র"];
-
-const ARABIC_NAMES: Record<string, string> = {
-  fajr: "الفجر",
-  sunrise: "الشروق",
-  dhuhr: "الظهر",
-  asr: "العصر",
-  maghrib: "المغرب",
-  isha: "العشاء",
-};
-
-const PRAYER_ICONS: Record<string, any> = {
+const PRAYER_ICONS: Record<PrayerKey, any> = {
   fajr: Sunrise,
   sunrise: Sun,
   dhuhr: Sun,
@@ -55,293 +51,390 @@ const PRAYER_ICONS: Record<string, any> = {
   isha: Moon,
 };
 
-const PRAYER_VIRTUES: Record<string, { en: string; bn: string }> = {
+const PRAYER_PERIODS: Record<
+  PrayerKey,
+  { en: string; bn: string; subtitleEn: string; subtitleBn: string }
+> = {
   fajr: {
-    en: "The two Sunnah rak'ahs before Fajr are more beloved to the Prophet ﷺ than the entire world.",
-    bn: "ফজরের দুই রাকাত সুন্নত দুনিয়া ও তার মধ্যকার সবকিছুর চেয়ে উত্তম ও প্রিয়।",
+    en: "Dawn Congregation",
+    bn: "ভোরের জামাত",
+    subtitleEn: "Start the day in sacred communion",
+    subtitleBn: "দিনের সূচনায় আত্মশুদ্ধির সালাত",
   },
   sunrise: {
-    en: "Marks the formal conclusion of Fajr time. Voluntary prayers are discouraged for ~15 minutes.",
-    bn: "সূর্যোদয় ওয়াক্ত ফজরের সমাপ্তি নির্দেশ করে। সূর্য উদয়ের পরবর্তী ১৫ মিনিট নফল নামাজ মাকরূহ।",
+    en: "Conclusion of Fajr",
+    bn: "ফজরের সমাপ্তিকাল",
+    subtitleEn: "Solar rise — nafl discouraged for 15 min",
+    subtitleBn: "সূর্যোদয় কাল — ১৫ মিনিট নফল নামাজ মাকরূহ",
   },
   dhuhr: {
-    en: "The noon sanctuary prayer, offered when the sun descends past its midday zenith.",
-    bn: "দুপুরের প্রধান জামাত, যা সূর্য মধ্য আকাশ থেকে পশ্চিমে ঢলে পড়ার পর আদায় করা হয়।",
+    en: "Midday Sanctuary",
+    bn: "দুপুরের জামাত",
+    subtitleEn: "Sun descends past midday meridian",
+    subtitleBn: "সূর্য পশ্চিমাকাশে ঢলে পড়ার পরের জামাত",
   },
   asr: {
-    en: "The 'Middle Prayer' (Salat al-Wusta) specifically emphasized in the Holy Quran (2:238).",
-    bn: "পবিত্র কুরআনে (সূরা বাক্বারাহ ২:২৩৮) বিশেষভাবে তাকীদপ্রাপ্ত বরকতময় সালাতুল উসতা।",
+    en: "Salat al-Wusta",
+    bn: "সালাতুল উসতা",
+    subtitleEn: "The Quranically emphasized middle prayer",
+    subtitleBn: "কুরআনে বিশেষভাবে নির্দেশিত মধ্যবর্তী সালাত",
   },
   maghrib: {
-    en: "Commences promptly after sunset. Angels descend at dusk to record evening worship.",
-    bn: "সূর্যাস্তের পরপরই সময় শুরু হয় এবং জামাত দ্রুত অনুষ্ঠিত হওয়া সুন্নত ও বরকতপূর্ণ।",
+    en: "Dusk Congregation",
+    bn: "সান্ধ্য জামাত",
+    subtitleEn: "Convenes immediately after sunset",
+    subtitleBn: "সূর্যাস্তের পরপরই সূচিত বরকতময় জামাত",
   },
   isha: {
-    en: "The night congregation that illuminates the grave and rewards as if standing half the night.",
-    bn: "রাত্রিকালীন জামাত—রাসূল ﷺ বলেছেন, এশার জামাতে অংশ নিলে অর্ধরাত নফল নামাজের সওয়াব মেলে।",
+    en: "Night Vigil Assembly",
+    bn: "রাত্রিকালীন জামাত",
+    subtitleEn: "Worship rewarding half the night in vigil",
+    subtitleBn: "অর্ধরাত নফল ইবাদতের সমতুল্য সওয়াব",
   },
 };
 
-function parseTimeToDate(time24: string, timezone: string, refDate: Date): Date {
-  const [hh, mm] = time24.split(":").map(Number);
-  const parts = new Intl.DateTimeFormat("en-US", {
-    timeZone: timezone,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).formatToParts(refDate);
-
-  const year = Number(parts.find((part) => part.type === "year")?.value || refDate.getFullYear());
-  const month = Number(parts.find((part) => part.type === "month")?.value || refDate.getMonth() + 1);
-  const day = Number(parts.find((part) => part.type === "day")?.value || refDate.getDate());
-  const offsetMinutes = getTimezoneOffsetMinutes(timezone, refDate);
-  const sign = offsetMinutes >= 0 ? "+" : "-";
-  const absMinutes = Math.abs(offsetMinutes);
-  const offsetHours = Math.floor(absMinutes / 60);
-  const offsetRemainder = absMinutes % 60;
-  const iso = `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}T${String(hh).padStart(2, "0")}:${String(mm).padStart(2, "0")}:00${sign}${String(offsetHours).padStart(2, "0")}:${String(offsetRemainder).padStart(2, "0")}`;
-  return new Date(iso);
-}
-
-function getTimezoneOffsetMinutes(timezone: string, date: Date): number {
-  const utc = new Date(date.toLocaleString("en-US", { timeZone: "UTC" }));
-  const local = new Date(date.toLocaleString("en-US", { timeZone: timezone }));
-  return (local.getTime() - utc.getTime()) / 60000;
-}
-
-function formatCountdown(totalSeconds: number): { hours: string; minutes: string; seconds: string } {
-  const hours = Math.floor(totalSeconds / 3600)
-    .toString()
-    .padStart(2, "0");
-  const minutes = Math.floor((totalSeconds % 3600) / 60)
-    .toString()
-    .padStart(2, "0");
-  const seconds = Math.max(totalSeconds % 60, 0)
-    .toString()
-    .padStart(2, "0");
-  return { hours, minutes, seconds };
-}
-
-function getIqamahTime(prayerId: string, time24: string, isBn: boolean): string {
-  if (!time24 || time24 === "--:--") return "--:--";
-  const [hh, mm] = time24.split(":").map(Number);
-  if (isNaN(hh) || isNaN(mm)) return "--:--";
-
-  if (prayerId === "sunrise") {
-    return isBn ? "জামাত প্রযোজ্য নয়" : "No congregation";
-  }
-
-  // Authentic standard offsets for Dhaka mosques
-  let offsetMinutes = 15;
-  if (prayerId === "fajr") offsetMinutes = 20;
-  else if (prayerId === "dhuhr") offsetMinutes = 20;
-  else if (prayerId === "asr") offsetMinutes = 15;
-  else if (prayerId === "maghrib") offsetMinutes = 5;
-  else if (prayerId === "isha") offsetMinutes = 20;
-
-  const totalMin = hh * 60 + mm + offsetMinutes;
-  const newHh = Math.floor(totalMin / 60) % 24;
-  const newMm = totalMin % 60;
-
-  const period = newHh >= 12 ? "PM" : "AM";
-  const hour12 = newHh % 12 || 12;
-
-  if (isBn) {
-    const bnDigits = ["০", "১", "২", "৩", "৪", "৫", "৬", "৭", "৮", "৯"];
-    const toBn = (n: number) =>
-      String(n)
-        .split("")
-        .map((d) => bnDigits[Number(d)] ?? d)
-        .join("");
-    const bnPeriod = newHh >= 12 ? "অপরাহ্ন" : "পূর্বাহ্ন";
-    return `${toBn(hour12)}:${toBn(newMm).padStart(2, "০")} ${bnPeriod}`;
-  }
-
-  return `${hour12}:${String(newMm).padStart(2, "0")} ${period}`;
-}
-
-function formatMonthLabel(date: Date, isBn: boolean): string {
-  return new Intl.DateTimeFormat(isBn ? "bn-BD" : "en-GB", {
-    timeZone: TIMEZONE,
-    month: "long",
-    year: "numeric",
-  }).format(date);
-}
-
-function formatLongDate(dateValue: string, isBn: boolean): string {
-  return new Intl.DateTimeFormat(isBn ? "bn-BD" : "en-GB", {
-    timeZone: TIMEZONE,
-    weekday: "long",
-    day: "numeric",
-    month: "long",
-    year: "numeric",
-  }).format(new Date(`${dateValue}T12:00:00+06:00`));
-}
-
-function getCalendarDays(year: number, month: number): Array<number | null> {
-  const firstDay = new Date(year, month, 1).getDay();
-  // Saturday = 0 in Bangladeshi week
-  const saturdayOffset = (firstDay + 1) % 7;
-  const dateCount = new Date(year, month + 1, 0).getDate();
-  return Array.from({ length: saturdayOffset + dateCount }, (_, index) =>
-    index < saturdayOffset ? null : index - saturdayOffset + 1,
-  );
-}
+const WEEKDAYS_EN = ["Sat", "Sun", "Mon", "Tue", "Wed", "Thu", "Fri"];
+const WEEKDAYS_BN = ["শনি", "রবি", "সোম", "মঙ্গল", "বুধ", "বৃহঃ", "শুক্র"];
 
 export default function PrayerTimesPage() {
   const { language } = useLanguage();
   const isBn = language === "bn";
-  const { branding } = useMosqueBranding();
-  const today = getTodayInTimezone(TIMEZONE);
+  const { branding, activeSlug } = useMosqueBranding();
 
   const {
-    prayers: livePrayers,
+    prayers,
     jumuah,
     timezone,
     hijriDate,
+    hijri,
+    methodName,
+    schoolName,
     nextPrayerIndex,
-    countdownSeconds,
+    countdownHours,
+    countdownMinutes,
+    countdownSecs,
+    targetPrayer,
+    rawPrayerTimes,
     loading,
     error,
   } = usePublicPrayerTimes();
 
-  const [selectedDate, setSelectedDate] = useState(today);
-  const [monthAnchor, setMonthAnchor] = useState(() => new Date(`${today}T12:00:00+06:00`));
-  const [now, setNow] = useState<Date>(new Date());
-  const [copiedTime, setCopiedTime] = useState(false);
+  const safeMethodName =
+    typeof methodName === "object" && methodName !== null && "name" in (methodName as any)
+      ? String((methodName as any).name)
+      : typeof methodName === "string" && methodName
+      ? methodName
+      : "Islamic Foundation Bangladesh";
 
+  const safeSchoolName =
+    typeof schoolName === "object" && schoolName !== null && "name" in (schoolName as any)
+      ? String((schoolName as any).name)
+      : typeof schoolName === "string" && schoolName
+      ? schoolName
+      : "Hanafi";
+
+  // 1. Live Local Mosque Clock
+  const [liveTime, setLiveTime] = useState<string>("");
   useEffect(() => {
-    const timer = window.setInterval(() => setNow(new Date()), 1000);
-    return () => window.clearInterval(timer);
+    const tz = timezone || "Asia/Dhaka";
+    function updateClock() {
+      try {
+        const now = new Date();
+        const formatter = new Intl.DateTimeFormat(isBn ? "bn-BD" : "en-US", {
+          timeZone: tz,
+          hour: "2-digit",
+          minute: "2-digit",
+          second: "2-digit",
+          hour12: true,
+        });
+        setLiveTime(formatter.format(now));
+      } catch {
+        setLiveTime(new Date().toLocaleTimeString());
+      }
+    }
+    updateClock();
+    const interval = setInterval(updateClock, 1000);
+    return () => clearInterval(interval);
+  }, [timezone, isBn]);
+
+  // 2. Gregorian & Hijri Date Strings in Mosque Timezone
+  const todayGregorian = useMemo(() => {
+    const tz = timezone || "Asia/Dhaka";
+    try {
+      return new Intl.DateTimeFormat(isBn ? "bn-BD" : "en-GB", {
+        timeZone: tz,
+        weekday: "long",
+        day: "numeric",
+        month: "long",
+        year: "numeric",
+      }).format(new Date());
+    } catch {
+      return new Date().toLocaleDateString();
+    }
+  }, [timezone, isBn]);
+
+  const todayHijri = useMemo(() => {
+    if (hijri?.day && hijri?.monthName && hijri?.year) {
+      if (isBn) {
+        return `${convertToBengaliNumber(hijri.day)} ${hijri.monthName} ${convertToBengaliNumber(hijri.year)} হিজরি`;
+      }
+      return `${hijri.day} ${hijri.monthName} ${hijri.year} AH`;
+    }
+    return hijriDate || (isBn ? "১৪৪৭ হিজরি" : "1447 AH");
+  }, [hijri, hijriDate, isBn]);
+
+  // 3. Prohibited Prayer Times (Makruh Waqt) calculated dynamically
+  const prohibitedTimes = useMemo(() => {
+    const sunriseP = prayers.find((p) => p.id === "sunrise");
+    const dhuhrP = prayers.find((p) => p.id === "dhuhr");
+    const maghribP = prayers.find((p) => p.id === "maghrib");
+
+    if (!sunriseP || !dhuhrP || !maghribP) return null;
+
+    const sunriseEnd = shiftMinutes(sunriseP.time24, 15);
+    const zawalStart = shiftMinutes(dhuhrP.time24, -10);
+    const sunsetStart = shiftMinutes(maghribP.time24, -15);
+
+    return {
+      sunrise: {
+        interval: `${sunriseP.timeEn} — ${formatTime12(sunriseEnd, false)}`,
+        intervalBn: `${sunriseP.timeBn} — ${formatTime12(sunriseEnd, true)}`,
+      },
+      zawal: {
+        interval: `${formatTime12(zawalStart, false)} — ${dhuhrP.timeEn}`,
+        intervalBn: `${formatTime12(zawalStart, true)} — ${dhuhrP.timeBn}`,
+      },
+      sunset: {
+        interval: `${formatTime12(sunsetStart, false)} — ${maghribP.timeEn}`,
+        intervalBn: `${formatTime12(sunsetStart, true)} — ${maghribP.timeBn}`,
+      },
+    };
+  }, [prayers]);
+
+  // 4. Tahajjud / Last Third of the Night calculation
+  const tahajjudWindow = useMemo(() => {
+    const maghribP = prayers.find((p) => p.id === "maghrib");
+    const fajrP = prayers.find((p) => p.id === "fajr");
+
+    if (!maghribP || !fajrP) return null;
+
+    const [mH, mM] = maghribP.time24.split(":").map(Number);
+    const [fH, fM] = fajrP.time24.split(":").map(Number);
+
+    const maghribMins = mH * 60 + mM;
+    const fajrMins = fH * 60 + fM;
+    const nightDuration = (fajrMins + 1440 - maghribMins) % 1440;
+    const twoThirds = Math.round((2 / 3) * nightDuration);
+    const lastThirdStartMins = (maghribMins + twoThirds) % 1440;
+
+    const startH = Math.floor(lastThirdStartMins / 60);
+    const startM = lastThirdStartMins % 60;
+    const startTime24 = `${String(startH).padStart(2, "0")}:${String(startM).padStart(2, "0")}`;
+
+    return {
+      windowEn: `${formatTime12(startTime24, false)} — ${fajrP.timeEn}`,
+      windowBn: `${formatTime12(startTime24, true)} — ${fajrP.timeBn}`,
+    };
+  }, [prayers]);
+
+  // 5. Interactive Monthly Calendar State
+  const [calendarMonth, setCalendarMonth] = useState<Date>(() => new Date());
+  const [selectedDate, setSelectedDate] = useState<string>(() => {
+    const tz = timezone || "Asia/Dhaka";
+    try {
+      const parts = new Intl.DateTimeFormat("en-US", {
+        timeZone: tz,
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+      }).formatToParts(new Date());
+      const y = parts.find((p) => p.type === "year")?.value;
+      const m = parts.find((p) => p.type === "month")?.value;
+      const d = parts.find((p) => p.type === "day")?.value;
+      return `${y}-${m}-${d}`;
+    } catch {
+      return new Date().toISOString().slice(0, 10);
+    }
+  });
+
+  const [selectedDayTimes, setSelectedDayTimes] = useState<PublicPrayerTimes | null>(null);
+  const [selectedDayLoading, setSelectedDayLoading] = useState<boolean>(false);
+  const dateCache = useRef<Map<string, PublicPrayerTimes>>(new Map());
+
+  const todayIso = useMemo(() => {
+    const tz = timezone || "Asia/Dhaka";
+    try {
+      const parts = new Intl.DateTimeFormat("en-US", {
+        timeZone: tz,
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+      }).formatToParts(new Date());
+      const y = parts.find((p) => p.type === "year")?.value;
+      const m = parts.find((p) => p.type === "month")?.value;
+      const d = parts.find((p) => p.type === "day")?.value;
+      return `${y}-${m}-${d}`;
+    } catch {
+      return new Date().toISOString().slice(0, 10);
+    }
+  }, [timezone]);
+
+  // Load prayer times for selected calendar date
+  useEffect(() => {
+    let active = true;
+
+    if (selectedDate === todayIso && rawPrayerTimes) {
+      setSelectedDayTimes(rawPrayerTimes);
+      return;
+    }
+
+    if (dateCache.current.has(selectedDate)) {
+      setSelectedDayTimes(dateCache.current.get(selectedDate)!);
+      return;
+    }
+
+    setSelectedDayLoading(true);
+    fetchPublicPrayerTimesForDate(activeSlug || DEFAULT_PUBLIC_MOSQUE_SLUG, selectedDate)
+      .then((data) => {
+        if (!active) return;
+        if (data) {
+          dateCache.current.set(selectedDate, data);
+          setSelectedDayTimes(data);
+        } else if (rawPrayerTimes) {
+          setSelectedDayTimes(rawPrayerTimes);
+        }
+      })
+      .catch(() => {
+        if (!active) return;
+        if (rawPrayerTimes) setSelectedDayTimes(rawPrayerTimes);
+      })
+      .finally(() => {
+        if (active) setSelectedDayLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [selectedDate, todayIso, rawPrayerTimes, activeSlug]);
+
+  // Calendar navigation
+  const changeMonth = (offset: number) => {
+    setCalendarMonth((prev) => {
+      const next = new Date(prev.getFullYear(), prev.getMonth() + offset, 1);
+      return next;
+    });
+  };
+
+  const jumpToToday = () => {
+    setCalendarMonth(new Date());
+    setSelectedDate(todayIso);
+  };
+
+  // Build calendar matrix (Saturday through Friday)
+  const calendarDays = useMemo(() => {
+    const year = calendarMonth.getFullYear();
+    const month = calendarMonth.getMonth();
+    const firstDay = new Date(year, month, 1);
+    const lastDay = new Date(year, month + 1, 0);
+
+    const totalDays = lastDay.getDate();
+    const jsDay = firstDay.getDay();
+    const leadBlanks = (jsDay + 1) % 7;
+
+    const days: (number | null)[] = [];
+    for (let i = 0; i < leadBlanks; i++) {
+      days.push(null);
+    }
+    for (let d = 1; d <= totalDays; d++) {
+      days.push(d);
+    }
+    return days;
+  }, [calendarMonth]);
+
+  const monthLabel = useMemo(() => {
+    return new Intl.DateTimeFormat(isBn ? "bn-BD" : "en-US", {
+      month: "long",
+      year: "numeric",
+    }).format(calendarMonth);
+  }, [calendarMonth, isBn]);
+
+  const selectedDayHeader = useMemo(() => {
+    try {
+      const [y, m, d] = selectedDate.split("-").map(Number);
+      const dateObj = new Date(y, m - 1, d);
+      return new Intl.DateTimeFormat(isBn ? "bn-BD" : "en-GB", {
+        weekday: "long",
+        day: "numeric",
+        month: "long",
+        year: "numeric",
+      }).format(dateObj);
+    } catch {
+      return selectedDate;
+    }
+  }, [selectedDate, isBn]);
+
+  // 6. Copy Schedule Action
+  const [copied, setCopied] = useState(false);
+  const handleCopySchedule = useCallback(() => {
+    if (!prayers || prayers.length === 0) return;
+
+    const text = [
+      `🕌 ${branding.name || "Noor Community Mosque"} — ${isBn ? "সালাত সময়সূচি" : "Daily Prayer Schedule"}`,
+      `📅 ${todayGregorian} | ${todayHijri}`,
+      `📍 Dhaka, Bangladesh | Qibla: 274° WNW`,
+      "",
+      ...prayers.map((p) => {
+        const iqamahStr = p.iqamahEn ? ` | Jamat: ${p.iqamahEn}` : "";
+        return `• ${p.nameEn} (${p.arabicName}): ${p.timeEn}${iqamahStr}`;
+      }),
+      "",
+      `Fiqh: ${safeMethodName} (${safeSchoolName})`,
+    ].join("\n");
+
+    navigator.clipboard.writeText(text).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  }, [prayers, branding.name, todayGregorian, todayHijri, safeMethodName, safeSchoolName, isBn]);
+
+  // 7. Print Timetable Action
+  const handlePrint = useCallback(() => {
+    window.print();
   }, []);
 
-  useEffect(() => {
-    setSelectedDate(today);
-    setMonthAnchor(new Date(`${today}T12:00:00+06:00`));
-  }, [today]);
-
-  const prayerList = useMemo(() => {
-    if (!livePrayers.length) {
-      return [
-        { id: "fajr", name: isBn ? "ফজর" : "Fajr", time: "04:35 AM", time24: "04:35" },
-        { id: "sunrise", name: isBn ? "সূর্যোদয়" : "Sunrise", time: "05:52 AM", time24: "05:52" },
-        { id: "dhuhr", name: isBn ? "যোহর" : "Dhuhr", time: "12:05 PM", time24: "12:05" },
-        { id: "asr", name: isBn ? "আসর" : "Asr", time: "04:22 PM", time24: "16:22" },
-        { id: "maghrib", name: isBn ? "মাগরিব" : "Maghrib", time: "06:12 PM", time24: "18:12" },
-        { id: "isha", name: isBn ? "এশা" : "Isha", time: "07:30 PM", time24: "19:30" },
-      ];
-    }
-
-    return livePrayers.map((prayer) => ({
-      id: prayer.id,
-      name: isBn ? prayer.nameBn : prayer.nameEn,
-      time: isBn ? prayer.timeBn : prayer.timeEn,
-      time24: prayer.time24,
-    }));
-  }, [isBn, livePrayers]);
-
-  const nextPrayer = useMemo(() => {
-    if (!prayerList.length) return null;
-
-    const schedule = prayerList
-      .filter((prayer) => prayer.time24 && prayer.id !== "sunrise")
-      .map((prayer) => ({
-        ...prayer,
-        date: parseTimeToDate(prayer.time24, timezone || TIMEZONE, now),
-      }));
-
-    if (!schedule.length) return null;
-    let chosen = schedule.find((prayer) => prayer.date > now) ?? schedule[0];
-    if (chosen.date <= now) {
-      chosen = {
-        ...chosen,
-        date: new Date(chosen.date.getTime() + 24 * 60 * 60 * 1000),
-      };
-    }
-    const remainingSeconds = Math.max(0, Math.floor((chosen.date.getTime() - now.getTime()) / 1000));
-    return { ...chosen, remainingSeconds };
-  }, [prayerList, now, timezone]);
-
-  const activeIndex = nextPrayerIndex >= 0 && nextPrayerIndex < prayerList.length ? nextPrayerIndex : 0;
-  const nextPrayerLabel = nextPrayer?.name ?? (isBn ? "ফজর" : "Fajr");
-  const nextPrayerId = nextPrayer?.id ?? "fajr";
-  const nextPrayerTime = nextPrayer?.time ?? "--:--";
-  const nextPrayerIqamah = nextPrayer ? getIqamahTime(nextPrayer.id, nextPrayer.time24, isBn) : "--:--";
-  const countdown = nextPrayer?.remainingSeconds ?? countdownSeconds ?? 0;
-  const countdownParts = formatCountdown(countdown);
-
-  const selectedMonthLabel = formatMonthLabel(monthAnchor, isBn);
-  const selectedDayLabel = formatLongDate(selectedDate, isBn);
-  const todayLabel = formatLongDate(today, isBn);
-
-  const todayTimeText = new Intl.DateTimeFormat(isBn ? "bn-BD" : "en-US", {
-    timeZone: TIMEZONE,
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-  }).format(now);
-
-  const todayHijri = hijriDate || (isBn ? "১০ রবিউল আউয়াল ১৪৪৮ হিজরি" : "10 Rabi' al-Awwal 1448 AH");
-
-  // Jumuah Schedule defaults if none configured
-  const effectiveJumuah = jumuah.length > 0 ? jumuah : [
-    {
-      date: null,
-      khutbahTime: isBn ? "১২:৪৫ অপরাহ্ন" : "12:45 PM",
-      prayerTime: isBn ? "০১:১৫ অপরাহ্ন" : "01:15 PM",
-      imam: isBn ? "মুফতি মাওলানা আব্দুল্লাহ" : "Mufti Maulana Abdullah",
-      location: isBn ? "প্রধান জামাত হল" : "Main Prayer Sanctuary",
-      notes: isBn ? "প্রথম জামাত · বাংলা বয়ান ও আরবি খুতবা" : "1st Congregation · Bengali Discourse & Arabic Khutbah",
-    },
-    {
-      date: null,
-      khutbahTime: isBn ? "০১:৪৫ অপরাহ্ন" : "01:45 PM",
-      prayerTime: isBn ? "০২:১৫ অপরাহ্ন" : "02:15 PM",
-      imam: isBn ? "শায়খ আহমদ উল্লাহ" : "Shaykh Ahmadullah",
-      location: isBn ? "প্রধান জামাত হল ও প্রাঙ্গণ" : "Main Hall & Extended Courtyard",
-      notes: isBn ? "দ্বিতীয় জামাত · মুসল্লিদের সুবিধার্থে" : "2nd Congregation · Expanded Overflow Session",
-    },
-  ];
-
-  const resetToToday = () => {
-    setSelectedDate(today);
-    setMonthAnchor(new Date(`${today}T12:00:00+06:00`));
-  };
-
-  const changeMonth = (direction: number) => {
-    const next = new Date(monthAnchor);
-    next.setMonth(next.getMonth() + direction);
-    setMonthAnchor(next);
-    setSelectedDate(
-      `${next.getFullYear()}-${String(next.getMonth() + 1).padStart(2, "0")}-01`,
-    );
-  };
-
-  const copyPrayerTimes = () => {
-    const text = prayerList
-      .map((p) => `${p.name}: Adhan ${p.time} | Jamat ${getIqamahTime(p.id, p.time24, false)}`)
-      .join("\n");
-    navigator.clipboard?.writeText(
-      `🕌 ${branding.name || siteConfig.name} - Prayer Times (${selectedDate})\n${text}\n📍 Dhaka, Bangladesh`,
-    );
-    setCopiedTime(true);
-    setTimeout(() => setCopiedTime(false), 2500);
-  };
-
-  const handlePrint = () => {
-    window.print();
-  };
-
-  const monthDays = getCalendarDays(monthAnchor.getFullYear(), monthAnchor.getMonth());
-  const weekDayLabels = isBn ? DAYS_BN : DAYS_EN;
+  // Active Next Prayer identification
+  const activePrayer = targetPrayer || prayers[nextPrayerIndex] || prayers[0] || null;
 
   return (
     <div className="min-h-screen bg-[#f8f6ef] text-[#17211d] flex flex-col selection:bg-[#c79a45] selection:text-white">
+      {/* Global Site Header */}
       <SiteHeader />
 
-      {/* 1. Islamic Hero Section */}
-      <section className="relative overflow-hidden bg-[#072a20] text-white pt-32 sm:pt-36 pb-14 sm:pb-20 px-4 xs:px-6 lg:px-8 border-b border-[#c79a45]/25">
-        {/* Subtle Ambient Islamic Texture */}
+      {/* Print Stylesheet */}
+      <style jsx global>{`
+        @media print {
+          header,
+          footer,
+          .no-print {
+            display: none !important;
+          }
+          main {
+            padding: 0 !important;
+          }
+          .print-clean {
+            background: transparent !important;
+            border-color: #cccccc !important;
+            color: #000000 !important;
+            box-shadow: none !important;
+          }
+        }
+      `}</style>
+
+      {/* ================================================== */}
+      {/* SECTION 1 — PRAYER TIMES EDITORIAL HERO (MATCHES SITE) */}
+      {/* ================================================== */}
+      <section className="relative overflow-hidden bg-[#072a20] text-white pt-32 sm:pt-36 pb-12 sm:pb-16 px-4 xs:px-6 lg:px-8 border-b border-[#c79a45]/20">
+        {/* Subtle Ambient Background Texture */}
         <div
           className="absolute inset-0 opacity-10 bg-repeat pointer-events-none"
           style={{
@@ -351,83 +444,97 @@ export default function PrayerTimesPage() {
           aria-hidden="true"
         />
 
-        {/* Ambient Glow Orbs */}
-        <div className="absolute -top-24 -left-24 w-96 h-96 rounded-full bg-[#0d4d3b] filter blur-3xl opacity-50 pointer-events-none" />
-        <div className="absolute top-1/2 -right-24 w-80 h-80 rounded-full bg-[#c79a45]/20 filter blur-3xl opacity-40 pointer-events-none" />
+        {/* Ambient Glows */}
+        <div className="absolute -top-24 -left-24 w-80 h-80 rounded-full bg-[#0d4d3b] filter blur-3xl opacity-50 pointer-events-none" />
+        <div className="absolute top-1/2 -right-24 w-72 h-72 rounded-full bg-[#c79a45]/20 filter blur-3xl opacity-40 pointer-events-none" />
 
         <div className="relative z-10 mx-auto max-w-7xl">
-          <div className="flex flex-col lg:flex-row lg:items-end lg:justify-between gap-8">
+          <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-6">
             <div className="max-w-3xl">
-              {/* Eyebrow Pill */}
-              <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full border border-[#c79a45]/40 bg-[#041d16]/70 text-[#e0be79] text-xs font-semibold tracking-[0.2em] uppercase shadow-sm">
-                <Sparkles className="w-3.5 h-3.5" />
+              {/* Sacred Arabic Bismillah Calligraphy in Warm Radiant Gold */}
+              <div
+                dir="rtl"
+                lang="ar"
+                className="font-serif text-2xl sm:text-3xl lg:text-4xl text-[#dfba73] tracking-widest select-none pb-3"
+              >
+                بِسْمِ ٱللَّٰهِ ٱلرَّحْمَٰنِ ٱلرَّحِيمِ
+              </div>
+
+              {/* Eyebrow Badge */}
+              <div className="inline-flex items-center gap-2 px-3.5 py-1 rounded-full border border-[#c79a45]/40 bg-[#041d16]/70 text-[#e0be79] text-xs font-semibold tracking-[0.18em] uppercase shadow-sm">
+                <Sparkles className="w-3.5 h-3.5 text-[#e0be79]" />
                 <span>
                   {isBn
-                    ? "দৈনিক ওয়াক্ত ও জামাতের সঠিক সময়সূচি"
-                    : "PRAYER TIMES & DAILY CONGREGATIONS"}
+                    ? "নূর জামে মসজিদ · দৈনিক ও জুমার সময়সূচি"
+                    : "NOOR COMMUNITY MOSQUE · CONGREGATIONAL TIMETABLE"}
                 </span>
               </div>
 
-              {/* Title */}
+              {/* Headline */}
               <h1 className="mt-4 text-3xl xs:text-4xl sm:text-5xl lg:text-6xl font-serif font-bold text-[#f5f1e6] leading-tight tracking-tight">
                 {isBn ? (
                   <>
-                    নামাজের সময়সূচি ও <br />
-                    <span className="text-[#e0be79] italic font-normal">জামাতের বিবরণ</span>
+                    দৈনন্দিন সালাত ও <br />
+                    <span className="text-[#e0be79] italic font-normal">জামাত সময়সূচি</span>
                   </>
                 ) : (
                   <>
-                    Sacred Timings & <br />
-                    <span className="text-[#e0be79] italic font-normal">
-                      Congregational Schedule
-                    </span>
+                    Prayer Times & <br />
+                    <span className="text-[#e0be79] italic font-normal">Congregational Schedule</span>
                   </>
                 )}
               </h1>
 
-              {/* Subtitle / Metadata Row */}
-              <div className="mt-4 sm:mt-5 flex flex-wrap items-center gap-3 text-xs sm:text-sm text-white/80">
-                <span className="font-medium text-white">{todayLabel}</span>
-                <span className="text-[#c79a45]">✦</span>
-                <span className="font-medium text-[#e0be79]">{todayHijri}</span>
-                <span className="text-[#c79a45]">✦</span>
-                <span className="inline-flex items-center gap-1.5 text-white/85">
-                  <MapPin className="w-3.5 h-3.5 text-[#c79a45]" />
-                  <span>Dhaka, Bangladesh</span>
-                </span>
-              </div>
+              {/* Subheading */}
+              <p className="mt-3 sm:mt-4 text-sm xs:text-base text-white/80 leading-relaxed font-light max-w-2xl">
+                {isBn
+                  ? "মসজিদ কমপ্লেক্সে অনুষ্ঠিত দৈনিক পাঁচ ওয়াক্ত সালাত ও জুমার প্রামাণ্য সময়সূচি।"
+                  : "Authoritative daily congregation timings calculated for the sanctuary community."}
+              </p>
             </div>
 
-            {/* Live Ticker & Qibla Widget */}
-            <div className="flex flex-wrap sm:flex-nowrap items-stretch gap-3">
-              {/* Live Clock Card */}
-              <div className="flex-1 sm:flex-initial p-4 sm:p-5 rounded-2xl bg-[#041d16]/85 border border-[#c79a45]/35 shadow-lg backdrop-blur-md min-w-[200px]">
-                <div className="flex items-center justify-between gap-2 text-[10px] font-bold uppercase tracking-[0.2em] text-[#e0be79]">
-                  <span className="flex items-center gap-1.5">
-                    <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
-                    {isBn ? "লাইভ ঘড়ি" : "LIVE TIME"}
-                  </span>
-                  <span>BST</span>
-                </div>
-                <div className="mt-2 font-mono text-2xl sm:text-3xl font-bold tracking-wider text-white">
-                  {todayTimeText}
-                </div>
-                <div className="mt-1 text-[11px] text-white/60">
-                  {timezone || "Asia/Dhaka (UTC+6)"}
-                </div>
+            {/* Quick Actions & Date Metadata Chips */}
+            <div className="flex flex-col sm:flex-row lg:flex-col items-start lg:items-end gap-3 no-print">
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleCopySchedule}
+                  aria-label={isBn ? "সময়সূচি কপি করুন" : "Copy schedule"}
+                  className="inline-flex items-center gap-2 px-4 py-2 rounded-xl border border-[#c79a45]/40 bg-[#041d16]/80 hover:bg-[#072a20] text-xs font-semibold text-[#e0be79] hover:text-white transition-colors shadow-sm"
+                >
+                  {copied ? (
+                    <>
+                      <Check className="w-4 h-4 text-[#dfba73]" />
+                      <span>{isBn ? "কপি হয়েছে" : "Copied"}</span>
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="w-4 h-4" />
+                      <span>{isBn ? "সময়সূচি কপি" : "Copy Schedule"}</span>
+                    </>
+                  )}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handlePrint}
+                  aria-label={isBn ? "সময়সূচি প্রিন্ট করুন" : "Print timetable"}
+                  className="inline-flex items-center gap-2 px-4 py-2 rounded-xl border border-[#c79a45]/40 bg-[#041d16]/80 hover:bg-[#072a20] text-xs font-semibold text-[#e0be79] hover:text-white transition-colors shadow-sm"
+                >
+                  <Printer className="w-4 h-4" />
+                  <span>{isBn ? "প্রিন্ট" : "Print Timetable"}</span>
+                </button>
               </div>
 
-              {/* Qibla Direction Card */}
-              <div className="flex-1 sm:flex-initial p-4 sm:p-5 rounded-2xl bg-[#041d16]/85 border border-[#c79a45]/35 shadow-lg backdrop-blur-md min-w-[170px]">
-                <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-[0.2em] text-[#e0be79]">
-                  <Compass className="w-3.5 h-3.5" />
-                  <span>{isBn ? "কিবলা দিক" : "QIBLA"}</span>
+              {/* Dynamic Gregorian & Hijri Badges */}
+              <div className="flex flex-wrap items-center gap-2 text-xs">
+                <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/10 border border-white/15 text-white">
+                  <Calendar className="w-3.5 h-3.5 text-[#e0be79]" />
+                  <span className="font-medium">{todayGregorian}</span>
                 </div>
-                <div className="mt-2 font-serif text-2xl font-bold text-white">
-                  274° <span className="text-sm font-sans font-medium text-[#e0be79]">WNW</span>
-                </div>
-                <div className="mt-1 text-[11px] text-white/60">
-                  {isBn ? "পশ্চিম-উত্তর-পশ্চিম" : "West-Northwest"}
+                <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#041d16]/70 border border-[#c79a45]/30 text-[#e0be79]">
+                  <Sparkles className="w-3.5 h-3.5 text-[#e0be79]" />
+                  <span className="font-semibold">{todayHijri}</span>
                 </div>
               </div>
             </div>
@@ -435,269 +542,346 @@ export default function PrayerTimesPage() {
         </div>
       </section>
 
-      {/* Main Content Area */}
+      {/* ================================================== */}
+      {/* MAIN CONTENT AREA                                  */}
+      {/* ================================================== */}
       <main className="mx-auto max-w-7xl w-full px-4 xs:px-6 lg:px-8 py-10 sm:py-14 space-y-12 sm:space-y-16">
         
-        {/* 2. Top Spotlight: Next Prayer Countdown Card */}
-        <section aria-label="Next Prayer Spotlight" className="w-full">
-          <div className="relative overflow-hidden rounded-3xl border border-[#c79a45]/50 bg-gradient-to-br from-[#06291f] via-[#093528] to-[#041a13] text-white p-6 sm:p-8 lg:p-10 shadow-2xl">
-            {/* Background Arch Ornament */}
-            <div className="absolute right-0 top-0 bottom-0 w-1/2 opacity-5 pointer-events-none flex items-center justify-end pr-10">
-              <svg className="h-96 w-96 text-white" viewBox="0 0 100 100" fill="currentColor">
-                <path d="M50 0 C22 0 0 22 0 50 L0 100 L100 100 L100 50 C100 22 78 0 50 0 Z" />
-              </svg>
+        {/* ================================================== */}
+        {/* SECTION 2 — INFORMATION STRIP                     */}
+        {/* ================================================== */}
+        <section aria-label="Sanctuary Parameters">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 sm:gap-6">
+            {/* 1. Live Local Time */}
+            <div className="rounded-2xl border border-[#e5e1d3] bg-white p-5 sm:p-6 shadow-sm flex flex-col justify-between">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold tracking-[0.2em] text-[#0d4d3b] uppercase">
+                  {isBn ? "স্থানীয় সময়" : "LIVE LOCAL TIME"}
+                </span>
+                <div className="w-8 h-8 rounded-full bg-[#f4efe5] flex items-center justify-center text-[#c79a45]">
+                  <Clock className="w-4 h-4" />
+                </div>
+              </div>
+              <div className="mt-3 text-3xl sm:text-4xl font-mono font-bold tracking-tight text-[#0e2a22]">
+                {liveTime || "--:--:--"}
+              </div>
+              <p className="mt-2 text-xs text-[#52605a]">
+                {isBn ? "মসজিদ ঘড়ির বর্তমান সময় (এশিয়া/ঢাকা)" : "Sanctuary wall clock (Asia/Dhaka)"}
+              </p>
             </div>
 
-            <div className="relative z-10 grid gap-8 lg:grid-cols-12 items-center">
-              {/* Left Details */}
-              <div className="lg:col-span-6 space-y-4">
-                <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-[#c79a45]/20 border border-[#c79a45]/40 text-[#e0be79] text-xs font-bold tracking-[0.18em] uppercase">
-                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                  <span>{isBn ? "পরবর্তী আসন্ন নামাজ" : "NEXT UPCOMING PRAYER"}</span>
-                </div>
-
-                <div className="flex items-baseline gap-4">
-                  <h2 className="text-4xl sm:text-5xl lg:text-6xl font-serif font-bold text-white tracking-tight">
-                    {nextPrayerLabel}
-                  </h2>
-                  <span className="font-serif text-3xl sm:text-4xl text-[#e0be79] font-normal opacity-90">
-                    {ARABIC_NAMES[nextPrayerId] || ""}
-                  </span>
-                </div>
-
-                <p className="text-sm sm:text-base text-white/80 font-light leading-relaxed max-w-lg">
-                  {PRAYER_VIRTUES[nextPrayerId]
-                    ? isBn
-                      ? PRAYER_VIRTUES[nextPrayerId].bn
-                      : PRAYER_VIRTUES[nextPrayerId].en
-                    : isBn
-                    ? "ওয়াক্তমতো নামাজ আদায় করুন এবং জামাতের সওয়াব গ্রহণ করুন।"
-                    : "Establish prayer with devotion and gather with your community in congregation."}
-                </p>
-
-                {/* Timings Badges */}
-                <div className="pt-2 flex flex-wrap items-center gap-4">
-                  <div className="px-4 py-2.5 rounded-xl bg-white/10 border border-white/15">
-                    <span className="block text-[10px] uppercase font-bold tracking-widest text-[#e0be79]">
-                      {isBn ? "ওয়াক্ত শুরু (আযান)" : "ADHAN (START)"}
-                    </span>
-                    <span className="text-lg sm:text-xl font-bold text-white">
-                      {nextPrayerTime}
-                    </span>
-                  </div>
-
-                  <div className="px-4 py-2.5 rounded-xl bg-[#c79a45]/20 border border-[#c79a45]/50">
-                    <span className="block text-[10px] uppercase font-bold tracking-widest text-[#f5d590]">
-                      {isBn ? "জামাত (ইকামত)" : "JAMAT (CONGREGATION)"}
-                    </span>
-                    <span className="text-lg sm:text-xl font-bold text-white">
-                      {nextPrayerIqamah}
-                    </span>
-                  </div>
+            {/* 2. Qibla Direction */}
+            <div className="rounded-2xl border border-[#e5e1d3] bg-white p-5 sm:p-6 shadow-sm flex flex-col justify-between">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold tracking-[0.2em] text-[#0d4d3b] uppercase">
+                  {isBn ? "ক্বিবলা দিক" : "QIBLA DIRECTION"}
+                </span>
+                <div className="w-8 h-8 rounded-full bg-[#f4efe5] flex items-center justify-center text-[#c79a45]">
+                  <Compass className="w-4 h-4" />
                 </div>
               </div>
+              <div className="mt-3 text-3xl sm:text-4xl font-mono font-bold tracking-tight text-[#0e2a22]">
+                {isBn ? "২৭৪° প-উ-প" : "274° WNW"}
+              </div>
+              <p className="mt-2 text-xs text-[#52605a]">
+                {isBn ? "মসজিদ হতে পবিত্র কাবা শরীফের দিক" : "Direct bearing to Sacred Ka'aba"}
+              </p>
+            </div>
 
-              {/* Right Countdown Display */}
-              <div className="lg:col-span-6 flex flex-col items-center lg:items-end">
-                <div className="w-full max-w-md p-6 sm:p-7 rounded-2xl bg-[#03150e]/80 border border-[#c79a45]/30 text-center shadow-inner">
-                  <p className="text-[11px] font-bold uppercase tracking-[0.25em] text-[#e0be79] mb-4">
-                    {isBn ? "ওয়াক্ত হতে অবশিষ্ট সময়" : "COUNTDOWN TO NEXT PRAYER"}
-                  </p>
-
-                  {/* Digits Display */}
-                  <div className="grid grid-cols-3 gap-2 sm:gap-4 font-mono">
-                    <div className="p-3 sm:p-4 rounded-xl bg-black/40 border border-white/10">
-                      <span className="text-3xl sm:text-4xl lg:text-5xl font-bold text-white">
-                        {countdownParts.hours}
-                      </span>
-                      <span className="mt-1 block text-[10px] uppercase tracking-wider text-white/60">
-                        {isBn ? "ঘণ্টা" : "HOURS"}
-                      </span>
-                    </div>
-
-                    <div className="p-3 sm:p-4 rounded-xl bg-black/40 border border-white/10">
-                      <span className="text-3xl sm:text-4xl lg:text-5xl font-bold text-white">
-                        {countdownParts.minutes}
-                      </span>
-                      <span className="mt-1 block text-[10px] uppercase tracking-wider text-white/60">
-                        {isBn ? "মিনিট" : "MINS"}
-                      </span>
-                    </div>
-
-                    <div className="p-3 sm:p-4 rounded-xl bg-black/40 border border-white/10">
-                      <span className="text-3xl sm:text-4xl lg:text-5xl font-bold text-[#e0be79]">
-                        {countdownParts.seconds}
-                      </span>
-                      <span className="mt-1 block text-[10px] uppercase tracking-wider text-white/60">
-                        {isBn ? "সেকেন্ড" : "SECS"}
-                      </span>
-                    </div>
-                  </div>
-
-                  <div className="mt-5 flex items-center justify-center gap-2 text-xs text-white/70">
-                    <Clock className="w-3.5 h-3.5 text-[#c79a45]" />
-                    <span>
-                      {isBn
-                        ? "মসজিদে পৌঁছানোর জন্য প্রস্তুত হোন"
-                        : "Prepare for congregation at Noor Sanctuary"}
-                    </span>
-                  </div>
+            {/* 3. Calculation Standard */}
+            <div className="rounded-2xl border border-[#e5e1d3] bg-white p-5 sm:p-6 shadow-sm flex flex-col justify-between">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold tracking-[0.2em] text-[#0d4d3b] uppercase">
+                  {isBn ? "গণনা মানদণ্ড" : "CALCULATION STANDARD"}
+                </span>
+                <div className="w-8 h-8 rounded-full bg-[#f4efe5] flex items-center justify-center text-[#c79a45]">
+                  <BookOpen className="w-4 h-4" />
                 </div>
               </div>
+              <div className="mt-3 text-xl sm:text-2xl font-bold tracking-tight text-[#0e2a22] truncate">
+                {safeSchoolName} • {safeMethodName}
+              </div>
+              <p className="mt-2 text-xs text-[#52605a]">
+                {isBn ? "অনুমোদিত প্রামাণ্য ফিকহি পদ্ধতি" : "Authorized jurisprudence parameters"}
+              </p>
             </div>
           </div>
         </section>
 
-        {/* 3. Today's Full Schedule (5 Daily Prayers + Sunrise) */}
-        <section aria-labelledby="daily-schedule-heading" className="space-y-6">
-          <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 pb-2 border-b border-[#e5e1d3]">
-            <div>
-              <div className="inline-flex items-center gap-2 text-xs font-bold tracking-[0.2em] text-[#0d4d3b] uppercase">
-                <Sun className="w-4 h-4 text-[#c79a45]" />
-                <span>{isBn ? "দৈনিক পাঁচ ওয়াক্ত সালাত" : "OBLIGATORY PRAYERS"}</span>
+        {/* ================================================== */}
+        {/* SECTION 3 — NEXT PRAYER HERO (CENTERPIECE)        */}
+        {/* ================================================== */}
+        {activePrayer && (
+          <section aria-labelledby="next-prayer-heading">
+            <div className="relative rounded-3xl border border-[#c79a45]/40 bg-gradient-to-br from-[#0c2a20] via-[#092219] to-[#061912] p-6 sm:p-10 text-white shadow-xl overflow-hidden">
+              {/* Corner Ambient Radial Light */}
+              <div
+                aria-hidden="true"
+                className="pointer-events-none absolute top-0 right-0 w-96 h-96 bg-[radial-gradient(circle,_rgba(199,154,69,0.15)_0%,_transparent_70%)]"
+              />
+
+              {/* Eyebrow Pill */}
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full border border-[#c79a45]/40 bg-[#c79a45]/15 text-xs font-bold tracking-[0.2em] text-[#e0be79] uppercase">
+                  <span className="w-2 h-2 rounded-full bg-[#e0be79] animate-pulse" />
+                  <span id="next-prayer-heading">
+                    {isBn ? "আসন্ন জামাত" : "UPCOMING CONGREGATION"}
+                  </span>
+                </div>
+
+                <div className="text-xs text-white/70">
+                  {PRAYER_PERIODS[activePrayer.id]?.[isBn ? "subtitleBn" : "subtitleEn"]}
+                </div>
               </div>
-              <h2 id="daily-schedule-heading" className="mt-2 text-2xl xs:text-3xl sm:text-4xl font-serif font-bold text-[#0e2a22]">
-                {isBn ? "আজকের পূর্ণাঙ্গ সময়সূচি" : "Today's Complete Schedule"}
+
+              {/* Main Prayer Name & Arabic Calligraphy */}
+              <div className="mt-6 flex flex-col sm:flex-row sm:items-baseline justify-between gap-4 pb-6 border-b border-white/10">
+                <div>
+                  <h2 className="font-serif text-4xl sm:text-6xl font-bold text-white tracking-tight">
+                    {isBn ? activePrayer.nameBn : activePrayer.nameEn}
+                  </h2>
+                  <p className="text-xs sm:text-sm text-white/70 mt-1">
+                    {PRAYER_PERIODS[activePrayer.id]?.[isBn ? "bn" : "en"]}
+                  </p>
+                </div>
+
+                <div
+                  dir="rtl"
+                  lang="ar"
+                  className="font-serif text-4xl sm:text-5xl lg:text-6xl text-[#e0be79] font-bold select-none tracking-wide"
+                >
+                  {activePrayer.arabicName}
+                </div>
+              </div>
+
+              {/* Timings & Countdown Split */}
+              <div className="mt-6 grid grid-cols-1 lg:grid-cols-12 gap-6 items-center">
+                {/* Adhan & Iqamah Boxes */}
+                <div className="lg:col-span-6 grid grid-cols-2 gap-3.5 sm:gap-4">
+                  {/* Adhan Box */}
+                  <div className="rounded-2xl border border-white/10 bg-white/5 p-4 sm:p-5 backdrop-blur-sm">
+                    <span className="text-[10px] font-bold tracking-[0.2em] text-white/70 uppercase block">
+                      {isBn ? "ওয়াক্ত শুরু (আযান)" : "ADHAN TIME"}
+                    </span>
+                    <span className="mt-2 block font-mono text-2xl sm:text-3xl font-bold text-white">
+                      {isBn ? activePrayer.timeBn : activePrayer.timeEn}
+                    </span>
+                    <span className="mt-1 block text-[11px] text-white/60">
+                      {isBn ? "নামাজের সময় সূচনা" : "Beginning of prayer window"}
+                    </span>
+                  </div>
+
+                  {/* Iqamah Box (Warm Radiant Gold) */}
+                  <div className="rounded-2xl border border-[#c79a45]/60 bg-[#c79a45]/15 p-4 sm:p-5 shadow-[0_0_25px_rgba(199,154,69,0.15)]">
+                    <span className="text-[10px] font-bold tracking-[0.2em] text-[#e0be79] uppercase block">
+                      {isBn ? "জামাত শুরু (ইক্বামাহ)" : "IQAMAH / JAMAT"}
+                    </span>
+                    <span className="mt-2 block font-mono text-2xl sm:text-3xl font-bold text-[#e0be79]">
+                      {activePrayer.iqamahEn
+                        ? (isBn ? activePrayer.iqamahBn : activePrayer.iqamahEn)
+                        : (isBn ? activePrayer.timeBn : activePrayer.timeEn)}
+                    </span>
+                    <span className="mt-1 block text-[11px] text-[#e0be79]/80">
+                      {isBn ? "মূল মসজিদে জামাত অনুষ্ঠিত" : "Main sanctuary assembly"}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Countdown to Iqamah Display */}
+                <div className="lg:col-span-6 rounded-2xl border border-white/10 bg-black/30 p-5 sm:p-6 text-center backdrop-blur-sm">
+                  <div className="text-[10px] font-bold tracking-[0.25em] text-[#e0be79] uppercase">
+                    {isBn ? "জামাত শুরুর বাকি সময়" : "COUNTDOWN TO IQAMAH"}
+                  </div>
+
+                  {/* Tabular Timer: Hours : Mins : Secs */}
+                  <div className="mt-3 flex items-center justify-center gap-2 sm:gap-4 font-mono font-bold text-white">
+                    {/* Hours */}
+                    <div className="flex flex-col items-center">
+                      <span className="text-3xl sm:text-5xl tracking-tight bg-white/10 px-3 sm:px-4 py-2 rounded-xl border border-white/15 min-w-[58px] sm:min-w-[76px]">
+                        {isBn
+                          ? convertToBengaliNumber(countdownHours).padStart(2, "০")
+                          : String(countdownHours).padStart(2, "0")}
+                      </span>
+                      <span className="text-[10px] tracking-wider text-white/70 mt-1 uppercase">
+                        {isBn ? "ঘণ্টা" : "Hours"}
+                      </span>
+                    </div>
+
+                    <span className="text-2xl sm:text-4xl text-[#e0be79] -mt-5">:</span>
+
+                    {/* Mins */}
+                    <div className="flex flex-col items-center">
+                      <span className="text-3xl sm:text-5xl tracking-tight bg-white/10 px-3 sm:px-4 py-2 rounded-xl border border-white/15 min-w-[58px] sm:min-w-[76px]">
+                        {isBn
+                          ? convertToBengaliNumber(countdownMinutes).padStart(2, "০")
+                          : String(countdownMinutes).padStart(2, "0")}
+                      </span>
+                      <span className="text-[10px] tracking-wider text-white/70 mt-1 uppercase">
+                        {isBn ? "মিনিট" : "Mins"}
+                      </span>
+                    </div>
+
+                    <span className="text-2xl sm:text-4xl text-[#e0be79] -mt-5">:</span>
+
+                    {/* Secs */}
+                    <div className="flex flex-col items-center">
+                      <span className="text-3xl sm:text-5xl tracking-tight bg-white/10 px-3 sm:px-4 py-2 rounded-xl border border-white/15 min-w-[58px] sm:min-w-[76px] text-[#e0be79]">
+                        {isBn
+                          ? convertToBengaliNumber(countdownSecs).padStart(2, "০")
+                          : String(countdownSecs).padStart(2, "0")}
+                      </span>
+                      <span className="text-[10px] tracking-wider text-white/70 mt-1 uppercase">
+                        {isBn ? "সেকেন্ড" : "Secs"}
+                      </span>
+                    </div>
+                  </div>
+
+                  <p className="mt-3 text-xs text-white/60">
+                    {isBn
+                      ? "স্থানীয় ক্লায়েন্ট টাইমার দ্বারা প্রতি সেকেন্ডে হালনাগাদকৃত"
+                      : "High precision client-side countdown timer in mosque local timezone"}
+                  </p>
+                </div>
+              </div>
+            </div>
+          </section>
+        )}
+
+        {/* ================================================== */}
+        {/* SECTION 4 — DAILY PRAYER TIMETABLE (MOBILE-FIRST) */}
+        {/* ================================================== */}
+        <section aria-labelledby="daily-schedule-heading">
+          <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-3 pb-5 border-b border-[#e5e1d3]">
+            <div>
+              <span className="text-xs font-bold tracking-[0.2em] text-[#0d4d3b] uppercase">
+                {isBn ? "দৈনিক জামাত নির্ঘণ্ট" : "DAILY PRAYER TIMETABLE"}
+              </span>
+              <h2
+                id="daily-schedule-heading"
+                className="mt-1 font-serif text-2xl sm:text-3xl font-bold text-[#0e2a22]"
+              >
+                {isBn ? "আজকের নামাজের সময়সূচি" : "Today's Congregational Timetable"}
               </h2>
             </div>
-
-            {/* Actions: Copy & Print */}
-            <div className="flex items-center gap-2 shrink-0">
-              <button
-                type="button"
-                onClick={copyPrayerTimes}
-                className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl border border-[#d2ccc0] bg-white text-xs font-semibold text-[#0d4d3b] hover:bg-[#faf7f0] hover:border-[#c79a45] transition shadow-sm min-h-[40px]"
-              >
-                {copiedTime ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5 text-[#c79a45]" />}
-                <span>{copiedTime ? (isBn ? "কপি হয়েছে!" : "Copied!") : isBn ? "সময়সূচি কপি করুন" : "Copy Times"}</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={handlePrint}
-                className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-[#0d4d3b] text-white text-xs font-semibold hover:bg-[#072a20] transition shadow-sm min-h-[40px]"
-              >
-                <Printer className="w-3.5 h-3.5 text-[#e0be79]" />
-                <span>{isBn ? "প্রিন্ট করুন" : "Print Timetable"}</span>
-              </button>
-            </div>
+            <p className="text-xs text-[#52605a]">
+              {isBn
+                ? "মসজিদের মূল জামাত হলে অনুষ্ঠিত দৈনন্দিন সালাত"
+                : "Congregations held in the main sanctuary hall"}
+            </p>
           </div>
 
           {/* Cards Grid */}
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {prayerList.map((prayer) => {
-              const isNext = prayer.id === nextPrayerId;
-              const isSunrise = prayer.id === "sunrise";
+          <div className="mt-6 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-3.5 sm:gap-4">
+            {prayers.map((prayer) => {
+              const isNext = prayer.id === activePrayer?.id;
               const IconComponent = PRAYER_ICONS[prayer.id] || Sun;
-              const iqamah = getIqamahTime(prayer.id, prayer.time24, isBn);
 
               return (
                 <div
                   key={prayer.id}
-                  className={`relative overflow-hidden rounded-2xl border p-5 sm:p-6 flex flex-col justify-between transition-all duration-300 hover:shadow-lg ${
+                  className={`rounded-2xl transition-all duration-300 relative flex flex-col justify-between p-5 ${
                     isNext
-                      ? "border-[#c79a45] bg-gradient-to-br from-[#0d4d3b] to-[#072a20] text-white shadow-xl scale-[1.01]"
-                      : isSunrise
-                      ? "border-[#e0d6c1] bg-[#faf8f2] text-[#17211d]"
-                      : "border-[#e7e3d7] bg-white text-[#17211d] hover:border-[#c79a45]/60"
+                      ? "border-2 border-[#c79a45] bg-[#0d4d3b] text-white shadow-lg scale-[1.02]"
+                      : "border border-[#e5e1d3] bg-white text-[#17211d] shadow-sm hover:border-[#0d4d3b]/50"
                   }`}
                 >
-                  {/* Top Header */}
                   <div>
+                    {/* Top Bar: Icon + Arabic Calligraphy */}
                     <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2.5">
-                        <div
-                          className={`w-9 h-9 rounded-xl flex items-center justify-center ${
-                            isNext
-                              ? "bg-[#c79a45] text-[#072a20]"
-                              : isSunrise
-                              ? "bg-amber-100 text-amber-700"
-                              : "bg-[#0d4d3b]/10 text-[#0d4d3b]"
-                          }`}
-                        >
-                          <IconComponent className="w-5 h-5" />
-                        </div>
-                        <div>
-                          <h3
-                            className={`font-serif text-lg font-bold leading-tight ${
-                              isNext ? "text-white" : "text-[#0e2a22]"
-                            }`}
-                          >
-                            {prayer.name}
-                          </h3>
-                          <span
-                            className={`text-xs font-serif font-medium ${
-                              isNext ? "text-[#e0be79]" : "text-[#7b8782]"
-                            }`}
-                          >
-                            {ARABIC_NAMES[prayer.id] || ""}
-                          </span>
-                        </div>
+                      <div
+                        className={`w-9 h-9 rounded-full flex items-center justify-center ${
+                          isNext ? "bg-white/15 text-[#e0be79]" : "bg-[#f4efe5] text-[#0d4d3b]"
+                        }`}
+                      >
+                        <IconComponent className="w-4 h-4" />
                       </div>
 
-                      {/* Status Tag */}
-                      {isNext ? (
-                        <span className="px-2.5 py-1 rounded-full bg-[#c79a45] text-[#072a20] text-[10px] font-bold uppercase tracking-wider shadow-sm">
-                          {isBn ? "আসন্ন ওয়াক্ত" : "UPCOMING"}
-                        </span>
-                      ) : isSunrise ? (
-                        <span className="px-2.5 py-1 rounded-full bg-amber-100 text-amber-800 text-[10px] font-bold uppercase tracking-wider">
-                          {isBn ? "সূর্যোদয়" : "SOLAR"}
-                        </span>
-                      ) : null}
+                      <span
+                        dir="rtl"
+                        lang="ar"
+                        className={`font-serif text-lg font-bold select-none ${
+                          isNext ? "text-[#e0be79]" : "text-[#718079]"
+                        }`}
+                      >
+                        {prayer.arabicName}
+                      </span>
                     </div>
 
-                    {/* Timings Row */}
-                    <div className="mt-5 grid grid-cols-2 gap-3 pt-4 border-t border-current/10">
-                      <div>
+                    {/* Prayer Title */}
+                    <div className="mt-3">
+                      <h3
+                        className={`font-serif text-lg font-bold ${
+                          isNext ? "text-white" : "text-[#0e2a22]"
+                        }`}
+                      >
+                        {isBn ? prayer.nameBn : prayer.nameEn}
+                      </h3>
+                      <p
+                        className={`text-[11px] line-clamp-1 ${
+                          isNext ? "text-white/75" : "text-[#697570]"
+                        }`}
+                      >
+                        {PRAYER_PERIODS[prayer.id]?.[isBn ? "bn" : "en"]}
+                      </p>
+                    </div>
+
+                    {/* Adhan & Jamat Times */}
+                    <div
+                      className={`mt-4 pt-3 space-y-2 border-t ${
+                        isNext ? "border-white/15" : "border-[#ece6db]"
+                      }`}
+                    >
+                      <div className="flex items-baseline justify-between">
                         <span
-                          className={`block text-[10px] font-bold uppercase tracking-wider ${
-                            isNext ? "text-[#e0be79]" : "text-[#7b8782]"
+                          className={`text-[10px] uppercase tracking-wider font-semibold ${
+                            isNext ? "text-white/75" : "text-[#718079]"
                           }`}
                         >
-                          {isBn ? "ওয়াক্ত শুরু" : "ADHAN (START)"}
+                          {isBn ? "আযান" : "Adhan"}
                         </span>
-                        <div
-                          className={`mt-1 font-serif text-xl sm:text-2xl font-bold ${
+                        <span
+                          className={`font-mono text-base font-semibold ${
                             isNext ? "text-white" : "text-[#0e2a22]"
                           }`}
                         >
-                          {prayer.time}
-                        </div>
+                          {isBn ? prayer.timeBn : prayer.timeEn}
+                        </span>
                       </div>
 
-                      <div>
+                      <div className="flex items-baseline justify-between">
                         <span
-                          className={`block text-[10px] font-bold uppercase tracking-wider ${
-                            isNext ? "text-[#e0be79]" : "text-[#c79a45]"
+                          className={`text-[10px] uppercase tracking-wider font-bold ${
+                            isNext ? "text-[#e0be79]" : "text-[#0d4d3b]"
                           }`}
                         >
-                          {isSunrise
-                            ? isBn
-                              ? "ওয়াক্ত সমাপ্তি"
-                              : "FAJR END"
-                            : isBn
-                            ? "জামাত"
-                            : "JAMAT (IQAMAH)"}
+                          {prayer.id === "sunrise" ? (isBn ? "সমাপ্তি" : "Ends") : (isBn ? "জামাত" : "Jamat")}
                         </span>
-                        <div
-                          className={`mt-1 font-serif text-xl sm:text-2xl font-bold ${
-                            isNext ? "text-white" : isSunrise ? "text-[#69726d]" : "text-[#0d4d3b]"
+                        <span
+                          className={`font-mono text-base font-bold ${
+                            isNext ? "text-[#e0be79]" : "text-[#0d4d3b]"
                           }`}
                         >
-                          {iqamah}
-                        </div>
+                          {prayer.id === "sunrise"
+                            ? (isBn ? prayer.timeBn : prayer.timeEn)
+                            : (prayer.iqamahEn
+                              ? (isBn ? prayer.iqamahBn : prayer.iqamahEn)
+                              : (isBn ? prayer.timeBn : prayer.timeEn))}
+                        </span>
                       </div>
                     </div>
                   </div>
 
-                  {/* Bottom Spiritual Note */}
-                  <div className="mt-4 pt-3 border-t border-current/10 text-[11px] leading-relaxed opacity-85">
-                    {PRAYER_VIRTUES[prayer.id]
-                      ? isBn
-                        ? PRAYER_VIRTUES[prayer.id].bn
-                        : PRAYER_VIRTUES[prayer.id].en
-                      : ""}
+                  {/* Status Pill */}
+                  <div className="mt-4 pt-2">
+                    {isNext ? (
+                      <div className="w-full text-center py-1 rounded-full bg-[#c79a45] text-[#072a20] text-[10px] font-bold tracking-wider uppercase">
+                        {isBn ? "আসন্ন জামাত" : "NEXT PRAYER"}
+                      </div>
+                    ) : (
+                      <div className="w-full text-center py-1 rounded-full bg-[#f8f6ef] text-[#718079] text-[10px] font-semibold tracking-wider uppercase">
+                        {isBn ? "দৈনিক সালাত" : "SCHEDULED"}
+                      </div>
+                    )}
                   </div>
                 </div>
               );
@@ -705,328 +889,396 @@ export default function PrayerTimesPage() {
           </div>
         </section>
 
-        {/* 4. Jumu'ah (Friday Congregation) Spotlight Card */}
-        <section aria-labelledby="jumuah-schedule-heading" className="w-full">
-          <div className="relative overflow-hidden rounded-3xl border border-[#c79a45]/40 bg-white p-6 sm:p-8 lg:p-10 shadow-lg">
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-6 border-b border-[#e5e1d3]">
-              <div>
-                <div className="inline-flex items-center gap-2 text-xs font-bold tracking-[0.2em] text-[#0d4d3b] uppercase">
-                  <Sparkles className="w-4 h-4 text-[#c79a45]" />
-                  <span>{isBn ? "সাপ্তাহিক শ্রেষ্ঠ দিন" : "WEEKLY CONGREGATION"}</span>
+        {/* ================================================== */}
+        {/* SECTION 5 — JUMU'AH (FRIDAY CONGREGATION)         */}
+        {/* ================================================== */}
+        {jumuah && jumuah.length > 0 && (
+          <section aria-labelledby="jumuah-heading">
+            <div className="rounded-3xl border border-[#e5e1d3] bg-white p-6 sm:p-8 lg:p-10 shadow-sm">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-6 border-b border-[#e5e1d3]">
+                <div>
+                  <div className="inline-flex items-center gap-2 text-xs font-bold tracking-[0.2em] text-[#0d4d3b] uppercase">
+                    <Sparkles className="w-4 h-4 text-[#c79a45]" />
+                    <span>{isBn ? "পবিত্র জুমার জামাত" : "FRIDAY JUMU'AH CONGREGATION"}</span>
+                  </div>
+                  <h2
+                    id="jumuah-heading"
+                    className="mt-1 font-serif text-2xl sm:text-4xl font-bold text-[#0e2a22]"
+                  >
+                    {isBn ? "সাপ্তাহিক জুমার খুতবাহ ও জামাত" : "Weekly Friday Congregation"}
+                  </h2>
                 </div>
-                <h2 id="jumuah-schedule-heading" className="mt-2 text-2xl xs:text-3xl sm:text-4xl font-serif font-bold text-[#0e2a22]">
-                  {isBn ? "পবিত্র জুমু'আ নামাজের সময়সূচি" : "Friday Jumu'ah Prayers"}
-                </h2>
-              </div>
-              <div className="text-xs sm:text-sm text-[#718079] max-w-sm">
-                {isBn
-                  ? "জুমার দিনে সুগন্ধি ব্যবহার করা, সুরত আল-কাহাফ তেলাওয়াত করা এবং আগেভাগে মসজিদে উপস্থিত হওয়া সুন্নত।"
-                  : "Arrive early, perform Sunnah ghusl, recite Surah Al-Kahf, and attend the blessed congregation."}
-              </div>
-            </div>
 
-            <div className="mt-6 grid gap-6 md:grid-cols-2">
-              {effectiveJumuah.map((shift, idx) => (
-                <div
-                  key={idx}
-                  className="rounded-2xl border border-[#e5e1d3] bg-[#faf8f3] p-5 sm:p-6 flex flex-col justify-between hover:border-[#c79a45]/60 transition-colors"
-                >
-                  <div>
+                <div className="text-xs text-[#52605a] max-w-xs">
+                  {isBn
+                    ? "জুমার দিনে সুন্নাত তরিকায় দ্রুত মসজিদে উপস্থিত হওয়ার আহ্বান জানানো হচ্ছে।"
+                    : "Worshippers are encouraged to arrive early for the sermon."}
+                </div>
+              </div>
+
+              {/* Jumu'ah Entries Grid */}
+              <div className="mt-6 grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6">
+                {jumuah.map((entry, idx) => (
+                  <div
+                    key={idx}
+                    className="rounded-2xl border border-[#e5e1d3] bg-[#faf8f4] p-5 sm:p-6 shadow-xs"
+                  >
                     <div className="flex items-center justify-between">
-                      <span className="px-3 py-1 rounded-full bg-[#0d4d3b] text-white text-xs font-bold uppercase tracking-wider">
-                        {idx === 0
-                          ? isBn
-                            ? "১ম জামাত"
-                            : "1st Jumu'ah"
-                          : isBn
-                          ? "২য় জামাত"
-                          : "2nd Jumu'ah"}
+                      <span className="text-xs font-bold text-[#0d4d3b] uppercase tracking-wider">
+                        {isBn ? `জামাত #${convertToBengaliNumber(idx + 1)}` : `Congregation #${idx + 1}`}
                       </span>
-                      <span className="text-xs font-medium text-[#718079]">
-                        {shift.location || "Main Sanctuary"}
-                      </span>
+                      {entry.location && (
+                        <span className="text-xs text-[#52605a]">{entry.location}</span>
+                      )}
                     </div>
 
-                    <div className="mt-5 grid grid-cols-2 gap-4">
-                      <div className="p-3.5 rounded-xl bg-white border border-[#e5e1d3]">
-                        <span className="block text-[10px] font-bold uppercase tracking-wider text-[#7b8782]">
-                          {isBn ? "খুতবা শুরু" : "KHUTBAH"}
+                    <div className="mt-4 grid grid-cols-2 gap-3 pb-4 border-b border-[#ece6db]">
+                      <div>
+                        <span className="text-[10px] font-bold text-[#718079] uppercase tracking-wider">
+                          {isBn ? "খুতবাহ শুরু" : "KHUTBAH"}
                         </span>
-                        <div className="mt-1 font-serif text-xl sm:text-2xl font-bold text-[#0e2a22]">
-                          {shift.khutbahTime}
+                        <div className="mt-1 font-mono text-xl sm:text-2xl font-bold text-[#0e2a22]">
+                          {entry.khutbahTime}
                         </div>
                       </div>
 
-                      <div className="p-3.5 rounded-xl bg-[#0d4d3b]/10 border border-[#0d4d3b]/20">
-                        <span className="block text-[10px] font-bold uppercase tracking-wider text-[#0d4d3b]">
-                          {isBn ? "নামাজ শুরু" : "JAMAT"}
+                      <div>
+                        <span className="text-[10px] font-bold text-[#0d4d3b] uppercase tracking-wider">
+                          {isBn ? "জামাত শুরু" : "JAMAT"}
                         </span>
-                        <div className="mt-1 font-serif text-xl sm:text-2xl font-bold text-[#0d4d3b]">
-                          {shift.prayerTime}
+                        <div className="mt-1 font-mono text-xl sm:text-2xl font-bold text-[#0d4d3b]">
+                          {entry.prayerTime}
                         </div>
                       </div>
                     </div>
 
-                    {shift.imam && (
-                      <div className="mt-4 flex items-center gap-2 text-xs text-[#0e2a22]">
-                        <Users className="w-3.5 h-3.5 text-[#c79a45] shrink-0" />
-                        <span className="font-semibold">{isBn ? "খতীব ও ইমাম:" : "Khateeb & Imam:"}</span>
-                        <span>{shift.imam}</span>
+                    {entry.imam && (
+                      <div className="mt-4 flex items-center gap-2 text-xs text-[#52605a]">
+                        <Users className="w-3.5 h-3.5 text-[#c79a45]" />
+                        <span>
+                          <strong className="text-[#0e2a22]">{isBn ? "খতিব / ইমাম: " : "Khateeb: "}</strong>
+                          {entry.imam}
+                        </span>
                       </div>
+                    )}
+
+                    {entry.notes && (
+                      <p className="mt-2 text-xs text-[#718079]">{entry.notes}</p>
                     )}
                   </div>
-
-                  {shift.notes && (
-                    <p className="mt-4 text-xs text-[#69726d] leading-relaxed pt-3 border-t border-[#ece6db]">
-                      {shift.notes}
-                    </p>
-                  )}
-                </div>
-              ))}
-            </div>
-          </div>
-        </section>
-
-        {/* 5. Prohibited Times Guide & Qiblah Info */}
-        <section aria-labelledby="forbidden-times-heading" className="grid gap-6 lg:grid-cols-12">
-          {/* Prohibited Times Card */}
-          <div className="lg:col-span-8 rounded-3xl border border-amber-200 bg-amber-50/60 p-6 sm:p-8">
-            <div className="flex items-center gap-2.5 text-xs font-bold tracking-[0.18em] text-amber-900 uppercase">
-              <AlertTriangle className="w-4 h-4 text-amber-600" />
-              <span>{isBn ? "নামাজের নিষিদ্ধ ও মাকরূহ সময়" : "PROHIBITED PRAYER TIMES (MAKRUH WAQT)"}</span>
-            </div>
-
-            <h3 id="forbidden-times-heading" className="mt-2 text-xl sm:text-2xl font-serif font-bold text-amber-950">
-              {isBn
-                ? "যেসব সময়ে নফল নামাজ আদায় করা নিষেধ"
-                : "Times When Voluntary (Nafl) Prayers are Forbidden"}
-            </h3>
-
-            <p className="mt-2 text-xs sm:text-sm text-amber-900/80 leading-relaxed">
-              {isBn
-                ? "সহীহ হাদিস অনুযায়ী তিন সময়ে যেকোনো ধরনের সালাত আদায় করা থেকে বিরত থাকার নির্দেশ এসেছে:"
-                : "According to authentic Hadith, voluntary prayers and funeral prayers are discouraged during three specific astronomical windows:"}
-            </p>
-
-            <div className="mt-5 grid gap-4 sm:grid-cols-3">
-              <div className="p-4 rounded-2xl bg-white border border-amber-200/80 shadow-sm">
-                <span className="text-xs font-bold text-amber-900">
-                  {isBn ? "১. সূর্যোদয়ের সময়" : "1. At Sunrise"}
-                </span>
-                <p className="mt-1 text-[11px] text-[#55635d] leading-relaxed">
-                  {isBn
-                    ? "সূর্য উদিত হওয়া শুরু থেকে প্রায় ১৫-২০ মিনিট পর্যন্ত।"
-                    : "From initial solar rise until the sun is a spear's height (~15 min)."}
-                </p>
-              </div>
-
-              <div className="p-4 rounded-2xl bg-white border border-amber-200/80 shadow-sm">
-                <span className="text-xs font-bold text-amber-900">
-                  {isBn ? "২. ঠিক দ্বিপ্রহরে (যাওয়াল)" : "2. Solar Zenith"}
-                </span>
-                <p className="mt-1 text-[11px] text-[#55635d] leading-relaxed">
-                  {isBn
-                    ? "সূর্য ঠিক মাথার ওপর থাকার সময় যোহরের ওয়াক্তের পূর্বমুহূর্ত।"
-                    : "When the sun reaches exact meridian, ~10 min before Dhuhr adhan."}
-                </p>
-              </div>
-
-              <div className="p-4 rounded-2xl bg-white border border-amber-200/80 shadow-sm">
-                <span className="text-xs font-bold text-amber-900">
-                  {isBn ? "৩. সূর্যাস্তের সময়" : "3. At Sunset"}
-                </span>
-                <p className="mt-1 text-[11px] text-[#55635d] leading-relaxed">
-                  {isBn
-                    ? "সূর্য হলুদ বর্ণ ধারণ করা থেকে পূর্ণ অস্ত যাওয়া পর্যন্ত।"
-                    : "From amber solar dimming until full horizon disappearance."}
-                </p>
+                ))}
               </div>
             </div>
-          </div>
+          </section>
+        )}
 
-          {/* Tahajjud & Taraweeh Insight */}
-          <div className="lg:col-span-4 rounded-3xl border border-[#0d4d3b]/30 bg-[#072a20] text-white p-6 sm:p-8 flex flex-col justify-between">
-            <div>
-              <div className="inline-flex items-center gap-2 text-xs font-bold tracking-widest text-[#e0be79] uppercase">
-                <Moon className="w-4 h-4" />
-                <span>{isBn ? "তাহাজ্জুদ ও কিয়ামুল লাইল" : "TAHAJJUD & QIYAM"}</span>
+        {/* ================================================== */}
+        {/* SECTION 6 — PROHIBITED PRAYER TIMES (MAKRUH WAQT) */}
+        {/* ================================================== */}
+        {prohibitedTimes && (
+          <section aria-labelledby="makruh-heading">
+            <div className="rounded-3xl border border-[#e5e1d3] bg-white p-6 sm:p-8 shadow-sm">
+              <div className="flex items-center gap-2 text-xs font-bold tracking-[0.2em] text-[#c79a45] uppercase">
+                <AlertTriangle className="w-4 h-4 text-[#c79a45]" />
+                <span id="makruh-heading">
+                  {isBn ? "নিষিদ্ধ নামাজের সময় (মাকরূহ ওয়াক্ত)" : "PROHIBITED PRAYER TIMES (MAKRUH WAQT)"}
+                </span>
               </div>
-              <h4 className="mt-3 text-xl font-serif font-bold">
-                {isBn ? "শেষ রাতের বরকত" : "The Last Third of the Night"}
-              </h4>
-              <p className="mt-2 text-xs sm:text-sm text-white/80 leading-relaxed font-light">
+
+              <p className="mt-2 text-xs sm:text-sm text-[#52605a] max-w-2xl">
                 {isBn
-                  ? "মহান আল্লাহ শেষ তৃতীয়াংশে প্রথম আসমানে অবতরণ করে বান্দাদের দোয়া ও ক্ষমা প্রার্থনা কবুল করেন।"
-                  : "Our Lord descends to the lowest heaven in the last third of the night, asking: 'Who calls upon Me so I may answer them?'"}
+                  ? "হাদিস শরিফ অনুযায়ী নিম্নলিখিত তিনটি মুহূর্তে যেকোনো ধরণের নফল নামাজ আদায় করা মাকরূহে তাহরিমি:"
+                  : "Voluntary (Nafl) prayers are strictly prohibited during these three celestial transitions according to prophetic Sunnah:"}
               </p>
-            </div>
 
-            <div className="mt-6 pt-4 border-t border-white/15 text-xs text-[#e0be79]">
-              {isBn ? "শ্রেষ্ঠ সময়: রাত ৩:১৫ হতে ফজরের আযান পর্যন্ত" : "Best Time: ~03:15 AM until Fajr Adhan"}
-            </div>
-          </div>
-        </section>
-
-        {/* 6. Interactive Monthly Calendar */}
-        <section aria-labelledby="calendar-heading" className="rounded-3xl border border-[#e5e1d3] bg-white p-6 sm:p-8 lg:p-10 shadow-sm">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-6 border-b border-[#e5e1d3]">
-            <div>
-              <div className="inline-flex items-center gap-2 text-xs font-bold tracking-[0.2em] text-[#0d4d3b] uppercase">
-                <Calendar className="w-4 h-4 text-[#c79a45]" />
-                <span>{isBn ? "মাসিক ক্যালেন্ডার" : "INTERACTIVE TIMETABLE"}</span>
-              </div>
-              <h2 id="calendar-heading" className="mt-2 text-2xl xs:text-3xl font-serif font-bold text-[#0e2a22]">
-                {selectedMonthLabel}
-              </h2>
-            </div>
-
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={resetToToday}
-                className="px-4 py-2 rounded-xl border border-[#d2ccc0] text-xs font-semibold text-[#0d4d3b] hover:bg-[#faf7f0] transition shadow-sm min-h-[40px]"
-              >
-                {isBn ? "আজকের দিন" : "Today"}
-              </button>
-
-              <div className="flex items-center rounded-xl border border-[#d2ccc0] bg-white p-1">
-                <button
-                  type="button"
-                  onClick={() => changeMonth(-1)}
-                  aria-label="Previous Month"
-                  className="p-1.5 rounded-lg hover:bg-[#faf7f0] text-[#0d4d3b] transition"
-                >
-                  <ChevronLeft className="w-4 h-4" />
-                </button>
-                <button
-                  type="button"
-                  onClick={() => changeMonth(1)}
-                  aria-label="Next Month"
-                  className="p-1.5 rounded-lg hover:bg-[#faf7f0] text-[#0d4d3b] transition"
-                >
-                  <ChevronRight className="w-4 h-4" />
-                </button>
-              </div>
-            </div>
-          </div>
-
-          {/* Calendar Grid */}
-          <div className="mt-6">
-            <div className="grid grid-cols-7 gap-1.5 sm:gap-2 text-center text-xs font-bold text-[#718079] pb-3 border-b border-[#ece6db]">
-              {weekDayLabels.map((day) => (
-                <div key={day} className="py-1">
-                  {day}
+              <div className="mt-6 grid grid-cols-1 md:grid-cols-3 gap-4">
+                {/* 1. Sunrise Interval */}
+                <div className="rounded-2xl border border-[#e5e1d3] bg-[#faf8f4] p-5">
+                  <span className="text-[10px] font-bold text-[#718079] uppercase tracking-wider block">
+                    {isBn ? "১. সূর্যোদয়ের সময়" : "1. SUNRISE TRANSITION"}
+                  </span>
+                  <div className="mt-2 font-mono text-lg sm:text-xl font-bold text-[#0d4d3b]">
+                    {isBn ? prohibitedTimes.sunrise.intervalBn : prohibitedTimes.sunrise.interval}
+                  </div>
+                  <p className="mt-1 text-xs text-[#52605a]">
+                    {isBn
+                      ? "সূর্য উদিত হওয়ার পর এক বর্শা সমপরিমাণ উপরে ওঠা পর্যন্ত (~১৫ মিনিট)"
+                      : "From sunrise until the sun rises the height of a spear (~15 min)"}
+                  </p>
                 </div>
-              ))}
+
+                {/* 2. Zawal (Midday) */}
+                <div className="rounded-2xl border border-[#e5e1d3] bg-[#faf8f4] p-5">
+                  <span className="text-[10px] font-bold text-[#718079] uppercase tracking-wider block">
+                    {isBn ? "২. ঠিক দ্বিপ্রহরের সময় (যাওয়াল)" : "2. SOLAR ZENITH (ZAWAL)"}
+                  </span>
+                  <div className="mt-2 font-mono text-lg sm:text-xl font-bold text-[#0d4d3b]">
+                    {isBn ? prohibitedTimes.zawal.intervalBn : prohibitedTimes.zawal.interval}
+                  </div>
+                  <p className="mt-1 text-xs text-[#52605a]">
+                    {isBn
+                      ? "সূর্য মধ্যাকাশে অবস্থানকালে জোহরের ওয়াক্ত শুরু হওয়ার পূর্ব পর্যন্ত"
+                      : "When sun is at its exact zenith until it begins western descent"}
+                  </p>
+                </div>
+
+                {/* 3. Sunset Interval */}
+                <div className="rounded-2xl border border-[#e5e1d3] bg-[#faf8f4] p-5">
+                  <span className="text-[10px] font-bold text-[#718079] uppercase tracking-wider block">
+                    {isBn ? "৩. সূর্যাস্তের সময়" : "3. SUNSET TRANSITION"}
+                  </span>
+                  <div className="mt-2 font-mono text-lg sm:text-xl font-bold text-[#0d4d3b]">
+                    {isBn ? prohibitedTimes.sunset.intervalBn : prohibitedTimes.sunset.interval}
+                  </div>
+                  <p className="mt-1 text-xs text-[#52605a]">
+                    {isBn
+                      ? "সূর্য হলুদ ও স্তিমিত হওয়ার পর হতে সূর্যাস্ত সম্পন্ন হওয়া পর্যন্ত"
+                      : "When the sun pales and descends until it completely sets"}
+                  </p>
+                </div>
+              </div>
             </div>
+          </section>
+        )}
 
-            <div className="mt-2 grid grid-cols-7 gap-1.5 sm:gap-2">
-              {monthDays.map((day, idx) => {
-                if (day === null) {
-                  return <div key={`blank-${idx}`} className="aspect-square" />;
-                }
-                const isoDate = `${monthAnchor.getFullYear()}-${String(monthAnchor.getMonth() + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
-                const isSelected = selectedDate === isoDate;
-                const isCurrentToday = today === isoDate;
+        {/* ================================================== */}
+        {/* SECTION 7 — TAHAJJUD / NIGHT PRAYER               */}
+        {/* ================================================== */}
+        {tahajjudWindow && (
+          <section aria-labelledby="tahajjud-heading">
+            <div className="rounded-3xl border border-[#0d4d3b] bg-linear-to-br from-[#0d4d3b] via-[#0b4137] to-[#072a20] p-6 sm:p-8 text-white flex flex-col md:flex-row md:items-center justify-between gap-6 shadow-md">
+              <div>
+                <div className="inline-flex items-center gap-2 text-xs font-bold tracking-[0.2em] text-[#e0be79] uppercase">
+                  <Moon className="w-4 h-4 text-[#e0be79]" />
+                  <span id="tahajjud-heading">
+                    {isBn ? "তাহাজ্জুদ ও কিয়ামুল লাইল" : "TAHAJJUD & NIGHT PRAYER (QIYAM AL-LAYL)"}
+                  </span>
+                </div>
+                <h3 className="mt-2 font-serif text-2xl sm:text-3xl font-bold text-white">
+                  {isBn ? "রাতের শেষ তৃতীয়াংশের বরকতময় সময়" : "The Last Third of the Night"}
+                </h3>
+                <p className="mt-2 text-xs sm:text-sm text-white/80 max-w-xl">
+                  {isBn
+                    ? "রাসূলুল্লাহ ﷺ বলেছেন: আমাদের প্রতিপালক প্রতি রাতের শেষ তৃতীয়াংশে প্রথম আসমানে নেমে আহ্বান জানান—কে আছো যে আমাকে ডাকবে, আমি তার ডাকে সাড়া দেব? (সহীহ বুখারী)"
+                    : "The Prophet ﷺ said: Our Lord descends every night to the lowest heaven when the last third remains, answering those who call upon Him. (Sahih al-Bukhari)"}
+                </p>
+              </div>
 
-                return (
+              <div className="shrink-0 rounded-2xl border border-[#c79a45]/40 bg-black/25 p-5 text-center min-w-[220px]">
+                <span className="text-[10px] font-bold tracking-[0.2em] text-[#e0be79] uppercase block">
+                  {isBn ? "শ্রেষ্ঠ তাহাজ্জুদ সময়" : "PREFERRED WINDOW"}
+                </span>
+                <span className="mt-2 block font-mono text-xl sm:text-2xl font-bold text-white">
+                  {isBn ? tahajjudWindow.windowBn : tahajjudWindow.windowEn}
+                </span>
+                <span className="mt-1 block text-[10px] text-white/70">
+                  {isBn ? "ফজরের আযান পর্যন্ত অব্যাহত" : "Until dawn (Fajr) commences"}
+                </span>
+              </div>
+            </div>
+          </section>
+        )}
+
+        {/* ================================================== */}
+        {/* SECTION 8 — MONTHLY PRAYER CALENDAR               */}
+        {/* ================================================== */}
+        <section aria-labelledby="calendar-heading">
+          <div className="rounded-3xl border border-[#e5e1d3] bg-white p-6 sm:p-8 lg:p-10 shadow-sm">
+            {/* Header with Month Nav and Today Jump */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-6 border-b border-[#e5e1d3]">
+              <div>
+                <div className="inline-flex items-center gap-2 text-xs font-bold tracking-[0.2em] text-[#0d4d3b] uppercase">
+                  <Calendar className="w-4 h-4 text-[#c79a45]" />
+                  <span>{isBn ? "মাসিক ক্যালেন্ডার" : "MONTHLY TIMETABLE CALENDAR"}</span>
+                </div>
+                <h2
+                  id="calendar-heading"
+                  className="mt-1 font-serif text-2xl sm:text-3xl font-bold text-[#0e2a22]"
+                >
+                  {monthLabel}
+                </h2>
+              </div>
+
+              {/* Month Controls */}
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={jumpToToday}
+                  className="px-3.5 py-1.5 rounded-xl border border-[#d2ccc0] bg-white hover:bg-[#faf7f0] text-xs font-semibold text-[#0d4d3b] transition-colors shadow-xs"
+                >
+                  {isBn ? "আজকের দিন" : "Today"}
+                </button>
+
+                <div className="flex items-center rounded-xl border border-[#d2ccc0] bg-white p-1 shadow-xs">
                   <button
-                    key={isoDate}
                     type="button"
-                    onClick={() => setSelectedDate(isoDate)}
-                    className={`aspect-square rounded-2xl flex flex-col items-center justify-center text-xs sm:text-sm font-semibold transition-all duration-200 cursor-pointer ${
-                      isSelected
-                        ? "bg-[#0d4d3b] text-white shadow-md scale-105"
-                        : isCurrentToday
-                        ? "border-2 border-[#c79a45] bg-[#faf7f0] text-[#0e2a22] font-bold"
-                        : "bg-[#faf9f4] hover:bg-[#f2efe6] text-[#24332d]"
-                    }`}
+                    onClick={() => changeMonth(-1)}
+                    aria-label={isBn ? "পূর্ববর্তী মাস" : "Previous Month"}
+                    className="p-1.5 rounded-lg hover:bg-[#faf7f0] text-[#0d4d3b] transition-colors"
                   >
-                    <span>{day}</span>
-                    {isCurrentToday && (
-                      <span className="w-1.5 h-1.5 rounded-full bg-[#c79a45] mt-0.5" />
-                    )}
+                    <ChevronLeft className="w-4 h-4" />
                   </button>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* Selected Day Inspector */}
-          <div className="mt-8 p-5 sm:p-6 rounded-2xl bg-[#faf8f3] border border-[#e5e1d3]">
-            <div className="flex items-center justify-between flex-wrap gap-2 pb-3 border-b border-[#ece6db]">
-              <span className="text-xs font-bold uppercase tracking-wider text-[#c79a45]">
-                {isBn ? "নির্বাচিত তারিখ" : "SELECTED DAY INSPECTOR"}
-              </span>
-              <span className="text-sm font-bold text-[#0e2a22]">
-                {selectedDayLabel}
-              </span>
-            </div>
-
-            <div className="mt-4 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 text-center">
-              {prayerList.map((p) => (
-                <div key={p.id} className="p-3 rounded-xl bg-white border border-[#e5e1d3]">
-                  <span className="text-[10px] font-bold uppercase text-[#718079] block">
-                    {p.name}
-                  </span>
-                  <span className="font-serif text-base font-bold text-[#0e2a22] mt-1 block">
-                    {p.time}
-                  </span>
-                  <span className="text-[10px] text-[#0d4d3b] font-medium block mt-0.5">
-                    {getIqamahTime(p.id, p.time24, isBn)}
-                  </span>
+                  <button
+                    type="button"
+                    onClick={() => changeMonth(1)}
+                    aria-label={isBn ? "পরবর্তী মাস" : "Next Month"}
+                    className="p-1.5 rounded-lg hover:bg-[#faf7f0] text-[#0d4d3b] transition-colors"
+                  >
+                    <ChevronRight className="w-4 h-4" />
+                  </button>
                 </div>
-              ))}
+              </div>
+            </div>
+
+            {/* Calendar Grid */}
+            <div className="mt-6">
+              {/* Weekday Header (Sat - Fri) */}
+              <div className="grid grid-cols-7 gap-1 sm:gap-2 text-center text-xs font-bold text-[#718079] pb-3 border-b border-[#ece6db]">
+                {(isBn ? WEEKDAYS_BN : WEEKDAYS_EN).map((day, idx) => (
+                  <div
+                    key={day}
+                    className={`py-1 ${idx === 6 ? "text-[#0d4d3b] font-extrabold" : ""}`}
+                  >
+                    {day}
+                    {idx === 6 && <span className="block text-[9px] uppercase font-normal text-[#c79a45]">{isBn ? "জুমা" : "Jumu'ah"}</span>}
+                  </div>
+                ))}
+              </div>
+
+              {/* Month Grid Cells */}
+              <div className="mt-3 grid grid-cols-7 gap-1 sm:gap-2">
+                {calendarDays.map((day, idx) => {
+                  if (day === null) {
+                    return <div key={`blank-${idx}`} className="aspect-square" />;
+                  }
+
+                  const monthNum = String(calendarMonth.getMonth() + 1).padStart(2, "0");
+                  const dayNum = String(day).padStart(2, "0");
+                  const isoDate = `${calendarMonth.getFullYear()}-${monthNum}-${dayNum}`;
+                  const isSelected = selectedDate === isoDate;
+                  const isCurrentToday = todayIso === isoDate;
+                  const dayOfWeek = (idx) % 7;
+                  const isFriday = dayOfWeek === 6;
+
+                  return (
+                    <button
+                      key={isoDate}
+                      type="button"
+                      onClick={() => setSelectedDate(isoDate)}
+                      aria-label={`Date ${isoDate}`}
+                      className={`aspect-square rounded-2xl flex flex-col items-center justify-center text-xs sm:text-sm font-semibold transition-all duration-200 cursor-pointer relative ${
+                        isSelected
+                          ? "bg-[#0d4d3b] text-white font-bold shadow-md scale-105"
+                          : isCurrentToday
+                          ? "border-2 border-[#c79a45] bg-[#faf7f0] text-[#0e2a22] font-bold"
+                          : isFriday
+                          ? "bg-[#f2f7f4] hover:bg-[#e7f0ec] text-[#0d4d3b]"
+                          : "bg-[#faf9f4] hover:bg-[#f2efe6] text-[#24332d]"
+                      }`}
+                    >
+                      <span>{isBn ? convertToBengaliNumber(day) : day}</span>
+                      {isCurrentToday && !isSelected && (
+                        <span className="w-1.5 h-1.5 rounded-full bg-[#c79a45] mt-0.5" />
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Selected Day Inspector Panel */}
+            <div className="mt-8 rounded-2xl border border-[#e5e1d3] bg-[#faf8f3] p-5 sm:p-6">
+              <div className="flex flex-wrap items-center justify-between gap-3 pb-4 border-b border-[#ece6db]">
+                <div>
+                  <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#c79a45]">
+                    {isBn ? "নির্বাচিত তারিখের সময়সূচি" : "SELECTED DAY INSPECTOR"}
+                  </span>
+                  <h3 className="mt-1 font-serif text-xl sm:text-2xl font-bold text-[#0e2a22]">
+                    {selectedDayHeader}
+                  </h3>
+                </div>
+
+                {selectedDate === todayIso && (
+                  <span className="px-3 py-1 rounded-full bg-[#0d4d3b]/10 border border-[#0d4d3b]/30 text-xs font-bold text-[#0d4d3b]">
+                    {isBn ? "আজকের দিন" : "Today"}
+                  </span>
+                )}
+              </div>
+
+              {/* Day Inspector Prayer Row */}
+              {selectedDayLoading ? (
+                <div className="py-8 text-center text-xs text-[#52605a] animate-pulse">
+                  {isBn ? "সময়সূচি লোড হচ্ছে..." : "Loading authoritative prayer schedule..."}
+                </div>
+              ) : selectedDayTimes ? (
+                <div className="mt-4 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+                  {PRAYER_ORDER.map((key) => {
+                    const timing = selectedDayTimes.timings[key];
+                    if (!timing) return null;
+                    const time24 = timing.time;
+                    const timeDisp = formatTime12(time24, isBn);
+                    const iqamah24 = selectedDayTimes.iqamahTimings?.[key];
+                    const iqamahDisp = iqamah24 ? formatTime12(iqamah24, isBn) : null;
+
+                    return (
+                      <div
+                        key={key}
+                        className="rounded-xl border border-[#e5e1d3] bg-white p-3 text-center shadow-xs"
+                      >
+                        <span className="text-[10px] font-bold text-[#718079] uppercase block">
+                          {isBn ? PRAYER_NAMES[key].bn : PRAYER_NAMES[key].en}
+                        </span>
+                        <span className="mt-1 block font-mono text-base sm:text-lg font-bold text-[#0e2a22]">
+                          {timeDisp}
+                        </span>
+                        {key !== "sunrise" && (
+                          <span className="mt-1 block text-[10px] font-semibold text-[#0d4d3b]">
+                            {iqamahDisp ? (isBn ? `জামাত: ${iqamahDisp}` : `Jamat: ${iqamahDisp}`) : (isBn ? "জামাত নির্ধারিত" : "Congregation")}
+                          </span>
+                        )}
+                        {key === "sunrise" && (
+                          <span className="mt-1 block text-[10px] text-[#718079]">
+                            {isBn ? "ফজরের সমাপ্তি" : "End of Fajr"}
+                          </span>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="py-6 text-center text-xs text-[#52605a]">
+                  {isBn ? "এই তারিখের জন্য তথ্য পাওয়া যায়নি।" : "No data available for this date."}
+                </div>
+              )}
             </div>
           </div>
         </section>
 
-        {/* 7. Quranic Inscription & Fellowship Call */}
-        <section className="relative overflow-hidden rounded-3xl bg-[#072a20] text-white p-8 sm:p-12 text-center border border-[#c79a45]/30 shadow-xl">
-          <div
-            className="absolute inset-0 opacity-10 bg-repeat pointer-events-none"
-            style={{
-              backgroundImage: "url('/textures/islamic-geometric.svg')",
-              backgroundSize: "240px 240px",
-            }}
-            aria-hidden="true"
-          />
-
-          <div className="relative z-10 max-w-3xl mx-auto space-y-4">
-            <div className="w-10 h-10 rounded-full bg-[#c79a45]/20 flex items-center justify-center mx-auto text-[#e0be79]">
-              <BookOpen className="w-5 h-5" />
+        {/* ================================================== */}
+        {/* SECTION 9 — SACRED QURANIC INSCRIPTION             */}
+        {/* ================================================== */}
+        <section aria-label="Quranic Inscription" className="text-center">
+          <div className="rounded-3xl border border-[#c79a45]/30 bg-[#072a20] text-white p-6 sm:p-10 max-w-4xl mx-auto shadow-md">
+            <div
+              dir="rtl"
+              lang="ar"
+              className="font-serif text-2xl sm:text-3xl text-[#e0be79] leading-relaxed tracking-wide select-none"
+            >
+              إِنَّ ٱلصَّلَوٰةَ كَانَتْ عَلَى ٱلْمُؤْمِنِينَ كِتَٰبًا مَّوْقُوتًا
             </div>
-
-            <p className="font-serif text-xl xs:text-2xl sm:text-3xl italic text-[#f5f1e6] leading-relaxed">
+            <p className="mt-4 text-xs sm:text-sm text-white/90 font-serif italic max-w-xl mx-auto">
               {isBn
-                ? "‘নিশ্চয়ই নির্দিষ্ট সময়ে নামাজ কায়েম করা মুমিনদের ওপর ফরজ।’"
-                : "“Indeed, performing prayer at fixed appointed hours has been prescribed upon the believers.”"}
+                ? "“নিশ্চয়ই নির্দিষ্ট সময়ে সালাত আদায় করা মুমিনদের জন্য একটি আবশ্যক বিধান।”"
+                : "“Indeed, prayer has been decreed upon the believers a decree of specified times.”"}
             </p>
-
-            <span className="block text-xs font-bold tracking-[0.25em] text-[#e0be79] uppercase">
+            <p className="mt-1 text-[11px] font-medium tracking-wider text-[#e0be79] uppercase">
               {isBn ? "— সূরা আন-নিসা (৪:১০৩)" : "— Surah An-Nisa (4:103)"}
-            </span>
-
-            <div className="pt-6 flex flex-wrap items-center justify-center gap-4">
-              <Link
-                href="/events"
-                className="inline-flex items-center gap-2 px-6 py-3.5 rounded-xl bg-[#c79a45] text-[#051c15] font-semibold text-xs sm:text-sm hover:bg-[#d8ab54] transition shadow-md min-h-[46px]"
-              >
-                <span>{isBn ? "আসন্ন দ্বীনি অনুষ্ঠান" : "Upcoming Events"}</span>
-                <ArrowRight className="w-4 h-4" />
-              </Link>
-              <Link
-                href="/donations"
-                className="inline-flex items-center gap-2 px-6 py-3.5 rounded-xl border border-white/30 bg-white/5 text-white font-semibold text-xs sm:text-sm hover:bg-white/10 transition min-h-[46px]"
-              >
-                <span>{isBn ? "মসজিদে দান করুন" : "Donate to Mosque"}</span>
-              </Link>
-            </div>
+            </p>
           </div>
         </section>
-
       </main>
 
+      {/* Global Site Footer */}
       <SiteFooter />
     </div>
   );

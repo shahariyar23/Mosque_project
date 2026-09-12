@@ -47,6 +47,8 @@ import {
   updateEvent,
   uploadEventImage,
 } from "@/services/eventService";
+import { fetchMosque } from "@/services/mosqueService";
+import { useDashboardSession } from "@/components/dashboard/session-provider";
 
 const emptyDraft: EventDraft = {
   title: "",
@@ -64,6 +66,7 @@ const emptyDraft: EventDraft = {
 
 export function EventsView({ openCreateOnMount = false }: { openCreateOnMount?: boolean }) {
   const { notify } = useToast();
+  const { user } = useDashboardSession();
   const [events, setEvents] = useState<MosqueEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -85,7 +88,8 @@ export function EventsView({ openCreateOnMount = false }: { openCreateOnMount?: 
     setLoading(true);
     setError(null);
     try {
-      const result = await fetchEvents({ all: true });
+      const mosque = await fetchMosque();
+      const result = await fetchEvents({ all: true, mosqueSlug: mosque.slug });
       setEvents(result.rows);
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : "Failed to load events from the server.";
@@ -93,7 +97,7 @@ export function EventsView({ openCreateOnMount = false }: { openCreateOnMount?: 
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [user?.mosqueId]);
 
   useEffect(() => {
     loadEvents();
