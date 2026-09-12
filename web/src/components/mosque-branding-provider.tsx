@@ -23,6 +23,11 @@ export type MosqueBranding = {
   logoUrl: string | null;
   phone: string | null;
   email: string | null;
+  addressLine: string | null;
+  city: string | null;
+  district: string | null;
+  country: string | null;
+  postalCode: string | null;
   establishedYear: number | null;
   isLoading: boolean;
 };
@@ -65,6 +70,11 @@ const defaultBranding: MosqueBranding = {
   logoUrl: null,
   phone: null,
   email: siteConfig.email,
+  addressLine: null,
+  city: null,
+  district: null,
+  country: null,
+  postalCode: null,
   establishedYear: 1987,
   isLoading: true,
 };
@@ -92,6 +102,11 @@ function persistBranding(data: MosqueBranding) {
       logoUrl: data.logoUrl,
       phone: data.phone,
       email: data.email,
+      addressLine: data.addressLine,
+      city: data.city,
+      district: data.district,
+      country: data.country,
+      postalCode: data.postalCode,
       establishedYear: data.establishedYear,
     };
     localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
@@ -204,6 +219,11 @@ export function MosqueBrandingProvider({ children }: { children: ReactNode }) {
               logoUrl: authMosque.logoUrl,
               phone: authMosque.phone,
               email: authMosque.email,
+              addressLine: authMosque.addressLine,
+              city: authMosque.city,
+              district: authMosque.district,
+              country: authMosque.country,
+              postalCode: authMosque.postalCode,
               establishedYear: authMosque.establishedYear,
             });
             return;
@@ -227,6 +247,11 @@ export function MosqueBrandingProvider({ children }: { children: ReactNode }) {
           logoUrl: pubMosque.logoUrl,
           phone: pubMosque.phone,
           email: pubMosque.email,
+          addressLine: pubMosque.addressLine,
+          city: pubMosque.city,
+          district: pubMosque.district,
+          country: pubMosque.country,
+          postalCode: pubMosque.postalCode,
           establishedYear: pubMosque.establishedYear,
         });
       }
@@ -305,4 +330,3 @@ export function useMosqueBranding() {
   }
   return context;
 }
-

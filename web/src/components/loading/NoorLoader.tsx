@@ -3,12 +3,13 @@
 import { useEffect, useState, useRef } from "react";
 import gsap from "gsap";
 import { NoorLoaderScene } from "./NoorLoaderScene";
-import { siteConfig } from "@/config/site";
 import { useAuth } from "@/components/auth-provider";
+import { useMosqueBranding } from "@/components/mosque-branding-provider";
 import "./NoorLoader.css";
 
 export function NoorLoader() {
   const { loading: authLoading } = useAuth();
+  const { branding } = useMosqueBranding();
   const [isLoading, setIsLoading] = useState(true);
   const [reducedMotion, setReducedMotion] = useState(false);
   const [progress, setProgress] = useState(0);
@@ -16,12 +17,17 @@ export function NoorLoader() {
   const containerRef = useRef<HTMLDivElement>(null);
   const tlRef = useRef<gsap.core.Timeline | null>(null);
   const authLoadingRef = useRef(authLoading);
+  const brandingLoadingRef = useRef(branding.isLoading);
   const isExitingRef = useRef(false);
 
   // Keep authLoadingRef in sync with the latest state
   useEffect(() => {
     authLoadingRef.current = authLoading;
   }, [authLoading]);
+
+  useEffect(() => {
+    brandingLoadingRef.current = branding.isLoading;
+  }, [branding.isLoading]);
 
   useEffect(() => {
     // Check for reduced motion preference
@@ -101,7 +107,7 @@ export function NoorLoader() {
     const progressInterval = setInterval(() => {
       setProgress((prev) => {
         // While auth check is pending, asymptotically approach up to 90%
-        const ceiling = !authLoadingRef.current ? 98 : 90;
+        const ceiling = !authLoadingRef.current && !brandingLoadingRef.current ? 98 : 90;
         if (prev >= ceiling) return prev;
         const remaining = ceiling - prev;
         return prev + Math.max(0.4, remaining * 0.1);
@@ -137,11 +143,12 @@ export function NoorLoader() {
       const timeElapsed = Date.now() - startTime;
       const isReady = document.readyState === "complete";
       const authSettled = !authLoadingRef.current;
+      const brandingSettled = !brandingLoadingRef.current;
 
-      if (isReady && authSettled && timeElapsed >= MIN_LOAD_TIME) {
+      if (isReady && authSettled && brandingSettled && timeElapsed >= MIN_LOAD_TIME) {
         exitLoader();
       } else {
-        // Keep checking every 60ms until document is complete, auth has settled, and minimum display time elapsed
+        // Keep checking until the document, authentication, branding, and minimum display time are ready.
         setTimeout(checkReadyStatus, 60);
       }
     };
@@ -185,8 +192,12 @@ export function NoorLoader() {
 
         {/* Branding Layer */}
         <div className="noor-loader-brand">
-          <h1 className="noor-loader-title">{siteConfig.name.toUpperCase()}</h1>
-          <p className="noor-loader-subtitle">A Place of Worship, Learning & Community</p>
+          <h1 className="noor-loader-title">
+            {(branding.isLoading ? "Mosque" : branding.shortName || branding.name).toUpperCase()}
+          </h1>
+          <p className="noor-loader-subtitle">
+            {branding.description || "A Place of Worship, Learning & Community"}
+          </p>
         </div>
 
         {/* Progress Layer */}

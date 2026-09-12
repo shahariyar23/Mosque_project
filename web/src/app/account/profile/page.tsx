@@ -475,9 +475,14 @@ export default function ProfilePage() {
           onSuccess={(updated) => {
             setProfile(updated);
             setIsEditOpen(false);
-            // Re-sync session if token exists
-            if (token) {
-              login(token);
+            // Keep the valid session populated while its display name is updated. Calling `login(token)`
+            // without a session clears it while `/auth/me` loads, which lets the route guard briefly send
+            // the member to the sign in page.
+            if (token && session) {
+              login(token, {
+                ...session,
+                user: { ...session.user, name: updated.fullName },
+              });
             }
           }}
         />
@@ -1033,4 +1038,3 @@ function ChangePasswordModal({ onClose, onSuccess }: ChangePasswordModalProps) {
     </div>
   );
 }
-

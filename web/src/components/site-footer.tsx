@@ -11,6 +11,19 @@ export function SiteFooter() {
   const { language, setLanguage } = useLanguage();
   const { branding } = useMosqueBranding();
   const bengali = language === "bn";
+  const mosqueName = branding.name || siteConfig.fullName;
+  const mosqueEmail = branding.email || siteConfig.email;
+  const mosquePhone = branding.phone;
+  const phoneHref = mosquePhone ? `tel:${mosquePhone.replace(/[^+\d]/g, "")}` : undefined;
+  const mosqueAddress = [
+    branding.addressLine,
+    branding.city,
+    branding.district,
+    branding.country,
+    branding.postalCode,
+  ]
+    .filter(Boolean)
+    .join(", ");
 
   const [subscribed, setSubscribed] = useState(false);
   const [email, setEmail] = useState("");
@@ -398,9 +411,9 @@ export function SiteFooter() {
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
                     </svg>
                     <div>
-                      <p className="font-semibold text-white">Noor Community Mosque</p>
+                      <p className="font-semibold text-white">{mosqueName}</p>
                       <p className="text-[11px] text-[#8ea39b] leading-relaxed">
-                        {bengali ? "১২৩ পিস অ্যাভিনিউ, ঢাকা, বাংলাদেশ" : "123 Peace Avenue, Dhaka, Bangladesh"}
+                        {mosqueAddress || (bengali ? "মসজিদ কার্যালয়ে যোগাযোগ করুন" : "Contact the mosque office")}
                       </p>
                     </div>
                   </div>
@@ -410,9 +423,13 @@ export function SiteFooter() {
                     <svg className="h-4 w-4 text-[#e5c278] shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
                     </svg>
-                    <a href="tel:+8801712345678" className="hover:text-white transition-colors">
-                      +880 1712 345678
-                    </a>
+                    {mosquePhone ? (
+                      <a href={phoneHref} className="hover:text-white transition-colors">
+                        {mosquePhone}
+                      </a>
+                    ) : (
+                      <span>{bengali ? "ফোন নম্বর দেওয়া হয়নি" : "Phone number not provided"}</span>
+                    )}
                   </div>
 
                   {/* Email */}
@@ -420,8 +437,8 @@ export function SiteFooter() {
                     <svg className="h-4 w-4 text-[#e5c278] shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
                     </svg>
-                    <a href={`mailto:${siteConfig.email}`} className="hover:text-white transition-colors">
-                      {siteConfig.email}
+                    <a href={`mailto:${mosqueEmail}`} className="hover:text-white transition-colors">
+                      {mosqueEmail}
                     </a>
                   </div>
 
@@ -561,19 +578,23 @@ export function SiteFooter() {
                 {openAccordion === "contact" && (
                   <div className="pb-3 pl-2 space-y-3 text-xs text-[#bad1c7] animate-fadeIn">
                     <div>
-                      <p className="font-semibold text-white">Noor Community Mosque</p>
+                      <p className="font-semibold text-white">{mosqueName}</p>
                       <p className="text-[11px] text-[#8ea39b]">
-                        {bengali ? "১২৩ পিস অ্যাভিনিউ, ঢাকা, বাংলাদেশ" : "123 Peace Avenue, Dhaka, Bangladesh"}
+                        {mosqueAddress || (bengali ? "মসজিদ কার্যালয়ে যোগাযোগ করুন" : "Contact the mosque office")}
                       </p>
                     </div>
                     <p>
-                      <a href="tel:+8801712345678" className="hover:text-white">
-                        +880 1712 345678
-                      </a>
+                      {mosquePhone ? (
+                        <a href={phoneHref} className="hover:text-white">
+                          {mosquePhone}
+                        </a>
+                      ) : (
+                        <span>{bengali ? "ফোন নম্বর দেওয়া হয়নি" : "Phone number not provided"}</span>
+                      )}
                     </p>
                     <p>
-                      <a href={`mailto:${siteConfig.email}`} className="hover:text-white">
-                        {siteConfig.email}
+                      <a href={`mailto:${mosqueEmail}`} className="hover:text-white">
+                        {mosqueEmail}
                       </a>
                     </p>
                     <div>
@@ -713,7 +734,7 @@ export function SiteFooter() {
         <div className="mt-12 flex flex-col gap-5 border-t border-[#c79a45]/20 pt-6 pb-12 sm:flex-row sm:items-center sm:justify-between text-xs text-[#8ea39b]">
           {/* Copyright notice */}
           <p className="text-center sm:text-left">
-            © 2026 Noor Community Mosque.{" "}
+            © 2026 {mosqueName}.{" "}
             {bengali ? "সকল অধিকার সংরক্ষিত।" : "All rights reserved."}
           </p>
 
